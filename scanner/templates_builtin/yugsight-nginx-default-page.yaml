@@ -1,0 +1,15 @@
+id: yugsight-nginx-default-page
+info:
+  name: Nginx 默认欢迎页
+  severity: info
+  tags: nginx, misconfig
+  description: 站点返回 Nginx 默认欢迎页, 说明未部署业务或使用了默认配置页
+request:
+  method: GET
+  path:
+    - /
+matchers:
+  - type: word
+    part: body
+    words:
+      - "Welcome to nginx!"

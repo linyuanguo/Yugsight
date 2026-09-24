@@ -1,0 +1,270 @@
+{
+  "_comment": "Yugsight 配置示例。改名为 settings.json 放 exe 同目录即生效(不写=全部默认值, 程序照常运行)。",
+
+  "_about": [
+    "== 通用规则 ==",
+    "1) 每个节都是可选的: 删掉即走该功能的默认值, 不会报错。",
+    "2) 改完需重启生效(前端页面上改的配置除外, 那些会由程序自动写回本文件)。",
+    "3) 程序自动保存(账号/白名单)只替换自己那节, 你在其它节写的注释不会丢。",
+    "4) 保存为无 BOM 的 UTF-8。程序兼容 BOM, 但其它工具可能不兼容。",
+    "5) 本文件没有的节会回退读同目录旧单文件(engine.json / capture.json 等),",
+    "   所以从旧版本升级不会丢配置; 把内容挪进对应节后即可删除旧文件。",
+    "",
+    "== 节速查 ==",
+    "engine    : 外部引擎(nmap/trivy/zap)调用与自动下载",
+    "ai        : AI 全链路分析(参数/模板/RAG 文档库/记忆库, 只解读不判定)",
+    "capture   : 抓包(环路检测 / 全量采集)",
+    "updater   : Nuclei 模板与 CPE 库在线更新",
+    "probe     : 分布式探针(中心端 center / 探针端 client)",
+    "scheduler : 任务队列调度(排队/并发/限速)",
+    "report    : 报告生成引擎(HTML/PDF/拓扑/历史对比)",
+    "screen    : 安全运维大屏",
+    "monitor   : SNMP 网络监控(周期采集, 只读)",
+    "database  : 数据库(默认 sqlite 内置文件引擎)",
+    "auth      : 登录开关与初始账密(程序读写)",
+    "whitelist : 白名单(程序读写)"
+  ],
+
+  "engine": {
+    "_comment": [
+      "enabled: 外部引擎是否接入扫描编排。",
+      "  false(默认) = 全部走内置引擎, 不启动任何外部进程。",
+      "  true        = 已装的外部引擎优先, 失败/缺失自动降级内置引擎。",
+      "downloads.autoInstall: 缺引擎时自动下载补装(true 时启动后后台异步装好, 不阻塞服务)。",
+      "  开了它就不必再写 allowDownload —— 自动补装本身蕴含允许下载。",
+      "  默认跳过 ZAP(233MB 且需 Java), 想一并自动装就写 autoInstallEngines。",
+      "国内网络: 直连 GitHub 常失败。三种办法(优先级从高到低):",
+      "  1) downloads.proxy 留空 + 设系统环境变量 HTTPS_PROXY —— 推荐, 代理关了自动回退直连",
+      "  2) downloads.proxy 显式写死代理地址 —— 强制走代理, 代理关闭时下载直接失败",
+      "  3) downloads.githubMirror 配 GitHub 镜像前缀(如 https://gh-proxy.com/)"
+    ],
+    "enabled": false,
+    "engines": [],
+    "timeoutSec": 0,
+    "disableFallback": false,
+    "binDir": "",
+    "downloads": {
+      "allowDownload": false,
+      "autoInstall": true,
+      "autoInstallEngines": [],
+      "engines": [],
+      "proxy": "",
+      "githubMirror": "",
+      "mirrorProbe": true,
+      "mirrorProbeMs": 4000,
+      "clearCacheAfterInstall": false
+    }
+  },
+
+  "ai": {
+    "_comment": [
+      "AI 全链路分析(阶段 3)。只解读、不判定、不生成 POC。默认关闭。",
+      "enabled 必须显式写 true 才开启(缺 enabled 且填了 apiKey 时按旧格式视为开启)。",
+      "openai 兼容接口必须填 apiKey; 本地模型把 backend 设为 ollama 可免 key。",
+      "",
+      "== 基础参数(板块 1) ==",
+      "timeoutSec 请求超时; maxContext 输入预算(字符, 原始数据超此截断);",
+      "maxTokens 最大输出; temperature/topP 采样参数(0=服务端默认)。",
+      "modules 三大业务模块开关: 关闭后对应业务页'AI 分析'按钮置灰。",
+      "",
+      "== Prompt 模板(板块 2) ==",
+      "prompts 三套预设: capture=流量分析 / scan=漏洞报告(弱口令同用) /",
+      "monitor=监控告警研判(节点采集同用)。content 里可用占位变量:",
+      "{{raw_data}} {{asset_info}} {{scan_result}} {{metric_data}} {{time}} {{structured_memory}}",
+      "每套模板的 rag=true 时, 分析前先从文档库检索 topK 条片段作为参考。",
+      "",
+      "== RAG 文档库(板块 3, 非结构化) ==",
+      "rag: 用户上传的文档(安全基线/漏洞手册/设备资料/运维文档)分片 + 内置",
+      "TF-IDF 向量化(纯离线, 不依赖外部 embedding 服务)。文档本身存 data/ai_docs.jsonl。",
+      "",
+      "== 结构化记忆库(板块 4, 与 RAG 严格区分) ==",
+      "memory: 读平台数据库内的结构化历史(漏洞/告警事件/抓包报告/节点指标),",
+      "按 retainDays 时间窗 + scopes 范围检索, 注入 {{structured_memory}}。不额外存储。",
+      "本文件手工编辑后需重启生效; 页面保存的会直接写回本节(热生效)。"
+    ],
+    "enabled": false,
+    "backend": "",
+    "apiBase": "https://api.openai.com/v1",
+    "apiKey": "",
+    "model": "gpt-4o-mini",
+    "timeoutSec": 60,
+    "maxContext": 32000,
+    "maxTokens": 4096,
+    "temperature": 0.2,
+    "topP": 0.9,
+    "modules": { "capture": true, "scan": true, "monitor": true },
+    "prompts": {
+      "capture": { "name": "流量分析模板", "rag": true, "topK": 3, "content": "" },
+      "scan": { "name": "漏洞报告模板", "rag": true, "topK": 3, "content": "" },
+      "monitor": { "name": "监控告警研判模板", "rag": true, "topK": 3, "content": "" }
+    },
+    "rag": { "enabled": true, "topK": 3, "chunkSize": 800, "maxChunks": 200, "maxDocs": 50 },
+    "memory": {
+      "enabled": true,
+      "retainDays": 30,
+      "maxItems": 20,
+      "compress": true,
+      "scopes": { "assets": true, "alerts": true, "captures": true, "metrics": true }
+    }
+  },
+
+  "capture": {
+    "_comment": [
+      "loopDetect: 环路检测。默认 false —— 判据是'同一帧被复制', 在 802.11 重传或",
+      "  抓包点位于汇聚口时仍可能有噪声, 而误报代价高(会让运维去拔网线排查)。",
+      "captureAll: 全量采集。默认 true —— 网卡把帧全收上来, 过滤只在页面做。",
+      "  内核级 BPF 过滤会让被滤掉的帧再也拿不回来: 选了 'tcp port 80' 后就找不到",
+      "  ARP/ICMP/DNS 了, 换视角只能重启抓包丢数据。高流量场景可设 false 恢复内核过滤。"
+    ],
+    "loopDetect": false,
+    "captureAll": true
+  },
+
+  "updater": {
+    "_comment": [
+      "规则库更新。不写本节的默认行为: 直连官方模板仓库的通道**开启**(页面可查新版、",
+      "可一键更新), 但后台**不会**自己跑流量(autoUpdate 默认 false)。",
+      "两种通道: sources=企业内网镜像(需源端提供 rules-manifest.json, 支持校验与回滚);",
+      "         direct=直连官方 GitHub 仓库(无需自建设施)。",
+      "注意 GitHub API 匿名限速 60 次/小时 —— 自动更新周期控制在小时级以上就不会触顶。",
+      "",
+      "proxy: 留空(推荐) = 自动使用系统环境变量 HTTP_PROXY / HTTPS_PROXY / NO_PROXY。",
+      "       程序不读 Windows「Internet 选项」的系统代理设置, 只认环境变量;",
+      "       代理关了会自动回退直连, 只是变慢, 不会导致更新失败。",
+      "       设置方式(用户级, 设完重启程序):",
+      "         [Environment]::SetEnvironmentVariable('HTTPS_PROXY','http://127.0.0.1:7890','User')",
+      "         [Environment]::SetEnvironmentVariable('NO_PROXY','localhost,127.0.0.1,192.168.*','User')",
+      "       也可在此写死代理(如 http://127.0.0.1:7890)强制走它, 但代理关闭时更新会直接失败, 不推荐。"
+    ],
+    "sources": [],
+    "proxy": "",
+    "interval": "24h",
+    "autoUpdate": false,
+    "tieredLoad": false,
+    "onDemandKB": 512,
+    "direct": {
+      "enabled": true,
+      "templatesRepo": "projectdiscovery/nuclei-templates",
+      "templatesRef": "main",
+      "severities": ["critical", "high", "medium"],
+      "maxTemplates": 0
+    }
+  },
+
+  "probe": {
+    "_comment": [
+      "分布式探针。center=中心端监听(装在本机), client=探针端连接(装在被扫描机器)。",
+      "两者都默认关闭; 全关时程序不监听探针端口、不发起外连, 与单机版完全一致。",
+      "探针端也可以完全不写配置, 用命令行: yugsight-agent.exe -center 1.2.3.4:8600 -token <密钥>"
+    ],
+    "center": {
+      "enabled": false,
+      "listen": ":8600",
+      "token": "",
+      "heartbeatSec": 15,
+      "offlineSec": 0,
+      "maxProbes": 200
+    },
+    "client": {
+      "enabled": false,
+      "centerAddr": "",
+      "token": "",
+      "id": "",
+      "name": "",
+      "heartbeatSec": 15,
+      "reconnectSec": 5
+    }
+  },
+
+  "scheduler": {
+    "_comment": [
+      "任务队列调度。默认 true —— 开箱即用, '排队提交'(queue=true)直接可用;",
+      "普通 /api/scan 的即时执行(前端边扫边看 SSE)语义不变。要关闭写 enabled=false。",
+      "排队执行受全局并发/单节点并发/网段限速约束。",
+      "nodeConcurrency 只作用于探针(边缘低配机); 中心本地由 maxConcurrency 约束。",
+      "localConcurrency 用于'中心还要跑 Web UI/AI'时显式压低本地并发(0=不额外限制)。"
+    ],
+    "enabled": true,
+    "maxConcurrency": 2,
+    "nodeConcurrency": 1,
+    "localConcurrency": 0,
+    "maxQueue": 200,
+    "defaultRate": 1000,
+    "rateRules": [],
+    "maxCpuPercent": 0,
+    "maxMemPercent": 0,
+    "maxTasksRunning": 0,
+    "defaultStrategy": "quick",
+    "maxAttempts": 2,
+    "taskTimeoutSec": 1800,
+    "autoStart": false
+  },
+
+  "report": {
+    "_comment": [
+      "报告生成引擎。默认关闭 —— 关闭时除 /status 外所有报告接口返回'未启用'。",
+      "export 依赖浏览器打印通道(纯标准库无 PDF 库), 由浏览器另存为 PDF。"
+    ],
+    "enabled": false,
+    "maxArchive": 500,
+    "defaultOperator": "",
+    "subtitle": "网络安全扫描与漏洞评估报告",
+    "accent": "#4f46e5",
+    "showRaw": false
+  },
+
+  "screen": {
+    "_comment": [
+      "大屏配置。大屏本身无需开关(只读聚合视图, 不改变任何执行链路)。",
+      "metrics=true 时额外开放 /api/v2/screen/metrics 供 Prometheus 抓取。",
+      "该端点刻意不带登录校验(抓取端不便携带会话 cookie), 请在可信网络内开启。"
+    ],
+    "metrics": false
+  },
+
+  "monitor": {
+    "_comment": [
+      "SNMP 网络监控: 对交换机/路由器/服务器做周期只读采集(GET/GETBULK, 零写入)。",
+      "enabled 默认 true; 空 targets = 零网络活动 —— 在监控页(/monitor)加目标后",
+      "下一轮即开始采集, 无需重启。要彻底关闭写 enabled=false。",
+      "intervalSec: 轮询间隔(秒), 最小 5, 默认 60。",
+      "targets: 每项 = 一个设备。addr 可省略端口(默认 161); community 为只读社区串。",
+      "交换机监控示例(锐捷, 只读):",
+      "  {\"id\":\"core-sw\",\"name\":\"核心交换机\",\"addr\":\"172.16.199.1\",\"community\":\"public\"}"
+    ],
+    "enabled": true,
+    "intervalSec": 60,
+    "targets": []
+  },
+
+  "database": {
+    "_comment": [
+      "数据库。默认 sqlite = 内置文件引擎(数据存 exe 同目录 ./data/, 每表一个 JSONL)。",
+      "type=postgres 为预留骨架(当前返回未实现, 主程序降级不崩溃)。",
+      "切换只改这里, 业务代码零改动。"
+    ],
+    "type": "sqlite",
+    "dir": "",
+    "postgres": {
+      "host": "",
+      "port": 0,
+      "user": "",
+      "pass": "",
+      "db": ""
+    }
+  },
+
+  "auth": {
+    "_comment": [
+      "登录鉴权与初始账号(账号库 users/salt 也存在本节, 由程序自动维护)。",
+      "enabled: 登录开关, 默认 true。false = 所有接口免登录, 打开页面直接进主界面。",
+      "user/pass: 初始账号明文。仅当账号库为空(全新安装)时用于自动创建账号;",
+      "  两行都删掉时, 全新安装默认创建 admin / admin123。",
+      "  之后修改这两行不会改动已建账号的密码(校验始终走哈希, 无明文旁门)。",
+      "想重置密码: 删除本节的 users 与 salt 两行后重启, 程序按 user/pass 重建。"
+    ],
+    "enabled": true,
+    "user": "admin",
+    "pass": "admin123"
+  }
+}

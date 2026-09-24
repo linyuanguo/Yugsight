@@ -1,0 +1,21 @@
+id: yugsight-git-exposed
+info:
+  name: .git 目录暴露
+  severity: high
+  tags: exposure, misconfig
+  description: 站点 .git 目录可访问, 源码与配置(含凭据)可能被还原
+request:
+  method: GET
+  path:
+    - /.git/HEAD
+    - /.git/config
+matchers:
+  - type: status
+    condition: and
+    status:
+      - 200
+  - type: word
+    part: body
+    words:
+      - "ref: refs/"
+      - "[core]"

@@ -1,0 +1,499 @@
+{
+  "rules": [
+    {
+      "id": "YUGSIGHT-0001",
+      "name": "目录列表开启",
+      "severity": "low",
+      "type": "body",
+      "pattern": "<title>\\s*Index of /",
+      "detail": "响应页为 Apache/nginx 目录列表, 目录内容对外暴露",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0002",
+      "name": "PHP 信息页面",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "PHP Version|phpinfo\\(\\)",
+      "detail": "响应包含 phpinfo 输出, 暴露 PHP 运行环境与配置",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0003",
+      "name": "Java 堆栈泄露",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "at java\\..*\\(.*\\.java:\\d+\\)",
+      "detail": "响应包含 Java 异常堆栈, 可能暴露代码路径与内部类名",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0004",
+      "name": "Python Traceback 泄露",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "Traceback \\(most recent call last\\)",
+      "detail": "响应包含 Python 异常堆栈, 暴露代码细节",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0005",
+      "name": "框架 DEBUG 模式开启",
+      "severity": "high",
+      "type": "body",
+      "pattern": "DEBUG = True|Django technical|debug=\"true\"|Werkzeug Debugger",
+      "detail": "Web 框架处于 DEBUG 模式, 错误页可能泄露配置/环境变量/调试接口",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0006",
+      "name": "Actuator 配置内容泄露",
+      "severity": "high",
+      "type": "body",
+      "pattern": "\"activeProfiles\"|\"spring\":\\s*\\{",
+      "detail": "响应包含 Spring Boot Actuator/env 配置内容, 可能泄露密钥",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0007",
+      "name": "ASP.NET 版本暴露",
+      "severity": "info",
+      "type": "header",
+      "pattern": "(?m)^X-AspNet-Version: .*\\d",
+      "detail": "响应头 X-AspNet-Version 暴露 .NET 具体版本, 便于定向利用已知漏洞",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0008",
+      "name": "WordPress 配置备份",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/wp-config.php.bak",
+      "detail": "存在 wp-config.php 备份文件, 可能含数据库凭据",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0009",
+      "name": "配置临时文件",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/config.php~",
+      "detail": "存在编辑器临时配置文件(vim/emacs 残留)",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0010",
+      "name": "安全联系方式",
+      "severity": "info",
+      "type": "path",
+      "pattern": "/.well-known/security.txt",
+      "detail": "存在 security.txt 安全联系文件",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0011",
+      "name": "ASP.NET MVC 版本暴露",
+      "severity": "low",
+      "type": "header",
+      "pattern": "(?m)^X-AspNetMvc-Version: [0-9]+",
+      "detail": "响应头 X-AspNetMvc-Version 暴露 MVC 具体版本, 便于定向利用已知漏洞",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0012",
+      "name": "Drupal 版本暴露",
+      "severity": "low",
+      "type": "header",
+      "pattern": "(?m)^X-Drupal(-[A-Za-z]+)?:",
+      "detail": "响应头 X-Drupal 暴露 Drupal 版本, 可匹配已知 Drupal 漏洞",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0013",
+      "name": "生成器标识暴露",
+      "severity": "low",
+      "type": "header",
+      "pattern": "(?m)^X-Generator: .+",
+      "detail": "响应头 X-Generator 暴露页面生成框架(如 JSP/ASP/Node.js), 辅助指纹识别",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0014",
+      "name": "CORS 允许任意源",
+      "severity": "medium",
+      "type": "header",
+      "pattern": "(?m)^Access-Control-Allow-Origin: \\*$",
+      "detail": "CORS 允许任意来源跨域, 配合凭证可被任意站点读取接口数据",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0015",
+      "name": "调试/追踪响应头",
+      "severity": "low",
+      "type": "header",
+      "pattern": "(?m)^X-(Debug|Trace|Profiling|Elapsed-Time): ",
+      "detail": "响应头暴露调试/性能追踪信息, 通常应在生产环境关闭",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0016",
+      "name": "异常信息响应头",
+      "severity": "medium",
+      "type": "header",
+      "pattern": "(?m)^X-(Error|Exception|Trace)-[A-Za-z]+: .+",
+      "detail": "响应头携带异常/堆栈信息, 可能泄露内部实现细节",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0017",
+      "name": "内部应用名暴露",
+      "severity": "low",
+      "type": "header",
+      "pattern": "(?m)^X-Application-Name: .+",
+      "detail": "响应头暴露内部应用名, 辅助攻击者定位服务",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0018",
+      "name": "Nginx 版本暴露",
+      "severity": "low",
+      "type": "body",
+      "pattern": "nginx/[0-9]+\\.[0-9]+\\.[0-9]+",
+      "detail": "响应包含 Nginx 具体版本号, 可匹配已知 Nginx 漏洞",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0019",
+      "name": "Apache 版本暴露",
+      "severity": "low",
+      "type": "body",
+      "pattern": "Apache/[0-9]+\\.[0-9]+",
+      "detail": "响应包含 Apache 具体版本号, 可匹配已知 Apache 漏洞",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0020",
+      "name": "Laravel 调试页",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "Whoops!|<title>\\s*Whoops",
+      "detail": "响应为 Laravel Whoops 调试页, 生产环境泄露代码路径与变量",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0021",
+      "name": "Django SECRET_KEY 泄露",
+      "severity": "high",
+      "type": "body",
+      "pattern": "\"SECRET_KEY\"\\s*[:=]\\s*[\"'][A-Za-z0-9]{16,}",
+      "detail": "响应包含 Django SECRET_KEY, 可伪造会话与签名",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0022",
+      "name": "Node.js 运行时异常",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "ReferenceError|Uncaught (TypeError|ReferenceError|SyntaxError)",
+      "detail": "响应包含 Node.js 未捕获异常, 泄露代码逻辑与栈信息",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0023",
+      "name": "PHP 运行时错误",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "(Fatal error|Warning:|Notice:)\\s+.*\\((?:php|on line)",
+      "detail": "响应包含 PHP 运行时错误, 暴露文件路径与版本",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0024",
+      "name": "硬编码密钥/令牌",
+      "severity": "high",
+      "type": "body",
+      "pattern": "(api[_-]?key|access[_-]?token|secret[_-]?key|client[_-]?secret|app[_-]?secret)\\s*[:=]\\s*[\"'][A-Za-z0-9+/]{16,}",
+      "detail": "响应含疑似硬编码的密钥/令牌, 可能被用于未授权访问",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0025",
+      "name": "数据库连接串暴露",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "(jdbc:[a-z]+://|mongodb(\\+srv)?://|mysql://|postgres(ql)?://|redis://|amqp://)",
+      "detail": "响应包含数据库/消息队列连接串, 可能含账号密码",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0026",
+      "name": "AWS Access Key 暴露",
+      "severity": "critical",
+      "type": "body",
+      "pattern": "AKIA[0-9A-Z]{16}",
+      "detail": "响应包含 AWS Access Key ID, 云资源可能被未授权操作",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0027",
+      "name": "私钥文件内容泄露",
+      "severity": "critical",
+      "type": "body",
+      "pattern": "BEGIN (RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY",
+      "detail": "响应包含私钥内容, 可完全接管对应加密通道",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0028",
+      "name": "默认账号口令提示",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "admin\\s*[:/]\\s*admin|root\\s*[:/]\\s*root|default\\s+password",
+      "detail": "响应提示默认账号口令, 可被直接利用登录",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0029",
+      "name": "Nacos 控制台暴露",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "Nacos\\s*(Console|Server)",
+      "detail": "Nacos 配置中心控制台暴露, 未授权可读改配置与密钥",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0030",
+      "name": "Tomcat 默认欢迎页",
+      "severity": "low",
+      "type": "body",
+      "pattern": "Welcome to Apache Tomcat|Apache Tomcat Version",
+      "detail": "Tomcat 默认欢迎页, 未删除默认内容, 暴露部署信息",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0031",
+      "name": "JBoss 管理控制台",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "JBoss Web - (Welcome|Console)",
+      "detail": "JBoss Web 管理控制台暴露, 存在弱口令风险",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0032",
+      "name": "Elasticsearch 未授权访问",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "\"cluster_name\"\\s*:|\"tagline\"\\s*:\\s*\"You Know",
+      "detail": "Elasticsearch 集群信息暴露, 可能未授权读写索引数据",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0033",
+      "name": "RocketMQ 控制台暴露",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "Apache RocketMQ|RocketMQ\\s*(Console|Dashboard)",
+      "detail": "RocketMQ 管理控制台暴露, 未授权可投递/消费消息",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0034",
+      "name": "内网地址暴露",
+      "severity": "low",
+      "type": "body",
+      "pattern": "(10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2[0-9]|3[0-1])\\.\\d{1,3}\\.\\d{1,3})",
+      "detail": "响应包含内网地址段, 泄露网络拓扑辅助内网渗透",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0035",
+      "name": "集成环境横幅",
+      "severity": "low",
+      "type": "body",
+      "pattern": "phpStudy|XAMPP|WAMP Server|宝塔面板",
+      "detail": "响应为集成环境/面板默认页, 常带默认账号与开放端口",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0036",
+      "name": "备份文件引用",
+      "severity": "low",
+      "type": "body",
+      "pattern": "(backup|backups|old)/\\S+\\.(tar|gz|zip|7z|rar)",
+      "detail": "响应引用备份压缩包路径, 可能被直接下载",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0037",
+      "name": "敏感配置键值",
+      "severity": "medium",
+      "type": "body",
+      "pattern": "\"(password|passwd|pwd|credential|token)\"\\s*:\\s*\"[A-Za-z0-9]{4,}\"",
+      "detail": "响应含疑似明文口令/凭据的 JSON 键值, 需人工复核",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0038",
+      "name": "SSH 私钥文件",
+      "severity": "critical",
+      "type": "path",
+      "pattern": "/id_rsa",
+      "detail": "可访问 SSH 私钥文件, 可登录目标主机",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0039",
+      "name": "Git 配置暴露",
+      "severity": "high",
+      "type": "path",
+      "pattern": "/.git/config",
+      "detail": "可访问 .git/config, 可能泄露仓库地址与远端",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0040",
+      "name": "Git 索引暴露",
+      "severity": "high",
+      "type": "path",
+      "pattern": "/.git/index",
+      "detail": "可访问 .git/index, 可还原源码文件列表",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0041",
+      "name": "SVN 元数据库",
+      "severity": "high",
+      "type": "path",
+      "pattern": "/.svn/wc.db",
+      "detail": "可访问 .svn/wc.db, 可还原整棵源码树",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0042",
+      "name": "Apache 访问控制文件",
+      "severity": "low",
+      "type": "path",
+      "pattern": "/.htaccess",
+      "detail": "可访问 .htaccess, 暴露目录重写与访问控制规则",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0043",
+      "name": "WordPress 配置文件",
+      "severity": "high",
+      "type": "path",
+      "pattern": "/wp-config.php",
+      "detail": "可访问 wp-config.php, 含数据库账号密码",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0044",
+      "name": "配置文件备份",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/config.php.bak",
+      "detail": "可访问配置文件备份, 通常含数据库凭据",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0045",
+      "name": "SQLite 数据库文件",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/database.sqlite",
+      "detail": "可访问 SQLite 数据库文件, 可能含业务数据",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0046",
+      "name": "H2 控制台暴露",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/h2-console/",
+      "detail": "H2 数据库控制台暴露, 未授权可读写数据库",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0047",
+      "name": "Druid 监控台暴露",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/druid/",
+      "detail": "Druid 监控台暴露, 可获取 SQL 与会话信息",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0048",
+      "name": "Eureka 注册中心暴露",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/eureka/",
+      "detail": "Eureka 注册中心暴露, 泄露全部服务实例与地址",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0049",
+      "name": "RabbitMQ 管理台",
+      "severity": "low",
+      "type": "path",
+      "pattern": "/rabbitmq/",
+      "detail": "RabbitMQ 管理台存在, 常见默认口令 guest/guest",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0050",
+      "name": "Consul 自检接口",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/v1/agent/self",
+      "detail": "Consul 自检接口暴露, 泄露节点配置与版本",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0051",
+      "name": "Actuator heapdump",
+      "severity": "high",
+      "type": "path",
+      "pattern": "/actuator/heapdump",
+      "detail": "Actuator heapdump 端点暴露, 可下载堆转储含明文密钥",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0052",
+      "name": "Actuator beans 端点",
+      "severity": "high",
+      "type": "path",
+      "pattern": "/actuator/beans",
+      "detail": "Actuator beans 端点暴露, 泄露全部 Spring Bean 结构",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0053",
+      "name": "OpenAPI v3 文档",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/v3/api-docs",
+      "detail": "OpenAPI v3 接口文档暴露, 泄露全部接口与参数",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0054",
+      "name": "GraphQL 接口暴露",
+      "severity": "medium",
+      "type": "path",
+      "pattern": "/graphql",
+      "detail": "GraphQL 接口暴露, 可能存在 introspection 未关闭",
+      "scope": "web"
+    },
+    {
+      "id": "YUGSIGHT-0055",
+      "name": "Docker 环境标记",
+      "severity": "low",
+      "type": "path",
+      "pattern": "/.dockerenv",
+      "detail": "存在 .dockerenv 标记, 确认目标运行于容器环境",
+      "scope": "web"
+    }
+  ]
+}

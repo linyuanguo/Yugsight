@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>{{.Title}}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; color: #1f2937; background: #fff; margin: 0; }
+  .page { max-width: 920px; margin: 0 auto; padding: 36px 44px; }
+  .cover {
+    border: 1px solid #e5e7eb; border-radius: 12px; padding: 44px 48px; margin-bottom: 28px;
+    background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  }
+  .cover .brand { font-size: 13px; font-weight: 700; color: #4f46e5; letter-spacing: 2px; }
+  .cover h1 { font-size: 28px; margin: 10px 0 6px; color: #111827; }
+  .cover .sub { color: #6b7280; font-size: 14px; }
+  .cover .meta { margin-top: 26px; border-top: 1px solid #e5e7eb; padding-top: 14px; font-size: 13px; color: #374151; line-height: 2.1; }
+  .risk { display: inline-block; padding: 3px 14px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+  .risk-high { background: #fee2e2; color: #b91c1c; }
+  .risk-medium { background: #ffedd5; color: #c2410c; }
+  .risk-low { background: #dcfce7; color: #15803d; }
+  .risk-none { background: #e0f2fe; color: #0369a1; }
+  h2 { font-size: 17px; border-left: 4px solid #4f46e5; padding-left: 10px; margin: 26px 0 12px; }
+  h3 { font-size: 14px; margin: 16px 0 8px; color: #374151; }
+  .meta-line { font-size: 12.5px; color: #6b7280; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 14px; }
+  th { background: #f3f4f6; text-align: left; padding: 8px 10px; border: 1px solid #e5e7eb; }
+  td { padding: 7px 10px; border: 1px solid #e5e7eb; word-break: break-all; vertical-align: top; }
+  .sev { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .sev-high { background: #fee2e2; color: #b91c1c; }
+  .sev-medium { background: #ffedd5; color: #c2410c; }
+  .sev-low { background: #fef9c3; color: #a16207; }
+  .sev-info { background: #e0f2fe; color: #0369a1; }
+  .stat-cards { display: flex; gap: 12px; margin: 12px 0 4px; }
+  .stat { flex: 1; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; text-align: center; background: #fafafa; }
+  .stat b { font-size: 24px; display: block; margin-bottom: 2px; }
+  .stat span { font-size: 12px; color: #6b7280; }
+  .stat.s-high b { color: #b91c1c; }
+  .stat.s-medium b { color: #c2410c; }
+  .stat.s-low b { color: #a16207; }
+  .stat.s-info b { color: #0369a1; }
+  .src { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #ede9fe; color: #6d28d9; white-space: nowrap; }
+  .src-builtin { background: #dcfce7; color: #15803d; }
+  /* 修复建议列: 内容长, 用稍小的行高与常规字体, 便于打印阅读 */
+  td.fix { font-size: 12px; line-height: 1.75; color: #374151; }
+  .rec { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px; font-size: 13px; line-height: 1.9; }
+  .footer { margin-top: 36px; padding-top: 14px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 12px; line-height: 1.9; }
+  .print-hide { }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="brand">YUGSIGHT · 网络扫描探测工具</div>
+    <h1>{{.Title}}</h1>
+    <div class="sub">网络安全扫描与 Web 漏洞评估报告</div>
+    <div class="meta">
+      <div>整体风险等级:
+        {{if eq .RiskLevel "高"}}<span class="risk risk-high">高危</span>
+        {{else if eq .RiskLevel "中"}}<span class="risk risk-medium">中危</span>
+        {{else if eq .RiskLevel "低"}}<span class="risk risk-low">低危</span>
+        {{else}}<span class="risk risk-none">未发现风险</span>{{end}}
+      </div>
+      <div>扫描目标:
+        {{range $i, $s := .Scans}}{{if $i}}；{{end}}{{$s.typeName}}（{{$s.target}}）{{end}}
+      </div>
+      <div>操作者 / 单位: {{if .Operator}}{{.Operator}}{{else}}-{{end}}</div>
+      <div>扫描工具: {{.Tool}}</div>
+      <div>报告生成时间: {{.Time}}</div>
+    </div>
+  </div>
+
+  <h2>一、风险概况</h2>
+  <div class="stat-cards">
+    <div class="stat"><b>{{.TotalFindings}}</b><span>发现总数</span></div>
+    <div class="stat s-high"><b>{{.High}}</b><span>高危</span></div>
+    <div class="stat s-medium"><b>{{.Medium}}</b><span>中危</span></div>
+    <div class="stat s-low"><b>{{.Low}}</b><span>低危</span></div>
+    <div class="stat s-info"><b>{{.Info}}</b><span>信息</span></div>
+  </div>
+
+  {{range $i, $s := .Scans}}
+  <h2>{{add (add $i 1) 1}}. {{$s.typeName}} — {{$s.target}}</h2>
+  <div class="meta-line">开始时间: {{$s.startTime}}　·　耗时: {{$s.duration}}　·　摘要: {{$s.summary}}</div>
+  {{if $s.findings}}
+  <h3>安全发现（{{len $s.findings}} 项）</h3>
+  <table>
+    <tr><th style="width:70px">级别</th><th style="width:220px">发现</th><th>详情</th><th style="width:300px">修复建议</th></tr>
+    {{range $s.findings}}
+    <tr>
+      <td>{{if eq .Severity "high"}}<span class="sev sev-high">高危</span>{{else if eq .Severity "medium"}}<span class="sev sev-medium">中危</span>{{else if eq .Severity "low"}}<span class="sev sev-low">低危</span>{{else}}<span class="sev sev-info">信息</span>{{end}}</td>
+      <td>{{.Title}}{{if eq .Source "nuclei"}}<span class="src">外部模板</span>{{else if eq .Source "nuclei-builtin"}}<span class="src src-builtin">内置模板</span>{{end}}</td>
+      <td>{{.Detail}}</td>
+      <td class="fix">{{if .Fix}}{{.Fix}}{{else}}-{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{end}}
+  {{if $s.rows}}
+  <h3>结果明细（{{len $s.rows}} 条）</h3>
+  <table>
+    <tr>{{range $s.rowHead}}<th>{{.}}</th>{{end}}</tr>
+    {{range $s.rows}}
+    <tr>{{range .}}<td>{{.}}</td>{{end}}</tr>
+    {{end}}
+  </table>
+  {{end}}
+  {{end}}
+
+  <h2>{{add (len .Scans) 2}}. 总体建议</h2>
+  <div class="rec">
+    {{if .High}}<b>检测到高危风险。</b>建议立即核实并修复高危项（如敏感文件暴露、注入漏洞、DEBUG 模式等），修复后复测。<br>
+    {{end}}{{if .Medium}}<b>检测到中危风险。</b>建议在一周内完成加固：收敛管理界面暴露面、更新过期证书、隐藏服务版本信息。<br>
+    {{end}}{{if .Low}}存在低危与配置类问题，建议结合安全基线逐步优化（补充安全响应头、Cookie 安全标志等）。<br>
+    {{end}}{{if not .TotalFindings}}本次扫描未发现明显风险。建议保持定期扫描，并关注系统更新与新发布漏洞。<br>{{end}}
+    本报告由 {{.Tool}} 基于黑盒探测自动生成，结果可能存在误报或漏报，请人工核实后使用。
+  </div>
+
+  <div class="footer">
+    {{.Title}} · 由 {{.Tool}} 于 {{.Time}} 自动生成<br>
+    免责声明：本工具仅可用于扫描自己拥有或已获书面授权的目标系统，未经授权对他人系统扫描可能违反《中华人民共和国网络安全法》及相关法律法规。
+  </div>
+
+</div>
+</body>
+</html>

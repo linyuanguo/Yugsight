@@ -1,0 +1,22 @@
+id: yugsight-jenkins-exposed
+info:
+  name: Jenkins 管理界面疑似未授权访问
+  severity: high
+  tags: jenkins, auth
+  description: Jenkins 根路径返回 200 且包含管理界面特征, 可能允许未认证访问
+request:
+  method: GET
+  path:
+    - /
+    - /jenkins
+    - /jenkins/
+matchers:
+  - type: status
+    condition: and
+    status:
+      - 200
+  - type: word
+    part: body
+    words:
+      - "hudson"
+      - "jenkins"

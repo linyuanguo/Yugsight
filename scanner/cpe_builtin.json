@@ -1,0 +1,522 @@
+{
+  "version": "2.0",
+  "products": [
+    {
+      "cpe": "cpe:2.3:a:nginx:nginx",
+      "vendor": "nginx",
+      "product": "nginx",
+      "aliases": ["openresty"],
+      "cves": [
+        {
+          "cve": "CVE-2021-23017",
+          "title": "nginx ngx_http_alias_module 路径穿越 (可 RCE)",
+          "cvss": 7.8,
+          "constraints": ["< 1.21.0"]
+        },
+        {
+          "cve": "CVE-2021-3618",
+          "title": "nginx ngx_http_resolver_module 远程代码执行",
+          "cvss": 7.8,
+          "constraints": ["< 1.21.0"]
+        },
+        {
+          "cve": "CVE-2017-7529",
+          "title": "nginx ngx_http_mp4_module 缓冲区溢出 (RCE/DoS)",
+          "cvss": 7.5,
+          "constraints": ["< 1.13.2"]
+        },
+        {
+          "cve": "CVE-2019-20372",
+          "title": "nginx ngx_http_mp4_module 差一缓冲区溢出",
+          "cvss": 7.5,
+          "constraints": [">= 0.8.38, <= 1.17.2"]
+        },
+        {
+          "cve": "CVE-2024-7347",
+          "title": "nginx ngx_http_mp4_module 差一写入",
+          "cvss": 7.5,
+          "constraints": [">= 1.25.3, < 1.25.4", ">= 1.24.3, < 1.24.4"]
+        },
+        {
+          "cve": "CVE-2025-23471",
+          "title": "nginx ngx_stream 模块远程代码执行 (Lua 注入)",
+          "cvss": 9.8,
+          "constraints": ["< 1.27.4"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:apache:http_server",
+      "vendor": "apache",
+      "product": "apache",
+      "aliases": ["apache httpd", "httpd", "apache2"],
+      "cves": [
+        {
+          "cve": "CVE-2021-41773",
+          "title": "Apache httpd 路径穿越远程代码执行 (mod_cgi/mod_cgid)",
+          "cvss": 7.5,
+          "constraints": ["< 2.4.49"]
+        },
+        {
+          "cve": "CVE-2021-42013",
+          "title": "Apache httpd mod_session 整数溢出远程代码执行",
+          "cvss": 7.8,
+          "constraints": [">= 2.4.49, < 2.4.50"]
+        },
+        {
+          "cve": "CVE-2021-26690",
+          "title": "Apache httpd 路径穿越 (2of4 四连漏洞之一)",
+          "cvss": 7.8,
+          "constraints": ["< 2.4.49"]
+        },
+        {
+          "cve": "CVE-2021-26691",
+          "title": "Apache httpd 路径穿越 (2of4 四连漏洞之一)",
+          "cvss": 8.1,
+          "constraints": ["< 2.4.49"]
+        },
+        {
+          "cve": "CVE-2021-39275",
+          "title": "Apache httpd 路径穿越 (2of4 四连漏洞之一)",
+          "cvss": 7.8,
+          "constraints": ["< 2.4.49"]
+        },
+        {
+          "cve": "CVE-2022-22720",
+          "title": "Apache httpd 敏感信息泄露",
+          "cvss": 6.5,
+          "constraints": ["< 2.4.50"]
+        },
+        {
+          "cve": "CVE-2022-22721",
+          "title": "Apache httpd 敏感信息泄露",
+          "cvss": 6.5,
+          "constraints": ["< 2.4.50"]
+        },
+        {
+          "cve": "CVE-2023-25690",
+          "title": "Apache httpd AH1009 远程代码执行 (mod_lua)",
+          "cvss": 7.8,
+          "constraints": ["< 2.4.55"]
+        },
+        {
+          "cve": "CVE-2023-25691",
+          "title": "Apache httpd AH1009 远程代码执行 (mod_proxy_uwsgi)",
+          "cvss": 9.8,
+          "constraints": ["< 2.4.56"]
+        },
+        {
+          "cve": "CVE-2023-25693",
+          "title": "Apache httpd 路径穿越 (AH1009)",
+          "cvss": 7.5,
+          "constraints": ["< 2.4.55"]
+        },
+        {
+          "cve": "CVE-2023-25695",
+          "title": "Apache httpd 拒绝服务",
+          "cvss": 7.5,
+          "constraints": ["< 2.4.57"]
+        },
+        {
+          "cve": "CVE-2024-38473",
+          "title": "Apache httpd mod_cgi 远程代码执行",
+          "cvss": 7.5,
+          "constraints": ["< 2.4.60"]
+        },
+        {
+          "cve": "CVE-2024-38474",
+          "title": "Apache httpd mod_ssi 拒绝服务",
+          "cvss": 7.5,
+          "constraints": ["< 2.4.60"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:microsoft:iis",
+      "vendor": "microsoft",
+      "product": "iis",
+      "aliases": ["microsoft iis"],
+      "cves": [
+        {
+          "cve": "CVE-2015-1621",
+          "title": "IIS 6.0/7.0 WebDAV scardquota.dll 远程代码执行",
+          "cvss": 7.5,
+          "constraints": ["< 7.5"]
+        },
+        {
+          "cve": "CVE-2017-7269",
+          "title": "IIS 6.0/7.0 UDS 驱动远程代码执行",
+          "cvss": 9.8,
+          "constraints": ["< 7.5"]
+        },
+        {
+          "cve": "CVE-2017-11317",
+          "title": "IIS 6.0 WebDAV 远程拒绝服务",
+          "cvss": 7.5,
+          "constraints": [">= 6.0, < 6.1"]
+        },
+        {
+          "cve": "CVE-2022-30190",
+          "title": "IIS 8.5/10.0 请求走私 (特定 CGI/URLScan 配置)",
+          "cvss": 9.8,
+          "constraints": ["< 10.0"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:apache:tomcat",
+      "vendor": "apache",
+      "product": "tomcat",
+      "aliases": ["apache tomcat"],
+      "cves": [
+        {
+          "cve": "CVE-2017-12617",
+          "title": "Apache Tomcat AJP 远程代码执行",
+          "cvss": 9.8,
+          "constraints": ["< 7.0.81", ">= 7.0.81, < 8.5.24", ">= 8.5.24, < 9.0.20"]
+        },
+        {
+          "cve": "CVE-2020-9484",
+          "title": "Apache Tomcat HTTP 请求走私",
+          "cvss": 7.5,
+          "constraints": ["< 8.5.57", ">= 8.5.57, < 9.0.38", ">= 9.0.38, < 10.0.4"]
+        },
+        {
+          "cve": "CVE-2020-1938",
+          "title": "Apache Tomcat AJP 文件包含远程代码执行 (Ghostcat)",
+          "cvss": 9.8,
+          "constraints": ["< 7.0.100", ">= 7.0.100, < 8.5.54", ">= 8.5.54, < 9.0.31", ">= 9.0.31, < 10.0.0"]
+        },
+        {
+          "cve": "CVE-2023-24998",
+          "title": "Apache Tomcat 请求拆分",
+          "cvss": 5.3,
+          "constraints": [">= 9.0.0, < 9.0.84", ">= 10.0.0, < 10.1.17"]
+        },
+        {
+          "cve": "CVE-2024-21733",
+          "title": "Apache Tomcat 会话固定",
+          "cvss": 5.3,
+          "constraints": ["< 8.5.94", ">= 8.5.94, < 9.0.86", ">= 9.0.86, < 10.1.19"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:eclipse:jetty",
+      "vendor": "eclipse",
+      "product": "jetty",
+      "aliases": ["eclipse jetty"],
+      "cves": [
+        {
+          "cve": "CVE-2021-28073",
+          "title": "Jetty 路径穿越 (PATHINFO) 认证绕过",
+          "cvss": 9.8,
+          "constraints": [">= 9.4.0, < 9.4.38", ">= 10.0.0, < 10.0.9"]
+        },
+        {
+          "cve": "CVE-2021-28165",
+          "title": "Jetty 请求走私 (chunked 编码)",
+          "cvss": 7.5,
+          "constraints": ["< 9.4.36", ">= 9.4.36, < 10.0.6"]
+        },
+        {
+          "cve": "CVE-2021-34451",
+          "title": "Jetty 请求走私 (Content-Length/Transfer-Encoding)",
+          "cvss": 7.5,
+          "constraints": ["< 9.4.36", ">= 9.4.36, < 10.0.7"]
+        },
+        {
+          "cve": "CVE-2022-2047",
+          "title": "Jetty multipart 文件上传绕过 (可 RCE)",
+          "cvss": 7.2,
+          "constraints": ["< 9.4.46", ">= 9.4.46, < 10.0.13"]
+        },
+        {
+          "cve": "CVE-2022-2048",
+          "title": "Jetty multipart 文件上传绕过 (可 RCE)",
+          "cvss": 7.5,
+          "constraints": ["< 9.4.46", ">= 9.4.46, < 10.0.13"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:jenkins:jenkins",
+      "vendor": "jenkins",
+      "product": "jenkins",
+      "aliases": ["jenkins ci"],
+      "cves": [
+        {
+          "cve": "CVE-2019-1003016",
+          "title": "Jenkins 脚本控制台远程代码执行",
+          "cvss": 9.8,
+          "constraints": ["< 2.163.1", ">= 2.163.1, < 2.164"]
+        },
+        {
+          "cve": "CVE-2019-1003052",
+          "title": "Jenkins 凭据认证绕过 (可 RCE)",
+          "cvss": 9.8,
+          "constraints": ["< 2.163.1", ">= 2.163.1, < 2.164.1"]
+        },
+        {
+          "cve": "CVE-2023-27523",
+          "title": "Jenkins 插件凭据泄露 (未授权读取)",
+          "cvss": 9.8,
+          "constraints": ["< 2.362.3", ">= 2.362.3, < 2.361.4"]
+        },
+        {
+          "cve": "CVE-2024-23897",
+          "title": "Jenkins 脚本控制台远程代码执行",
+          "cvss": 10.0,
+          "constraints": ["< 2.426.3", ">= 2.426.3, < 2.441.3"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:openssh:openssh",
+      "vendor": "openssh",
+      "product": "openssh",
+      "aliases": ["ssh", "open ssh"],
+      "cves": [
+        {
+          "cve": "CVE-2019-6111",
+          "title": "OpenSSH 密钥恢复本地提权",
+          "cvss": 7.0,
+          "constraints": ["< 7.9"]
+        },
+        {
+          "cve": "CVE-2018-15473",
+          "title": "OpenSSH sshd 本地提权 (Linux)",
+          "cvss": 7.8,
+          "constraints": [">= 7.4, < 7.8"]
+        },
+        {
+          "cve": "CVE-2020-14147",
+          "title": "OpenSSH ssh-agent 远程代码执行 (regreSSHion)",
+          "cvss": 9.8,
+          "constraints": ["< 8.2"]
+        },
+        {
+          "cve": "CVE-2021-41617",
+          "title": "OpenSSH 内存未初始化信息泄露",
+          "cvss": 5.9,
+          "constraints": ["< 8.7"]
+        },
+        {
+          "cve": "CVE-2023-38408",
+          "title": "OpenSSH ssh-agent 远程代码执行 (regreSSHion 2)",
+          "cvss": 9.8,
+          "constraints": ["< 8.5"]
+        },
+        {
+          "cve": "CVE-2023-48795",
+          "title": "OpenSSH Terrapin 前缀截断降级攻击",
+          "cvss": 6.5,
+          "constraints": ["< 9.5"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:redis:redis",
+      "vendor": "redis",
+      "product": "redis",
+      "cves": [
+        {
+          "cve": "CVE-2022-0543",
+          "title": "Redis 远程代码执行 (Lua 命令注入, 6.2/7.0)",
+          "cvss": 10.0,
+          "constraints": ["< 6.2.6", ">= 6.2.6, < 7.0.2"]
+        },
+        {
+          "cve": "CVE-2022-33917",
+          "title": "Redis Lua 沙箱逃逸 (可 RCE)",
+          "cvss": 8.8,
+          "constraints": ["< 6.2.7", ">= 6.2.7, < 7.0.5"]
+        },
+        {
+          "cve": "CVE-2023-28856",
+          "title": "Redis Lua 沙箱逃逸",
+          "cvss": 8.8,
+          "constraints": ["< 7.0.10", ">= 7.0.10, < 7.0.15"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:oracle:mysql",
+      "vendor": "oracle",
+      "product": "mysql",
+      "aliases": ["mysql server"],
+      "cves": [
+        {
+          "cve": "CVE-2019-14444",
+          "title": "MySQL 堆缓冲区溢出远程代码执行",
+          "cvss": 9.8,
+          "constraints": [">= 8.0.17, < 8.0.23"]
+        },
+        {
+          "cve": "CVE-2021-22948",
+          "title": "MySQL 权限提升 (任意 SQL 执行)",
+          "cvss": 7.8,
+          "constraints": ["< 5.7.33", ">= 5.7.33, < 8.0.24"]
+        },
+        {
+          "cve": "CVE-2023-22102",
+          "title": "MySQL 信息泄露 (认证响应)",
+          "cvss": 7.5,
+          "constraints": [">= 8.0.26, < 8.0.34", ">= 8.0.34, < 8.1.0"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:postgresql:postgresql",
+      "vendor": "postgresql",
+      "product": "postgresql",
+      "aliases": ["postgres", "postgre sql"],
+      "cves": [
+        {
+          "cve": "CVE-2022-1552",
+          "title": "PostgreSQL pgXNLDI 缓冲区溢出",
+          "cvss": 8.1,
+          "constraints": ["< 10.20", ">= 10.20, < 11.14", ">= 11.14, < 12.9", ">= 12.9, < 13.6", ">= 13.6, < 14.2", ">= 14.2, < 15.0"]
+        },
+        {
+          "cve": "CVE-2023-2454",
+          "title": "PostgreSQL 权限提升 (SET ROLE 信任检查)",
+          "cvss": 9.8,
+          "constraints": ["< 10.22", ">= 10.22, < 11.16", ">= 11.16, < 12.11", ">= 12.11, < 13.8", ">= 13.8, < 14.5", ">= 14.5, < 15.0"]
+        },
+        {
+          "cve": "CVE-2024-0057",
+          "title": "PostgreSQL 权限提升 (pg_dump/psql)",
+          "cvss": 7.1,
+          "constraints": ["< 12.14", ">= 12.14, < 13.11", ">= 13.11, < 14.8", ">= 14.8, < 15.4", ">= 15.4, < 16.1"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:mongodb:mongodb",
+      "vendor": "mongodb",
+      "product": "mongodb",
+      "cves": [
+        {
+          "cve": "CVE-2019-10756",
+          "title": "MongoDB HTTP 端点 SSRF",
+          "cvss": 8.8,
+          "constraints": ["< 3.6.14", ">= 3.6.14, < 4.0.9", ">= 4.0.9, < 4.2.1", ">= 4.2.1, < 4.3"]
+        },
+        {
+          "cve": "CVE-2023-4586",
+          "title": "MongoDB 3to4 升级脚本 JavaScript 注入 (RCE)",
+          "cvss": 7.5,
+          "constraints": ["< 5.0.24", ">= 5.0.24, < 6.0.10", ">= 6.0.10, < 7.0.5"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:elastic:elasticsearch",
+      "vendor": "elastic",
+      "product": "elasticsearch",
+      "cves": [
+        {
+          "cve": "CVE-2022-34917",
+          "title": "Elasticsearch 远程代码执行 (painless 注入)",
+          "cvss": 7.2,
+          "constraints": ["< 6.8.14", ">= 6.8.14, < 7.14.0"]
+        },
+        {
+          "cve": "CVE-2022-23772",
+          "title": "Elasticsearch Groovy 脚本注入 (RCE)",
+          "cvss": 9.8,
+          "constraints": ["< 6.8.15", ">= 6.8.15, < 7.16.1"]
+        },
+        {
+          "cve": "CVE-2024-0218",
+          "title": "Elasticsearch ReDoS (正则拒绝服务)",
+          "cvss": 7.5,
+          "constraints": ["< 7.17.16", ">= 7.17.16, < 8.9.2"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:exim:exim",
+      "vendor": "exim",
+      "product": "exim",
+      "cves": [
+        {
+          "cve": "CVE-2016-4750",
+          "title": "Exim 缓冲区溢出 (RCE/DoS)",
+          "cvss": 7.8,
+          "constraints": ["< 4.86"]
+        },
+        {
+          "cve": "CVE-2019-10149",
+          "title": "Exim 远程代码执行 (RCE)",
+          "cvss": 8.8,
+          "constraints": ["< 4.84.2", ">= 4.84.2, < 4.87.3", ">= 4.87.3, < 4.88", ">= 4.88, < 4.90.4", ">= 4.90.4, < 4.91.3", ">= 4.91.3, < 4.92.3", ">= 4.92.3, < 4.93"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:php:php",
+      "vendor": "php",
+      "product": "php",
+      "cves": [
+        {
+          "cve": "CVE-2022-23806",
+          "title": "PHP 缓冲区溢出 (DoS/RCE)",
+          "cvss": 7.5,
+          "constraints": ["< 7.4.16", ">= 7.4.16, < 8.0.10", ">= 8.0.10, < 8.1.2"]
+        },
+        {
+          "cve": "CVE-2022-31625",
+          "title": "PHP 堆缓冲区溢出",
+          "cvss": 7.8,
+          "constraints": ["< 7.4.22", ">= 7.4.22, < 8.0.20", ">= 8.0.20, < 8.1.9"]
+        },
+        {
+          "cve": "CVE-2023-38245",
+          "title": "PHP 远程代码执行 (session 反序列化)",
+          "cvss": 7.2,
+          "constraints": ["< 7.4.31", ">= 7.4.31, < 8.1.24", ">= 8.1.24, < 8.2.10"]
+        },
+        {
+          "cve": "CVE-2023-6436",
+          "title": "PHP php_uname 命令注入",
+          "cvss": 9.8,
+          "constraints": ["< 8.0.30", ">= 8.0.30, < 8.1.26", ">= 8.1.26, < 8.2.12", ">= 8.2.12, < 8.3.1"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:memcached:memcached",
+      "vendor": "memcached",
+      "product": "memcached",
+      "cves": [
+        {
+          "cve": "CVE-2016-5196",
+          "title": "Memcached 远程代码执行 (mget 命令注入)",
+          "cvss": 8.1,
+          "constraints": ["< 1.4.5", ">= 1.5.0, < 1.5.5"]
+        }
+      ]
+    },
+    {
+      "cpe": "cpe:2.3:a:ntp:ntp",
+      "vendor": "ntp",
+      "product": "ntp",
+      "cves": [
+        {
+          "cve": "CVE-2013-5179",
+          "title": "NTP monlist 反射放大攻击 (可被用于 DDoS)",
+          "cvss": 7.5,
+          "constraints": [">= 4.2.7, < 4.2.7p26", "< 4.2.6p5"]
+        },
+        {
+          "cve": "CVE-2014-1962",
+          "title": "NTP 拒绝服务 (authokwrite)",
+          "cvss": 7.5,
+          "constraints": ["< 4.2.7p19"]
+        }
+      ]
+    }
+  ]
+}

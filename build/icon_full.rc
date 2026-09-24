@@ -1,0 +1,27 @@
+﻿1 ICON "yugsight_icon_128px.ico"
+
+1 VERSIONINFO
+FILEVERSION __VERNUM__,0
+PRODUCTVERSION __VERNUM__,0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "080404b0"
+    BEGIN
+      VALUE "CompanyName", "Yugsight Project"
+      VALUE "FileDescription", "安全运维一体化平台"
+      VALUE "FileVersion", "__VER__"
+      VALUE "InternalName", "yugsight"
+      VALUE "LegalCopyright", "Copyright (C) 2026 yugo (MIT License)"
+      VALUE "OriginalFilename", "yugsight.exe"
+      VALUE "ProductVersion", "__VER__"
+      VALUE "ProductName", "Yugsight 御视"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x804, 0x4B0
+  END
+END

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yugsight - 安全扫描管理控制台</title>
+  <script>
+  // 版本错位自愈: 程序升级后, 升级前打开的旧标签页仍引用旧 hash 的 JS/CSS,
+  // 新服务没有这些文件, 脚本加载失败 → 整页黑屏(用户只会觉得"页面打不开")。
+  // 这里捕获 <script>/<link> 的资源加载错误, 自动刷新一次拉取新 index.html
+  // (带内容 hash 的 assets 是长缓存, 刷新后即命中新版), 用户无需手动强刷。
+  // sessionStorage 标记防死循环: 刷新后仍 404(真故障)则不再重复刷新, 交给控制台报错。
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK') && t.src && t.src.indexOf('/assets/') > -1) {
+      try {
+        if (sessionStorage.getItem('yugsight_heal')) return;
+        sessionStorage.setItem('yugsight_heal', '1');
+      } catch (err) { /* 隐私模式下 sessionStorage 不可写: 退化为不刷新, 不报错 */ }
+      location.reload();
+    }
+  }, true);
+  </script>
+  <script type="module" crossorigin src="/app/assets/index-CtcveFKl.js"></script>
+  <link rel="stylesheet" crossorigin href="/app/assets/index-CTPm7sgN.css">
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>

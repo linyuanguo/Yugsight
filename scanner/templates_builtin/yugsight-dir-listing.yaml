@@ -1,0 +1,18 @@
+id: yugsight-dir-listing
+info:
+  name: 目录列表功能开启
+  severity: medium
+  tags: misconfig, exposure
+  description: Web 服务开启了目录索引, 攻击者可枚举目录内容, 可能泄露敏感文件
+request:
+  method: GET
+  path:
+    - /
+    - /static/
+    - /assets/
+    - /uploads/
+matchers:
+  - type: word
+    part: body
+    words:
+      - "Index of /"

@@ -1,0 +1,81 @@
+# ===== 本仓库的内容边界 =====
+# 入库: 源码 + 构建输入资产(build/ 下的 geoip/ globe/ report_templates/) + 前端构建产物 frontend/dist/
+# 不入库: 一切可再生成的产物、运行期数据、下载来的第三方目录
+#
+# 【首次入库前必读: 两个容易踩的坑】
+#  1) frontend/dist/ 必须提交 —— 它是 go:embed 的嵌入源, 缺它 go build 直接失败
+#     (见 frontend/.gitignore 的说明)。因此下面所有运行期目录都带前导 "/" 锚定到
+#     仓库根: 不带斜杠的 "dist/" 会匹配任意层级的 dist 目录, 连 frontend/dist/ 一起
+#     忽略掉, 而 .gitignore 里的忽略优先于子目录里的 "不忽略" 说明, 症状是"编译报
+#     pattern all:frontend/dist: no matching files found"或页面 404。
+#  2) npcap-1.86.exe(仓库根) 是构建输入但不是源码: 它被 *.exe 忽略, 需要时自行下载
+#     放到仓库根, scripts/build.ps1 会把它拷进产物(抓包页"安装网络驱动"按钮依赖它)。
+
+# ===== 构建产物(不入库, 重新 go build 即可) =====
+*.exe
+*.log
+
+# ===== 运行期日志目录(logs/yugsight.log + logs/yugsight-N.log 归档) =====
+/logs/
+/yugsight
+/yugsight.exe
+/netscan.exe
+/yugsight_test.exe
+# 仓库根误产的 cmd/agent 构建产物(go build ./cmd/agent 时 -o 路径敲错落成根目录)
+/agent
+
+# ===== 运行时目录(生产部署目录, 见 scripts/build.ps1 -OutDir) =====
+# 源码仓库与运行时目录分离: dist/ 里放 exe + 运行期配置/数据(bin/ data/ 日志 ...),
+# 程序按"exe 同目录"找这些东西, 所以 exe 放哪运行期文件就在哪。
+# dist/ 整体不入库 —— 里面全是可再生成的构建产物与本机数据。
+/dist/
+/bin/
+
+# ===== 依赖目录(重新 npm install 即可) =====
+node_modules/
+tmp-verify/
+# 开发期临时验证脚本与下载缓存(解包 nmap/geoip 源数据, 约 180MB):
+# 已确认是跑测试留下的一次性脚本, 应清理掉; 规则保留, 防止以后重建又被提交。
+/tmp-e2e/
+# scripts/build.ps1 的构建临时目录(图标 syso/go 构建缓存/冒烟日志)
+/build_tmp/
+
+# ===== 第三方目录(自行获取, 不入库) =====
+# 官方 nuclei 模板仓库(约 1.4 万个 yaml): 供 scripts/nuclei2json.go 生成规则包用,
+# 按需 clone --depth 1 https://github.com/projectdiscovery/nuclei-templates.git 到仓库根
+/nuclei-templates/
+
+# ===== 运行期数据(程序自动生成, 不入库) =====
+/data/
+*.jsonl
+/whitelist.json
+/fps.jsonl
+/updater.json
+/engine.json
+/ai.json
+/config.json
+/settings.json
+/capture.json
+/templates/
+/vuln/
+/cpe/
+/intel/
+/rules/
+# 直连下载的断点缓存(几十 MB 的官方源码包 .part, 见 scanner/rule_direct.go)
+/cache/
+# 探针 agent 分发包目录(用户编译产出, 见 probe_agent_download.go; 中心端据此提供下载)
+/agents/
+
+# ===== 本地 AI 协作数据(不共享, 只存本机) =====
+.codebuddy/
+
+# ===== 编辑器/系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ===== 误操作产物 =====
+# 仓库根名为 "..." 的目录: 某次 `go build -o ...\yugsight.exe` 把占位符当路径敲出来的,
+# 里面是两份重复的构建产物(约 32MB)。不是源码, 不入库(该目录可手工删除)。
+...

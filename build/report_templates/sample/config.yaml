@@ -1,0 +1,25 @@
+# Yugsight 报告模板配置(示例)
+#
+# 把这个目录复制一份改名即为新模板: 改 logo / accent / footer / sections 即可,
+# 不需要动代码, 也不需要重新编译中心端。改完重启服务生效。
+#
+# 字段全部可选, 缺失一律回落到内置 default 模板(报告永远能生成)。
+
+name: 客户报告模板(示例)
+client: 某某科技有限公司
+# logo: 支持三种写法 —— 模板目录内的文件名 / data URI / http(s) 外链
+#       目录内文件名会在加载时被转成 data URI, 报告拷给别人也不会丢图
+# logo: logo.png
+# 主题色(标题竖线、数字卡、封面分隔线)
+accent: #0f766e
+# 页脚文案
+footer: 本报告由 Yugsight 生成, 仅限授权范围内使用, 请勿外传
+# 是否生成封面页
+cover: true
+
+# 章节顺序(可删减; 未知名称会被忽略)
+sections:
+  - summary
+  - vulns
+  - assets
+  - scans

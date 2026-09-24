@@ -1,0 +1,19 @@
+id: yugsight-spring-actuator
+info:
+  name: Spring Boot Actuator 端点暴露
+  severity: high
+  tags: springboot, exposure
+  description: Spring Boot Actuator 端点可访问, 可能泄露 env、heapdump 等敏感信息
+request:
+  method: GET
+  path: /actuator
+matchers:
+  - type: status
+    condition: and
+    status:
+      - 200
+  - type: regex
+    part: body
+    regex:
+      - '\{"_links"'
+      - 'actuator'

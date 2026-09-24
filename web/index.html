@@ -1,0 +1,2770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yugsight - 网络扫描探测工具</title>
+<style>
+  :root {
+    --bg: #070b14;
+    --panel: #101a2e;
+    --panel2: #0b1424;
+    --border: #1d2b47;
+    --border2: #2c4068;
+    --text: #e5edfb;
+    --muted: #8296bd;
+    --accent: #38bdf8;
+    --accent2: #6366f1;
+    --green: #34d399;
+    --red: #f87171;
+    --orange: #fb923c;
+    --yellow: #facc15;
+    --blue: #60a5fa;
+    --mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(1100px 480px at 85% -10%, rgba(99, 102, 241, .16), transparent 60%),
+      radial-gradient(900px 420px at 8% -10%, rgba(56, 189, 248, .12), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.65 "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+  }
+
+  /* ===== 登录界面 ===== */
+  .login-mask {
+    position: fixed; inset: 0; z-index: 100;
+    background:
+      radial-gradient(900px 500px at 70% -10%, rgba(99, 102, 241, .22), transparent 60%),
+      radial-gradient(800px 400px at 15% 110%, rgba(56, 189, 248, .16), transparent 60%),
+      var(--bg);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .login-box {
+    width: 420px; max-width: calc(100vw - 40px);
+    background: linear-gradient(180deg, rgba(22, 32, 56, .7), rgba(13, 20, 36, .7)), var(--panel);
+    border: 1px solid var(--border2); border-radius: 16px;
+    padding: 34px 34px 26px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .6);
+  }
+  .login-logo {
+    width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 12px;
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: #fff; font-size: 17px;
+    box-shadow: 0 6px 24px rgba(56, 189, 248, .4);
+  }
+  .login-title { text-align: center; font-size: 18px; font-weight: 700; }
+  .login-sub { text-align: center; color: var(--muted); font-size: 12.5px; margin: 4px 0 20px; }
+  .login-sub.warn { color: var(--red); }
+  .login-box label { margin-bottom: 6px; }
+  .login-box input { margin-bottom: 13px; }
+  .login-err { color: var(--red); font-size: 12.5px; min-height: 18px; margin-bottom: 8px; text-align: center; }
+  .login-hint { font-size: 11.5px; color: var(--muted); line-height: 1.7; background: var(--panel2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px; margin-bottom: 13px; }
+  .btn-key { width: 100%; margin-top: 10px; background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 7px; padding: 7px; cursor: pointer; font-size: 12px; }
+  .btn-key:hover { color: var(--accent); border-color: var(--accent); }
+  .setup-box {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 9px;
+    padding: 12px 14px; font-size: 12px; color: var(--muted); line-height: 1.8; margin-top: 14px;
+  }
+  .setup-box code {
+    display: block; font-family: var(--mono); font-size: 11.5px; color: var(--accent);
+    word-break: break-all; background: rgba(56, 189, 248, .07);
+    padding: 6px 8px; border-radius: 6px; margin: 4px 0;
+  }
+
+  /* ===== 顶栏 ===== */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 13px 28px;
+    background: rgba(11, 17, 30, .82);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 20;
+  }
+  .logo {
+    width: 40px; height: 40px; border-radius: 11px;
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: #fff; font-size: 13px; letter-spacing: .5px;
+    box-shadow: 0 4px 18px rgba(56, 189, 248, .35);
+  }
+  h1 { font-size: 17px; font-weight: 700; letter-spacing: .3px; }
+  .h-sub { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .ver {
+    display: inline-block; margin-left: 8px; padding: 1px 9px;
+    border: 1px solid var(--border2); border-radius: 999px;
+    font-size: 11px; color: var(--accent); vertical-align: 2px;
+  }
+  .h-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .chip {
+    font-size: 12px; color: var(--muted);
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--panel2); white-space: nowrap;
+  }
+  .tab.disabled { opacity: .45; pointer-events: none; }
+  .chip.on { color: var(--green); border-color: rgba(52, 211, 153, .45); background: rgba(52, 211, 153, .08); }
+  .chip.off { color: var(--red); border-color: rgba(248, 113, 113, .45); background: rgba(248, 113, 113, .08); }
+  .dot { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+  .dot i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+  .dot.running i { background: var(--yellow); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  .btn-report {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--border2);
+    transition: all .15s;
+  }
+  .btn-report:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 12px rgba(56, 189, 248, .18); }
+  .btn-report svg { width: 15px; height: 15px; }
+  .btn-ghost-sm {
+    padding: 5px 12px; border-radius: 7px; cursor: pointer;
+    font-size: 12px; color: var(--muted); background: transparent; border: 1px solid var(--border);
+  }
+  .btn-ghost-sm:hover { color: var(--red); border-color: var(--red); }
+  /* 退出程序: 醒目实心红底, 在一堆 ghost 小按钮里一眼可辨 */
+  .btn-danger {
+    padding: 6px 14px; border-radius: 7px; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; color: #fff;
+    background: #dc2626; border: 1px solid #dc2626;
+    transition: all .15s; white-space: nowrap;
+  }
+  .btn-danger:hover { background: #ef4444; border-color: #ef4444; box-shadow: 0 0 12px rgba(239, 68, 68, .45); }
+
+  /* ===== 主体 ===== */
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 22px 28px 56px; }
+  .svc-banner {
+    background: rgba(248, 113, 113, .12); border: 1px solid var(--red); color: var(--red);
+    padding: 10px 16px; border-radius: 9px; margin-bottom: 14px; font-size: 13px;
+  }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 18px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+    cursor: pointer; font-size: 13.5px; transition: all .15s;
+  }
+  .tab svg { width: 15px; height: 15px; }
+  .tab:hover { color: var(--text); border-color: var(--accent2); transform: translateY(-1px); }
+  .tab.active {
+    background: linear-gradient(135deg, rgba(14, 165, 233, .18), rgba(99, 102, 241, .18));
+    border-color: var(--accent2); color: #fff;
+    box-shadow: 0 0 14px rgba(99, 102, 241, .22);
+  }
+
+  .card {
+    background: linear-gradient(180deg, rgba(22, 32, 56, .55), rgba(13, 20, 36, .55)), var(--panel);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 16px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+  }
+  .card h2 {
+    font-size: 12px; color: var(--muted); margin-bottom: 12px;
+    font-weight: 700; letter-spacing: 2px;
+  }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 14px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  input, select {
+    width: 100%; padding: 9px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--panel2);
+    color: var(--text); font-family: var(--mono); font-size: 13px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  select { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56, 189, 248, .12); }
+  input::placeholder { color: #4d5f85; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; flex-wrap: wrap; }
+  button { border: none; cursor: pointer; font-size: 14px; font-weight: 600; }
+  .btn-run {
+    padding: 10px 26px; border-radius: 9px;
+    background: linear-gradient(135deg, #0ea5e9, #6366f1); color: #fff;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, .35);
+    transition: all .15s;
+  }
+  .btn-run:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99, 102, 241, .5); }
+  .btn-run:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-stop {
+    padding: 10px 20px; border-radius: 9px;
+    background: transparent; color: var(--red); border: 1px solid var(--border2);
+    transition: all .15s;
+  }
+  .btn-stop:hover { border-color: var(--red); background: rgba(248, 113, 113, .08); }
+  .btn-mini {
+    padding: 7px 16px; border-radius: 8px; font-size: 13px;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border2);
+  }
+  .btn-mini:hover { border-color: var(--accent); color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+  /* ===== 引擎下载进度条(经典页) =====
+     仅靠一行文字看不出"还剩多少/快不快", 大包(ZAP 273MB)下载时尤其明显。
+     这里补上双进度条 + 体积/速度/剩余时间, 与 Vue 页(/app/) 的展示口径保持一致。 */
+  .dl-bar-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .dl-bar-label { color: var(--muted); font-size: 12px; width: 48px; flex: none; }
+  .dl-bar-track {
+    flex: 1; height: 8px; border-radius: 5px; overflow: hidden;
+    background: var(--panel2); border: 1px solid var(--border2);
+  }
+  .dl-bar-fill {
+    height: 100%; width: 0%; border-radius: 5px;
+    background: var(--accent); transition: width .3s ease;
+  }
+  .dl-bar-fill.green { background: var(--green); }
+  .dl-bar-val { color: var(--text); font-size: 12px; width: 46px; flex: none; text-align: right; }
+  .dl-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .dl-meta .mono { color: var(--text); }
+
+  .status-bar {
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 12px; color: var(--muted); font-size: 13px; min-height: 24px;
+  }
+  .status-bar b { color: var(--text); font-weight: 600; }
+  .spinner {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 2px solid var(--border2); border-top-color: var(--accent);
+    animation: spin .8s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stat {
+    font-size: 12px; color: var(--muted); padding: 3px 12px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--panel2);
+  }
+  .stat b { color: var(--text); margin-right: 4px; }
+  .stat.s-green b { color: var(--green); }
+  .stat.s-red b { color: var(--red); }
+  .stat.s-orange b { color: var(--orange); }
+  .stat.s-yellow b { color: var(--yellow); }
+  .stat.s-blue b { color: var(--blue); }
+
+  .panel-box {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; font-family: var(--mono); font-size: 12.5px;
+    max-height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+    margin-bottom: 14px;
+  }
+  .panel-box.tall { max-height: 260px; }
+  .panel-box .t { color: #4d5f85; margin-right: 8px; }
+  .panel-box .ev-high { color: var(--red); }
+  .panel-box .ev-medium { color: var(--orange); }
+  .panel-box .ev-low { color: var(--yellow); }
+  .panel-box::-webkit-scrollbar, .table-box::-webkit-scrollbar { width: 8px; }
+  .panel-box::-webkit-scrollbar-thumb, .table-box::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+  .table-box {
+    max-height: 440px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 10px;
+    margin-bottom: 14px; background: var(--panel2);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+    padding: 9px 12px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--panel); z-index: 1;
+  }
+  td {
+    padding: 8px 12px; border-bottom: 1px solid rgba(29, 43, 71, .5);
+    font-family: var(--mono); font-size: 12.5px; word-break: break-all;
+  }
+  /* 修复建议: 内容较长, 用非等宽小字多行展示, 限制宽度保证"详情"列仍可读 */
+  .fix { max-width: 460px; white-space: normal; line-height: 1.65; font-size: 12px; color: #c7d3e3; }
+  .muted { color: var(--muted); }
+  tbody tr { transition: background .1s; }
+  tbody tr:hover { background: rgba(56, 189, 248, .05); }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .sev-high, .b-high { background: rgba(248, 113, 113, .14); color: var(--red); }
+  .sev-med, .b-medium { background: rgba(251, 146, 60, .14); color: var(--orange); }
+  .sev-low, .b-low { background: rgba(250, 204, 21, .12); color: var(--yellow); }
+  .sev-info, .b-info { background: rgba(96, 165, 250, .14); color: var(--blue); }
+  .b-open { background: rgba(52, 211, 153, .14); color: var(--green); }
+  .b-closed { background: rgba(125, 141, 176, .12); color: var(--muted); }
+  /* 端口推断: 有发现但证据弱于 ICMP/ARP, 用黄色与"存活"的绿色区分 */
+  .b-warn { background: rgba(250, 204, 21, .14); color: var(--yellow); }
+  .b-flap { background: rgba(248, 113, 113, .14); color: var(--red); }
+  .b-nuclei { background: rgba(167, 139, 250, .16); color: #a78bfa; }
+  .b-fp { background: rgba(125, 141, 176, .22); color: #94a3b8; text-decoration: line-through; }
+  .empty { color: var(--muted); text-align: center; padding: 26px; }
+  .kv td:first-child { width: 210px; color: var(--muted); }
+
+  .footer { text-align: center; color: #4d5f85; font-size: 12px; padding: 20px 0 6px; }
+  .footer b { color: var(--muted); }
+
+  /* ===== 报告弹窗 ===== */
+  .modal-mask {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(4, 8, 16, .66); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal {
+    width: 460px; max-width: calc(100vw - 40px);
+    background: var(--panel); border: 1px solid var(--border2); border-radius: 14px;
+    padding: 24px 26px; box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  }
+  .modal h3 { font-size: 16px; margin-bottom: 16px; }
+  .modal label { margin-bottom: 6px; }
+  .modal input { margin-bottom: 14px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+  .modal-tip { color: var(--muted); font-size: 12px; margin-top: 12px; line-height: 1.7; }
+  .modal-hint { color: var(--muted); font-size: 11.5px; line-height: 1.75; margin-bottom: 12px; }
+  .modal-hint code { font-family: var(--mono); color: var(--accent); }
+
+  /* ===== BPF 过滤器示例 ===== */
+  .bpf-examples { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+  .bpf-chip {
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--panel2); cursor: pointer; transition: all .12s;
+  }
+  .bpf-chip:hover { color: var(--accent); border-color: var(--accent); }
+  .bpf-chip.on { color: var(--accent); border-color: var(--accent); background: rgba(56, 189, 248, .08); }
+  .bpf-tip { font-size: 11.5px; color: var(--muted); margin-top: 7px; line-height: 1.6; }
+  .bpf-tip code { font-family: var(--mono); color: var(--accent); }
+
+  /* ===== 报文列表(抓包核心视图) ===== */
+  .cap-list-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; flex-wrap: wrap; }
+  .cap-list-head h3 { font-size: 14px; font-weight: 600; margin: 0; }
+  .cap-list-head .spacer { flex: 1; }
+  .cap-auto { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .cap-auto input { margin: 0; }
+  .cap-list-head select {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 9px; font-size: 12px;
+  }
+  /* 报文表格: 等宽字体便于对齐 IP/端口, 高度固定避免长列表把页面撑长 */
+  .cap-pkts { max-height: 380px; }
+  .cap-pkts table { font-size: 12.5px; }
+  .cap-pkts td { font-family: var(--mono); padding: 4px 10px; }
+  .cap-pkts tbody tr { cursor: pointer; }
+  /* 广播帧标一下: 环路/风暴排查时一眼能看出哪些是广播 */
+  .cap-pkts tr.pkt-bcast td:nth-child(3) { color: var(--orange); }
+  .proto-tag {
+    display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600;
+    background: rgba(96, 165, 250, .14); color: var(--blue); font-family: var(--mono);
+  }
+  .cap-info { font-family: var(--text-font, inherit); color: #c7d3e3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+
+  /* 报文详情: 字段表 + 十六进制 */
+  .pkt-detail-head { font-size: 13px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; }
+  .pkt-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; margin-bottom: 10px; }
+  .pkt-fields > div { display: flex; gap: 8px; font-size: 12px; }
+  .pkt-fields > div > span:first-child { color: var(--muted); min-width: 58px; }
+  .pkt-detail-note { font-size: 11.5px; color: var(--muted); margin-bottom: 5px; }
+  .pkt-hex {
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: #c7d3e3;
+    white-space: pre; overflow-x: auto; margin: 0;
+  }
+
+  /* ===== 漏洞规则库 ===== */
+  .vuln-actions { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .vuln-search { max-width: 280px; }
+  .vuln-json { max-height: 440px; margin-bottom: 14px; }
+  .vuln-json pre { font-family: var(--mono); font-size: 12px; white-space: pre; overflow: auto; padding: 12px; }
+  textarea.import-box {
+    width: 100%; min-height: 220px; font-family: var(--mono); font-size: 12.5px;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; outline: none; resize: vertical;
+  }
+  textarea.import-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56, 189, 248, .12); }
+
+  /* ===== 报告导出模块多选 ===== */
+  .rep-scan-item { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 12.5px; font-family: var(--mono); }
+  .rep-scan-item input { width: auto; accent-color: var(--accent); flex: none; }
+  /* 经典界面下线提示条(过渡期保留 /classic 入口, 新界面在 /app/) */
+  #classicBanner { display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+    background: #3b2f16; border-bottom: 1px solid #5a471f; color: #f5d68a; font-size: 13px; }
+  #classicBanner a { color: #7dd3fc; text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<!-- ===== 登录/注册界面 ===== -->
+<div class="login-mask" id="loginMask" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">YG</div>
+    <div class="login-title">Yugsight 网络扫描探测工具</div>
+
+    <!-- 注册(首次) -->
+    <div id="regForm">
+      <div class="login-sub">首次使用, 请创建账户</div>
+      <div class="login-hint">账号保存在本机, 换机后在新机器上重新注册即可。</div>
+      <label>用户名</label>
+      <input id="regUser" placeholder="2-20 位 字母/数字/_/-" autocomplete="username">
+      <label>密码</label>
+      <input id="regPass" type="password" placeholder="至少 6 位" autocomplete="new-password">
+      <label>确认密码</label>
+      <input id="regPass2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+      <div class="login-err" id="regErr"></div>
+      <button class="btn-run" id="btnReg" style="width:100%">注册并登录</button>
+    </div>
+
+    <!-- 登录 -->
+    <div id="loginForm" style="display:none">
+      <div class="login-sub">请使用账户登录</div>
+      <label>用户名</label>
+      <input id="loginUser" autocomplete="username">
+      <label>密码</label>
+      <input id="loginPass" type="password" placeholder="请输入密码" autocomplete="current-password">
+      <div class="login-err" id="loginErr"></div>
+      <button class="btn-run" id="btnLogin" style="width:100%">登 录</button>
+    </div>
+
+    <div style="margin-top:20px;text-align:center">
+      <a id="btnQuitLogin" href="javascript:void(0)" style="color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline">退出程序(关闭 Yugsight)</a>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 主应用 ===== -->
+<div id="classicBanner" style="display:none">
+  <span>经典界面已进入维护期, 不再新增功能。</span>
+  <a href="/app/">切换到新界面</a>
+</div>
+<header id="appHeader" style="display:none">
+  <div class="logo">YG</div>
+  <div>
+    <h1>Yugsight <span class="ver" id="verBadge">v1.0.0</span></h1>
+    <div class="h-sub">网络扫描探测 · IP 存活 / 端口 / Web 漏洞 / 主机侦察 / 抓包分析</div>
+  </div>
+  <div class="h-right">
+    <button class="btn-report" id="btnReport" title="导出专业漏扫报告(HTML)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M9 13h6M9 17h6"/></svg>
+      生成报告
+    </button>
+    <button class="btn-ghost-sm" id="btnLogout">退出登录</button>
+    <button class="btn-ghost-sm" id="btnQuit" style="color:var(--red)">退出程序</button>
+    <span class="chip" id="svcStatus">服务: 检测中...</span>
+    <span class="chip" id="localInfo">本机地址检测中...</span>
+    <span class="chip" id="envChip" style="display:none" title="本地引擎缺失, 已自动降级为内置引擎"></span>
+    <div class="dot" id="dot"><i></i><span id="dotText">就绪</span></div>
+  </div>
+</header>
+
+<div class="wrap" id="appWrap" style="display:none">
+  <div class="svc-banner" id="svcBanner" style="display:none"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-type="ip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+      IP 存活扫描
+    </button>
+    <button class="tab" data-type="port">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      端口扫描
+    </button>
+    <button class="tab" data-type="web">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg>
+      Web 漏洞扫描
+    </button>
+    <button class="tab" data-type="host">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>
+      主机扫描
+    </button>
+    <button class="tab" data-type="cap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12h4l3-8 4 16 3-8h6"/></svg>
+      抓包分析
+    </button>
+    <button class="tab" data-type="vuln">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+      漏洞规则库
+    </button>
+    <button class="tab" data-type="ctl">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4.5"/></svg>
+      白名单 / 误报
+    </button>
+    <button class="tab" data-type="evt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M8 18a4 4 0 0 1 8 0"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>
+      实时事件
+    </button>
+    <button class="tab" data-type="env">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+      引擎状态
+    </button>
+  </div>
+
+  <div class="card" id="scanCard">
+    <h2>扫描参数</h2>
+    <div class="form-grid" id="form-ip">
+      <div><label>目标网段 (CIDR / 范围 / 单 IP)</label><input id="ip-cidr" placeholder="192.168.1.0/24 或 192.168.1.10-30"></div>
+      <div>
+        <label>探测端口 (留空用默认集)</label>
+        <input id="ip-ports" placeholder="留空: 网段用 9 个常用端口 / 单机用主机默认集">
+        <div class="hint">端口用于判定存活, 开放端口随结果一并回传</div>
+      </div>
+      <div>
+        <label>存活判定</label>
+        <select id="ip-mode">
+          <option value="loose">宽松: ICMP/ARP 应答或端口开放 (推荐)</option>
+          <option value="strict">严格: 仅 ICMP/ARP 应答</option>
+        </select>
+        <div class="hint">严格模式排除仅端口开放的主机</div>
+      </div>
+      <div><label>并发数</label><input id="ip-conc" type="number" value="200"></div>
+      <div><label>超时 (ms)</label><input id="ip-timeout" type="number" value="1500"></div>
+    </div>
+    <div class="form-grid" id="form-port" style="display:none">
+      <div><label>目标 IP</label><input id="port-ip" placeholder="192.168.1.143"></div>
+      <div><label>端口 (80,443,500-600)</label><input id="port-ports" placeholder="80,443,500-600" value="80,443,500-600"></div>
+      <div><label>并发数</label><input id="port-conc" type="number" value="500"></div>
+      <div><label>超时 (ms)</label><input id="port-timeout" type="number" value="1500"></div>
+    </div>
+    <div class="form-grid" id="form-web" style="display:none">
+      <div>
+        <label>目标 URL</label>
+        <input id="web-url" placeholder="http://192.168.1.143:8080 或 https://example.com">
+        <div class="hint" id="vulnHint"></div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px">
+          <input type="checkbox" id="web-deep" style="width:auto;accent-color:var(--accent)">
+          深度爬取 (递归扫描子路径, 耗时更长)
+        </label>
+      </div>
+    </div>
+    <div class="form-grid" id="form-host" style="display:none">
+      <div><label>目标 IP</label><input id="host-ip" placeholder="192.168.1.143"></div>
+      <div><label>端口 (留空使用默认 27 个常用端口)</label><input id="host-ports" placeholder="80,443,3389"></div>
+      <div><label>并发数</label><input id="host-conc" type="number" value="100"></div>
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="host-nuclei" style="width:auto;accent-color:var(--accent)" checked>
+          启用 Nuclei 模板扫描 (默认启用)
+        </label>
+        <div class="hint" id="nucleiHint">与内置规则独立, 命中实时推入本表</div>
+        <div id="nucleiParams">
+          <label style="margin-top:10px">标签白名单 (逗号分隔, 留空 = 不限制)</label>
+          <input id="nuclei-tags" placeholder="cisa-kev,critical,high" value="cisa-kev,critical,high">
+          <div class="hint">默认只跑 KEV + 高/严重级模板</div>
+          <label style="margin-top:8px">标签黑名单 (逗号分隔, 留空 = 不限制)</label>
+          <input id="nuclei-tags-ex" placeholder="tech,exposure">
+          <div class="hint">命中任一标签的模板将被剔除</div>
+          <button id="btnNucleiReload" style="display:none;margin-top:8px;padding:3px 12px;font-size:12px;color:var(--accent);background:transparent;border:1px solid var(--accent);border-radius:6px;cursor:pointer">重载外部模板 (热更新)</button>
+          <div id="ruleUpdBox" style="margin-top:10px;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:8px">
+            <div class="hint" id="ruleUpdVer">规则版本: 加载中...</div>
+            <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn-mini" id="btnRuleUpdCheck">检查更新</button>
+              <button class="btn-mini" id="btnRuleUpdGo">一键更新</button>
+              <button class="btn-mini" id="btnRuleDirectGo">官方源直连更新</button>
+              <button class="btn-mini" id="btnRuleUpdLog">更新日志</button>
+            </div>
+            <div class="hint" id="ruleUpdProg" style="margin-top:4px">在线更新: 拉取远端 Nuclei 模板 (校验/增量/失败回滚)</div>
+            <div class="hint" id="ruleDirectHint" style="margin-top:4px"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    <!-- 任务 6.3: 执行位置 —— 本地中心端 / 指定探针节点 -->
+    <div class="form-grid" id="execGrid">
+      <div>
+        <label>执行位置</label>
+        <select id="execAt">
+          <option value="local">本地中心端执行 (默认)</option>
+          <option value="probe">下发到探针节点执行</option>
+        </select>
+      </div>
+      <div id="probePickWrap" style="display:none">
+        <label>目标探针</label>
+        <select id="probePick"><option value="">(未启用中心端或无在线探针)</option></select>
+        <div class="hint" id="probePickHint">探针节点需在 引擎状态页 确认在线</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-run" id="btnRun">开始扫描</button>
+      <button class="btn-stop" id="btnStop">停止</button>
+      <span class="hint" id="formHint"></span>
+    </div>
+  </div>
+
+  <!-- ===== 抓包分析卡片 ===== -->
+  <div class="card" id="capCard" style="display:none">
+    <h2>抓包参数</h2>
+    <div class="form-grid">
+      <div><label>捕获适配器 (需已安装 Npcap, 伪适配器已排在最后)</label><select id="capDev"><option value="">加载中...</option></select></div>
+      <div>
+        <label>过滤/搜索 (抓包中也可随时改, 即时生效)</label><input id="capFilter" placeholder="如: 192.168.1.1  tcp 443  arp">
+        <div class="bpf-examples" id="bpfEx"></div>
+        <!-- 本机 IP 提示: 用户 ping 的目标若是本机自己的 IP, 流量只走回环适配器 ——
+             "ping 自己抓不到包"的最常见根因, 把具体 IP 摆出来比抽象提示有用 -->
+        <div class="bpf-tip" id="capLocalTip" style="display:none;border-left:3px solid var(--orange,#f59e0b)"></div>
+        <div class="bpf-tip">
+          全量采集, 过滤在页面做(随时可改)。支持多关键字与 <code>ip:</code> <code>port:</code> <code>proto:</code> <code>mac:</code> 前缀。<br>
+          抓不到 ping? ping <b>本机自己</b>(含本机 IP)只走回环适配器(需选它); ping 其它主机请选实际出口网卡;
+          交换网络里抓不到<b>另外两台机器之间</b>的单播流量(只能看到广播/组播与本机流量)。
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-run" id="capStart">开始抓包</button>
+      <button class="btn-stop" id="capStop" disabled>停止</button>
+      <button class="btn-mini" id="capRefresh">刷新适配器</button>
+      <button class="btn-mini" id="capAnalysis">智能分析 (内置引擎)</button>
+      <button class="btn-mini" id="capAI">AI 深度分析</button>
+      <button class="btn-mini" id="capInstall" style="display:none">一键安装 Npcap</button>
+      <span class="hint" id="capHint"></span>
+    </div>
+    <div class="stats" id="capStats"></div>
+    <div class="panel-box" id="capEvents" style="display:none"></div>
+
+    <!-- 报文列表: 抓包工具的核心视图(谁在跟谁通信、发了什么) -->
+    <div class="cap-list-head">
+      <h3>报文列表</h3>
+      <span class="hint" id="capListHint">开始抓包后显示</span>
+      <span class="spacer"></span>
+      <label class="cap-auto"><input type="checkbox" id="capAutoScroll" checked> 自动滚动</label>
+      <button class="btn-mini" id="capClear">清空列表</button>
+    </div>
+    <div class="table-box cap-pkts">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:96px">时间</th>
+            <th style="width:66px">协议</th>
+            <th>源</th>
+            <th>目的</th>
+            <th style="width:56px">长度</th>
+            <th>摘要</th>
+          </tr>
+        </thead>
+        <tbody id="capPktBody"></tbody>
+      </table>
+      <div class="empty" id="capPktEmpty">开始抓包后, 这里会列出每个报文的源/目的/协议与摘要</div>
+    </div>
+    <div class="panel-box tall" id="capPktDetail" style="display:none"></div>
+
+    <div class="table-box">
+      <table>
+        <thead><tr><th>IP</th><th>MAC</th><th>次数</th><th>最近操作</th><th>首次发现</th><th>最近发现</th><th>状态</th></tr></thead>
+        <tbody id="capBindBody"></tbody>
+      </table>
+      <div class="empty" id="capBindEmpty">开始抓包后显示 ARP 绑定表</div>
+    </div>
+    <div class="panel-box tall" id="capReport" style="display:none"></div>
+    <div class="form-grid" id="aiCfgGrid">
+      <div><label>AI API Base (OpenAI 兼容)</label><input id="aiBase" placeholder="https://api.openai.com/v1"></div>
+      <div><label>API Key</label><input id="aiKey" type="password" placeholder="sk-..."></div>
+      <div><label>模型</label><input id="aiModel" placeholder="gpt-4o-mini"></div>
+    </div>
+    <div class="panel-box tall" id="capAIBox" style="display:none"></div>
+  </div>
+
+  <!-- ===== 漏洞规则库卡片 ===== -->
+  <div class="card" id="vulnCard" style="display:none">
+    <h2>漏洞规则库 (内置 + 自定义导入)</h2>
+    <div class="stats" id="vulnStats"></div>
+    <div class="vuln-actions">
+      <input class="vuln-search" id="vulnSearch" placeholder="过滤: ID / 名称 / 模式 / 详情">
+      <button class="btn-mini" id="btnVulnView">查看内置规则 (JSON)</button>
+      <button class="btn-mini" id="btnVulnImport">导入自定义规则</button>
+      <span class="hint" id="vulnDirHint"></span>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>ID</th><th>名称</th><th>级别</th><th>类型</th><th>来源</th><th>模式 (Pattern)</th><th>详情</th></tr></thead>
+        <tbody id="vulnBody"></tbody>
+      </table>
+      <div class="empty" id="vulnEmpty">加载中...</div>
+    </div>
+  </div>
+
+  <!-- ===== 白名单 / 误报管控卡片 ===== -->
+  <div class="card" id="ctlCard" style="display:none">
+    <h2>白名单 / 误报管控</h2>
+    <div class="hint" id="ctlStatus" style="margin-bottom:10px">状态: 加载中...</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <h3 style="margin:4px 0 8px">白名单 (命中自动过滤, 不进报告与统计)</h3>
+        <div class="form-grid" style="gap:8px">
+          <div>
+            <label>类型</label>
+            <select id="wlType" style="width:100%;padding:6px 8px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+              <option value="ip">IP (精确)</option>
+              <option value="cidr">IP 段 (CIDR)</option>
+              <option value="port">端口</option>
+              <option value="cve">CVE 编号</option>
+              <option value="tag">资产标签</option>
+            </select>
+          </div>
+          <div>
+            <label>匹配值</label>
+            <input id="wlMatch" placeholder="如 192.168.1.0/24 / 6379 / CVE-2021-44228 / prod">
+          </div>
+          <div>
+            <label>原因 (可选)</label>
+            <input id="wlReason" placeholder="如: 测试环境">
+          </div>
+          <div>
+            <label>有效期 (可选, RFC3339)</label>
+            <input id="wlExpires" placeholder="如 2027-01-01T00:00:00Z, 留空=永久">
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <button class="btn-mini" id="btnWlAdd">添加白名单</button>
+            <span class="hint" id="wlHint" style="margin-left:8px"></span>
+          </div>
+        </div>
+        <div class="table-box" style="margin-top:10px">
+          <table>
+            <thead><tr><th>类型</th><th>匹配值</th><th>原因</th><th>有效期</th><th>操作</th></tr></thead>
+            <tbody id="wlBody"></tbody>
+          </table>
+          <div class="empty" id="wlEmpty">暂无白名单条目</div>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="margin:4px 0 8px">人工误报 (后续扫描同资产+同CVE自动标记)</h3>
+        <div class="form-grid" style="gap:8px">
+          <div>
+            <label>资产 IP</label>
+            <input id="fpIp" placeholder="如 192.168.1.143">
+          </div>
+          <div>
+            <label>CVE 编号 (可选)</label>
+            <input id="fpCve" placeholder="如 CVE-2021-44228">
+          </div>
+          <div>
+            <label>漏洞标题 (CVE 留空时必填)</label>
+            <input id="fpTitle" placeholder="如: Server 版本泄露">
+          </div>
+          <div>
+            <label>误报备注 (可选)</label>
+            <input id="fpNote" placeholder="如: WAF 拦截导致的误判">
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <button class="btn-mini" id="btnFpAdd">添加误报标记</button>
+            <span class="hint" id="fpHint" style="margin-left:8px"></span>
+          </div>
+        </div>
+        <div class="table-box" style="margin-top:10px">
+          <table>
+            <thead><tr><th>资产 IP</th><th>CVE</th><th>标题</th><th>备注</th><th>标记人</th><th>时间</th><th>操作</th></tr></thead>
+            <tbody id="fpBody"></tbody>
+          </table>
+          <div class="empty" id="fpEmpty">暂无误报规则</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 实时事件流卡片 (SSE 多客户端广播, 任务 4.2) ===== -->
+  <div class="card" id="evtCard" style="display:none">
+    <h2>实时事件流 (SSE 广播)</h2>
+    <div class="stats">
+      <span class="stat"><b id="evtState">未连接</b>连接状态</span>
+      <span class="stat"><b id="evtCount">0</b>已收事件</span>
+    </div>
+    <div class="hint" style="margin:8px 0">所有窗口同步接收事件流, 断线自动重连并补发。</div>
+    <div class="panel-box tall" id="evtLog"></div>
+    <div class="actions">
+      <button class="btn-mini" id="evtClear">清空</button>
+    </div>
+  </div>
+
+  <!-- ===== 引擎状态卡片 (./bin/ 本地引擎 + Npcap 驱动, 任务 4.2) ===== -->
+  <div class="card" id="envCard" style="display:none">
+    <h2>引擎状态 (本地引擎 + 抓包驱动)</h2>
+    <div class="actions" style="margin-bottom:10px">
+      <button class="btn-mini" id="btnEnvRefresh">重新检测</button>
+      <span class="hint" id="envHint">检测中...</span>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>组件</th><th>状态</th><th>版本</th><th>路径 / 来源</th><th>说明</th></tr></thead>
+        <tbody id="envBody"></tbody>
+      </table>
+    </div>
+    <div class="stats" id="envStats"></div>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn-run" id="btnNpcapInstall" style="display:none">安装网络驱动 (Npcap)</button>
+      <span class="hint" id="npcapHint"></span>
+    </div>
+
+    <!-- ===== 外部引擎一键下载/安装 (官方发行包自动获取) ===== -->
+    <h2 style="margin-top:18px">外部引擎一键安装</h2>
+    <div class="actions" style="margin-bottom:10px">
+      <button class="btn-mini" id="btnEngDlAll">一键安装默认引擎</button>
+      <button class="btn-mini" id="btnEngDlRefresh">刷新可下载列表</button>
+      <span class="hint" id="engDlHint">加载中...</span>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>引擎</th><th>安装状态</th><th>版本</th><th>来源</th><th>操作</th><th>说明</th></tr></thead>
+        <tbody id="engDlBody"></tbody>
+      </table>
+    </div>
+    <!-- 下载进度: 运行中显示双进度条(总进度 + 当前包), 空闲时显示上一轮逐项结果。
+         用结构化 DOM 而不是单行 textContent —— 后者每次轮询整体覆盖, 观感是"闪一下"，
+         且塞不下 已下载/总量、速度、剩余时间 这些真正有用的信息。 -->
+    <div class="hint" id="engDlProg" style="margin-top:8px"></div>
+    <div id="engDlBars" style="display:none; margin-top:8px">
+      <div class="dl-bar-row">
+        <span class="dl-bar-label">总进度</span>
+        <div class="dl-bar-track"><div class="dl-bar-fill" id="engDlBarTotal"></div></div>
+        <span class="dl-bar-val" id="engDlPctTotal">0%</span>
+      </div>
+      <div class="dl-bar-row" id="engDlRowCur" style="display:none">
+        <span class="dl-bar-label">当前包</span>
+        <div class="dl-bar-track"><div class="dl-bar-fill green" id="engDlBarCur"></div></div>
+        <span class="dl-bar-val" id="engDlPctCur">0%</span>
+      </div>
+      <div class="dl-meta" id="engDlMeta"></div>
+    </div>
+    <div class="hint" id="engDlNote" style="margin-top:6px"></div>
+
+    <!-- ===== 任务 6.2: 引擎输出解析编排 + 自动降级状态 ===== -->
+    <h2 style="margin-top:18px">解析编排 / 自动降级</h2>
+    <div class="actions" style="margin-bottom:10px">
+      <button class="btn-mini" id="btnEngRefresh">重载引擎配置</button>
+      <span class="hint" id="engHint">加载中...</span>
+    </div>
+    <div class="stats" id="engStats"></div>
+    <div class="panel-box" id="engLog" style="max-height:180px;overflow:auto;margin-top:10px"></div>
+    <div class="hint" style="margin-top:8px">
+      引擎异常时自动降级为内置引擎, 不中断任务。总开关: engine.json (默认关闭)。
+    </div>
+
+    <!-- ===== 任务 6.3: 分布式探针框架状态面板 ===== -->
+    <h2 style="margin-top:18px">分布式探针</h2>
+    <div class="actions" style="margin-bottom:10px">
+      <button class="btn-mini" id="btnProbeRefresh">刷新探针</button>
+      <span class="hint" id="probeHint">加载中...</span>
+    </div>
+    <div class="stats" id="probeStats"></div>
+    <div class="table-box" id="probeBox" style="display:none">
+      <table>
+        <thead><tr><th>状态</th><th>探针 ID</th><th>名称</th><th>系统</th><th>地址</th><th>能力</th><th>负载</th><th>最近心跳</th></tr></thead>
+        <tbody id="probeBody"></tbody>
+      </table>
+    </div>
+    <div class="panel-box" id="probeLog" style="max-height:140px;overflow:auto;margin-top:10px"></div>
+    <div class="hint" style="margin-top:8px">
+      默认全关(不影响单机); 探针自动注册/心跳/断线重连。配置: probe.json 或 <code>-probe=center</code>。
+    </div>
+  </div>
+
+  <div id="resultArea">
+    <div class="status-bar" id="statusBar"><span>尚未开始扫描</span></div>
+    <div class="stats" id="statsBar"></div>
+
+    <div class="card" style="padding:14px 16px">
+      <div class="panel-box" id="log" style="margin-bottom:0"></div>
+    </div>
+
+    <div class="table-box" id="tableBox">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty">暂无结果</div>
+    </div>
+    <div class="table-box" id="infoBox" style="display:none">
+      <table class="kv">
+        <tbody id="infoBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer" id="verInfo">Yugsight · 开源协议 MIT</div>
+</div>
+
+<!-- 报告弹窗 -->
+<div class="modal-mask" id="reportMask" style="display:none">
+  <div class="modal">
+    <h3>生成漏扫报告</h3>
+    <label>报告标题</label>
+    <input id="repTitle" value="Yugsight 漏洞扫描报告">
+    <label>操作者 / 单位 (可选)</label>
+    <input id="repOperator" placeholder="如: 安全部 / 张三">
+    <label>选择要导出的扫描模块 (可多选)</label>
+    <div id="repScans" style="max-height:170px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:14px;background:var(--panel2)"></div>
+    <div class="modal-actions">
+      <button class="btn-stop" id="repCancel">取消</button>
+      <button class="btn-run" id="repGo">生成并下载</button>
+    </div>
+    <div class="modal-tip" id="repTip"></div>
+  </div>
+</div>
+
+<!-- 查看内置规则 JSON 弹窗 -->
+<div class="modal-mask" id="vulnJsonMask" style="display:none">
+  <div class="modal" style="width:780px">
+    <h3>内置漏洞规则 (vuln_builtin.json, 打包进 exe)</h3>
+    <div class="vuln-json panel-box"><pre id="vulnJsonPre"></pre></div>
+    <div class="modal-actions">
+      <button class="btn-run" id="vulnJsonClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 导入自定义规则弹窗 -->
+<div class="modal-mask" id="vulnImportMask" style="display:none">
+  <div class="modal" style="width:740px">
+    <h3>导入自定义漏洞规则</h3>
+    <div class="modal-hint">格式必须为 <code>{"rules":[...]}</code>: 每条规则必填 <code>id / name / pattern / type</code>,
+      type 取 <code>body</code>(正则匹配响应体) / <code>header</code>(正则匹配响应头) / <code>path</code>(敏感路径探测);
+      <code>severity</code> 可填 high / medium / low / info(缺省 info)。
+      导入即生效(无需重启); 同 ID 时内置优先。</div>
+    <label>规则 JSON</label>
+    <textarea class="import-box" id="vulnImportBox" placeholder='{"rules":[{"id":"my-rule-1","name":"示例规则","severity":"medium","type":"body","pattern":"example-leak","detail":"响应体中发现 example-leak"}]}'></textarea>
+    <label style="margin-top:10px">文件名 (可选, 留空自动加时间戳; 同名文件将被覆盖)</label>
+    <input id="vulnImportName" placeholder="my_rules">
+    <div class="modal-tip" id="vulnImportWarn"></div>
+    <div class="modal-actions">
+      <button class="btn-stop" id="vulnImportCancel">取消</button>
+      <button class="btn-run" id="vulnImportGo">校验并导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 规则库更新日志弹窗 -->
+<div class="modal-mask" id="ruleUpdLogMask" style="display:none">
+  <div class="modal" style="width:820px">
+    <h3>规则库更新日志 (新 → 旧)</h3>
+    <div class="panel-box" id="ruleUpdLogBox" style="max-height:420px;overflow:auto"></div>
+    <div class="modal-actions">
+      <button class="btn-run" id="ruleUpdLogClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let controller = null;
+let curType = 'ip';
+let authed = false;
+let reportScans = [];
+let curScan = null;
+
+const HINTS = {
+  ip: '探测整段网段哪些主机在线 (ICMP/ARP/端口三路证据)',
+  port: '端口连通性探测, 结果 = 开放端口清单',
+  web: '安全头 / 敏感路径 / TLS / 注入 + 漏洞库规则',
+  host: '系统类型 / 服务版本 / 配置风险 / 已知漏洞 (比端口扫描更深)',
+  cap: '实时抓包 + 环路/风暴/漂移检测 (需 Npcap)',
+};
+const HEADERS = {
+  ip: ['IP', '状态', '开放端口', '延迟', '存活方式'],
+  port: ['IP', '端口', '状态', '服务', '延迟', '服务横幅'],
+  web: ['级别', '发现', '详情', '修复建议'],
+  host: ['级别', '主机/服务', '风险与依据', '修复建议'],
+  cap: [],
+};
+const REPORT_HEADS = {
+  ip: ['IP', '开放端口', '延迟', '存活方式'],
+  port: ['IP', '端口', '服务', '延迟', '服务横幅'],
+  web: [],
+  host: ['级别', '主机/服务', '风险与依据'],
+};
+const TYPE_NAMES = { ip: 'IP 存活扫描', port: '端口扫描', web: 'Web 漏洞扫描', host: '主机扫描', cap: '抓包分析' };
+const SEV = { high: ['sev-high', '高危'], medium: ['sev-med', '中危'], low: ['sev-low', '低危'], info: ['sev-info', '信息'] };
+
+function setTab(type) {
+  curType = type;
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+  const isCap = type === 'cap', isVuln = type === 'vuln', isCtl = type === 'ctl';
+  const isEvt = type === 'evt', isEnv = type === 'env';
+  const showMain = !isCap && !isVuln && !isCtl && !isEvt && !isEnv;
+  $('scanCard').style.display = showMain ? '' : 'none';
+  $('capCard').style.display = isCap ? '' : 'none';
+  $('resultArea').style.display = showMain ? '' : 'none';
+  $('vulnCard').style.display = isVuln ? '' : 'none';
+  $('ctlCard').style.display = isCtl ? '' : 'none';
+  $('evtCard').style.display = isEvt ? '' : 'none';
+  $('envCard').style.display = isEnv ? '' : 'none';
+  if (isCtl) loadCtl();
+  // 任务 4.2: 实时事件页签按需开/关 SSE 长连接; 引擎页签拉取环境检测
+  if (isEvt) openEvt(); else closeEvt();
+  if (isEnv) { loadEnv(); loadEngine(); loadProbe(true); loadEngDl(); }
+  ['ip', 'port', 'web', 'host'].forEach(t => { $('form-' + t).style.display = showMain && t === type ? '' : 'none'; });
+  $('formHint').textContent = showMain ? (HINTS[type] || '') : '';
+  if (showMain) renderHeaders();
+  if (isCap) { capDevices(); capRecover(); }
+  if (isVuln) loadVulnRules();
+  loadRuleUpdStatus();
+}
+
+function renderHeaders() {
+  $('thead').innerHTML = '<tr>' + HEADERS[curType].map(h => `<th>${h}</th>`).join('') + '</tr>';
+  $('tbody').innerHTML = '';
+  $('infoBody').innerHTML = '';
+  $('empty').style.display = '';
+  $('infoBox').style.display = 'none';
+}
+
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.type)));
+
+function log(msg, color) {
+  const box = $('log');
+  const line = document.createElement('div');
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  line.innerHTML = `<span class="t">${t}</span>`;
+  const span = document.createElement('span');
+  span.textContent = msg;
+  if (color) span.style.color = color;
+  line.appendChild(span);
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function addRow(cells) {
+  $('empty').style.display = 'none';
+  const tr = document.createElement('tr');
+  tr.innerHTML = cells.map(c => `<td>${c}</td>`).join('');
+  $('tbody').appendChild(tr);
+}
+
+function addInfo(k, v) {
+  $('infoBox').style.display = '';
+  const tr = document.createElement('tr');
+  const td1 = document.createElement('td');
+  td1.textContent = k;
+  const td2 = document.createElement('td');
+  td2.textContent = v;
+  tr.append(td1, td2);
+  $('infoBody').appendChild(tr);
+}
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function sevCount(list) {
+  const f = { high: 0, medium: 0, low: 0, info: 0 };
+  for (const x of list) if (f[x.severity] != null) f[x.severity]++;
+  return f;
+}
+
+function updateStats() {
+  const s = curScan;
+  const el = $('statsBar');
+  if (!s) { el.innerHTML = ''; return; }
+  const stat = (label, val, cls) => `<span class="stat ${cls}"><b>${val}</b>${label}</span>`;
+  let html = '';
+  if (s.type === 'ip') {
+    html = stat('存活', s.ipAlive, 's-green') + stat('离线', s.ipTotal - s.ipAlive, '') + stat('已扫', s.ipTotal, '');
+  } else if (s.type === 'port') {
+    html = stat('开放', s.portOpen, 's-green') + stat('关闭', s.portTotal - s.portOpen, '') + stat('已扫', s.portTotal, '');
+  } else if (s.type === 'host') {
+    // 主机扫描按"风险项"统计(与端口扫描的开关口径区分开)
+    const f = sevCount(s.findings);
+    html = stat('开放端口', s.portOpen, 's-green') + stat('高危', f.high, 's-red') +
+      stat('中危', f.medium, 's-orange') + stat('低危', f.low, 's-yellow') + stat('信息', f.info, 's-blue');
+  } else if (s.type === 'web') {
+    const f = sevCount(s.findings);
+    html = stat('高危', f.high, 's-red') + stat('中危', f.medium, 's-orange') + stat('低危', f.low, 's-yellow') + stat('信息', f.info, 's-blue');
+  }
+  el.innerHTML = html;
+}
+
+function buildSummary(s) {
+  if (s.type === 'ip') return `存活 ${s.ipAlive} / ${s.ipTotal}`;
+  if (s.type === 'port') return `开放 ${s.portOpen} / ${s.portTotal}`;
+  if (s.type === 'host') {
+    const f = sevCount(s.findings);
+    return `开放端口 ${s.portOpen} 个, 风险 ${s.findings.length} 项 (高 ${f.high} / 中 ${f.medium} / 低 ${f.low} / 信息 ${f.info})`;
+  }
+  const f = sevCount(s.findings);
+  return `发现 ${s.findings.length} 项 (高 ${f.high} / 中 ${f.medium} / 低 ${f.low} / 信息 ${f.info})`;
+}
+
+// AI 分析 SSE 流式展示状态(同一时刻只有一个 AI 任务)
+let aiStreamEl = null, aiStreamText = '';
+const AI_C = '#a78bfa';
+
+function aiLogLine() {
+  // 创建(或复用)一条 AI 流式输出行, 返回可更新的 span
+  if (aiStreamEl) return aiStreamEl;
+  const box = $('log');
+  const line = document.createElement('div');
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  line.innerHTML = `<span class="t">${t}</span>`;
+  const span = document.createElement('span');
+  span.style.color = AI_C;
+  line.appendChild(span);
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+  aiStreamEl = span;
+  return span;
+}
+
+function handleEvent(ev, d) {
+  if (ev === 'status') {
+    log(d.msg);
+    $('statusBar').innerHTML = `<span class="spinner"></span> 状态: <b>${esc(d.msg)}</b>`;
+    if (curScan) curScan.lastStatus = d.msg;
+  } else if (ev === 'port') {
+    if (curScan) {
+      curScan.portTotal++;
+      if (d.state === 'open') curScan.portOpen++;
+      updateStats();
+    }
+    if (d.state !== 'open') return; // 只展示开放端口: 关闭端口无信息量, 仅计入统计
+    // 主机扫描的表结构是"级别/主机服务/风险依据", 端口行只在端口扫描页展示;
+    // 主机扫描会另行输出"开放服务(N)"信息行
+    if (curType === 'host') return;
+    const st = '<span class="badge b-open">开放</span>';
+    addRow([esc(d.ip), d.port, st, esc(d.service || '-'), d.latencyMs != null ? d.latencyMs + 'ms' : '-', esc(d.banner || '')]);
+    if (curScan) {
+      curScan.rows.push([d.ip, String(d.port), d.service || '-', d.latencyMs != null ? d.latencyMs + 'ms' : '-', d.banner || '']);
+    }
+  } else if (ev === 'ip') {
+    if (curScan) { curScan.ipTotal++; if (d.alive && !d.excludedByStrict) curScan.ipAlive++; }
+    if (!d.alive) { updateStats(); return; }
+    // 仅凭端口开放推断出的存活: 严格模式下不计入存活统计, 但仍展示(否则用户
+    // 会以为"这台机器不存在", 实际只是没有 ICMP/ARP 应答)
+    if (d.excludedByStrict) {
+      addRow([esc(d.ip), '<span class="badge b-warn">端口推断</span>', (d.ports || []).join(', '), '-', 'TCP(严格模式未计入)']);
+      if (curScan) { curScan.rows.push([d.ip, (d.ports || []).join(', ') || '-', '-', '端口推断(严格模式未计入)']); updateStats(); }
+      return;
+    }
+    const st = '<span class="badge b-open">存活</span>';
+    let rtt = '-', via = '-';
+    if (d.icmp) { via = 'ICMP'; rtt = (d.rttMs || 0) + 'ms'; }
+    else if (d.arp) { via = 'ARP' + (d.mac ? ' ' + d.mac : ''); }
+    else { via = d.inferred ? 'TCP(端口推断)' : 'TCP'; }
+    addRow([esc(d.ip), st, (d.ports || []).join(', '), rtt, via]);
+    if (curScan) {
+      curScan.rows.push([d.ip, (d.ports || []).join(', ') || '-', rtt, via]);
+      updateStats();
+    }
+  } else if (ev === 'finding') {
+    const [cls, name] = SEV[d.severity] || ['sev-info', '信息'];
+    // 规则来源三级区分: nuclei=外部模板 / nuclei-builtin=内置模板(exe 打包) / 空=内置规则(vuln_builtin.json)
+    const srcName = d.source === 'nuclei' ? '外部模板' : (d.source === 'nuclei-builtin' ? '内置模板' : '');
+    const src = srcName ? ` <span class="badge b-nuclei">${srcName}</span>` : '';
+    // 误报: 服务端命中误报规则时事件带 falsePositive/fpNote, 展示标记
+    const fpBadge = d.falsePositive ? ` <span class="badge b-fp" title="${esc(d.fpNote || '人工标记误报')}">误报</span>` : '';
+    // "误报"按钮: Web/主机扫描可标记(后续扫描同资产+同CVE自动标记, 不进报告)
+    const fpBtn = (curType === 'web' || curType === 'host')
+      ? ` <button class="btn-mini fp-mark" style="margin-left:6px;padding:2px 10px;font-size:11px" data-title="${esc(d.title)}" data-cve="${esc(d.cve || '')}" title="标记为误报: 后续扫描同资产+同CVE自动标记, 不进报告">误报</button>`
+      : '';
+    // 修复建议: 后端内置(不需要 AI), 无建议时显示 "-" 而不是空白, 避免看着像漏数据
+    const withFix = (HEADERS[curType] || []).includes('修复建议');
+    const fixCell = d.fix ? `<div class="fix">${esc(d.fix)}</div>` : '<span class="muted">-</span>';
+    addRow(withFix
+      ? [`<span class="badge ${cls}">${name}</span>`, esc(d.title) + src + fpBadge + fpBtn, esc(d.detail), fixCell]
+      : [`<span class="badge ${cls}">${name}</span>`, esc(d.title) + src + fpBadge + fpBtn, esc(d.detail)]);
+    if (curScan) { curScan.findings.push({ severity: d.severity, title: d.title, detail: d.detail, fix: d.fix || '', source: d.source || '', falsePositive: !!d.falsePositive }); updateStats(); }
+  } else if (ev === 'info') {
+    // 主机扫描没有独立的信息区, 把资产信息也排进主表(级别=信息), 一屏读完
+    if (curType === 'host') {
+      addRow(['<span class="badge sev-info">信息</span>', esc(d.key), esc(d.value)]);
+    } else {
+      addInfo(d.key, d.value);
+    }
+  } else if (ev === 'ai') {
+    // AI 后置分析(可选, 仅解读不判定): start/增量/done/error
+    if (d.stage === 'start') {
+      const name = d.mode === 'report' ? '扫描批量风险汇总' : (d.mode === 'finding' ? '单条漏洞研判' : '修复建议');
+      log('AI 分析开始: ' + name, AI_C);
+    } else if (d.delta) {
+      aiStreamText += d.delta;
+      aiLogLine().textContent = 'AI 输出: ' + aiStreamText.slice(-300);
+      $('log').scrollTop = $('log').scrollHeight;
+    } else if (d.stage === 'done') {
+      aiStreamEl = null; aiStreamText = '';
+      const r = d.result || {};
+      if (r.riskSummary) log('AI 风险摘要: ' + r.riskSummary, AI_C);
+      if (r.reviewAdvice) log('AI 复核建议: ' + r.reviewAdvice, AI_C);
+      if (r.rootCause) log('AI 根因分析: ' + r.rootCause, AI_C);
+      if (r.remediation) log('AI 修复建议: ' + r.remediation, AI_C);
+      if (r.highRiskAssets && r.highRiskAssets.length) log('AI 高危资产: ' + r.highRiskAssets.join(', '), '#f87171');
+      if (r.lateralRisk) log('AI 横向移动风险: ' + r.lateralRisk, '#fb923c');
+    } else if (d.error) {
+      aiStreamEl = null; aiStreamText = '';
+      log('AI 分析失败: ' + d.error, '#f87171');
+    }
+  } else if (ev === 'done') {
+    if (d && d.remote) {
+      // 任务 6.3: 任务已下发探针, 本地不执行扫描 —— 进度与结果见探针管理/实时事件
+      log('== 任务已下发探针 ' + d.probeId + ' (任务 ' + d.taskId + '), 本地未执行 ==', '#34d399');
+    } else {
+      log('== 扫描完成 ==', '#34d399');
+    }
+  } else if (ev === 'info') {
+    if (d && d.msg) log(d.msg, '#60a5fa');
+  }
+}
+
+function payload() {
+  const n = id => parseInt($(id).value || '0', 10);
+  const p = payloadByType(n);
+  // 任务 6.3: 执行位置 —— 选探针时附带 execAt/probeNode, 由服务端路由到探针执行
+  if ($('execAt').value === 'probe' && $('probePick').value) {
+    p.execAt = 'probe';
+    p.probeNode = $('probePick').value;
+  }
+  return p;
+}
+
+function payloadByType(n) {
+  switch (curType) {
+    case 'ip':
+      return {
+        type: 'ip', cidr: $('ip-cidr').value.trim(), ports: $('ip-ports').value.trim(),
+        aliveMode: $('ip-mode').value,
+        concurrency: n('ip-conc'), timeoutMs: n('ip-timeout'),
+      };
+    case 'port':
+      return { type: 'port', ip: $('port-ip').value.trim(), ports: $('port-ports').value.trim(), concurrency: n('port-conc'), timeoutMs: n('port-timeout') };
+    case 'web':
+      return { type: 'web', url: $('web-url').value.trim(), webdeep: $('web-deep').checked };
+    case 'host':
+      return {
+        type: 'host', ip: $('host-ip').value.trim(), ports: $('host-ports').value.trim(), concurrency: n('host-conc'),
+        enableNuclei: $('host-nuclei').checked,
+        nucleiTags: $('nuclei-tags').value.trim(),
+        nucleiTagsExclude: $('nuclei-tags-ex').value.trim(),
+      };
+  }
+  return {};
+}
+
+function scanTarget() {
+  switch (curType) {
+    case 'ip': return $('ip-cidr').value.trim();
+    case 'port': return $('port-ip').value.trim();
+    case 'web': return $('web-url').value.trim();
+    case 'host': return $('host-ip').value.trim();
+  }
+}
+
+function startUI() {
+  $('btnRun').disabled = true;
+  $('dot').classList.add('running');
+  $('dotText').textContent = '扫描中';
+  $('statusBar').innerHTML = '<span>扫描进行中...</span>';
+  $('log').innerHTML = '';
+  aiStreamEl = null; aiStreamText = '';
+  renderHeaders();
+  curScan = {
+    type: curType, target: scanTarget(), typeName: TYPE_NAMES[curType],
+    startTime: new Date().toLocaleString('zh-CN', { hour12: false }),
+    t0: Date.now(), findings: [], rows: [], rowHead: REPORT_HEADS[curType] || [],
+    ipAlive: 0, ipTotal: 0, portOpen: 0, portTotal: 0,
+  };
+  updateStats();
+}
+
+function stopUI() {
+  $('btnRun').disabled = false;
+  $('dot').classList.remove('running');
+  $('dotText').textContent = '就绪';
+  controller = null;
+}
+
+async function run() {
+  if (controller) return;
+  controller = new AbortController();
+  startUI();
+  let stopped = false;
+  try {
+    const resp = await fetch('/api/scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload()), signal: controller.signal,
+    });
+    if (!resp.ok) { log('服务器错误: HTTP ' + resp.status, '#f87171'); return; }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        let ev = 'message', data = '';
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('event: ')) ev = line.slice(7);
+          else if (line.startsWith('data: ')) data += line.slice(6);
+        }
+        if (data) {
+          try { handleEvent(ev, JSON.parse(data)); }
+          catch (e) { log('解析失败: ' + data, '#f87171'); }
+        }
+      }
+    }
+    log('用时 ' + ((Date.now() - curScan.t0) / 1000).toFixed(1) + 's', '#8296bd');
+  } catch (e) {
+    stopped = e.name === 'AbortError';
+    if (stopped) log('已手动停止', '#fb923c');
+    else log('请求失败: ' + e.message, '#f87171');
+  } finally {
+    stopUI();
+    if (curScan) {
+      curScan.duration = ((Date.now() - curScan.t0) / 1000).toFixed(1) + 's';
+      curScan.summary = buildSummary(curScan) + (stopped ? ' (手动停止)' : '');
+      reportScans.push(curScan);
+      curScan = null;
+      updateStats();
+    }
+  }
+}
+
+$('btnRun').addEventListener('click', run);
+$('btnStop').addEventListener('click', () => { if (controller) controller.abort(); });
+
+// Nuclei 外部模板热更新: 强制重新加载 templates/ 目录(无需重启程序)
+$('btnNucleiReload').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/nuclei/reload', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert('重载失败: ' + (d.error || ('HTTP ' + r.status))); return; }
+    $('nucleiHint').textContent = '模板已重载: 内置 ' + d.builtin + ' + 外部 ' + d.external + ' 个(共 ' + d.total + ')' +
+      (d.errors && d.errors.length ? ', 警告 ' + d.errors.length + ' 条' : '');
+  } catch (e) { alert('重载失败: ' + e); }
+});
+
+// ===== 规则库在线更新(版本展示 / 一键更新 / 更新日志) =====
+function loadRuleUpdStatus() {
+  fetch('/api/rules/update/status').then(r => r.json()).then(d => {
+    const lc = d.localCommit ? d.localCommit.slice(0, 12) : '未应用过在线更新(使用内置规则包)';
+    let s = '规则版本: ' + lc;
+    if (d.available) s += ' · 远端有更新 ' + String(d.remoteCommit || '').slice(0, 12) + ' (' + d.files + ' 个文件)';
+    else if (d.checkError) s += ' · ' + (d.configured ? d.checkError : '未配置下载源(exe 同目录放置 updater.json 配置 sources)');
+    else s += ' · 已是最新';
+    const t = d.tiered || {};
+    if (t.enabled) s += ' · 分级加载: 常驻 ' + t.residentCount + ' / 按需 ' + t.onDemandCount + '(已加载 ' + t.loadedCount + ')';
+    $('ruleUpdVer').textContent = s;
+    // 直连官方仓库通道状态(不需要自建源; 只拉 HTTP 模板并本地算 sha256)
+    const dr = d.direct || {};
+    const btn = $('btnRuleDirectGo');
+    if (!dr.enabled) {
+      btn.disabled = true;
+      btn.style.opacity = '.5';
+      $('ruleDirectHint').textContent = '官方源直连: 未启用 —— 在 exe 同目录 updater.json 增加 "direct": {"enabled": true} 即可(无需自建下载源)';
+    } else if (d.directCheckError) {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      $('ruleDirectHint').textContent = '官方源直连(' + dr.repo + '): ' + d.directCheckError;
+    } else {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      const lr = d.directLocalRev ? String(d.directLocalRev).slice(0, 10) : '未应用';
+      $('ruleDirectHint').textContent = '官方源直连(' + dr.repo + '): 本地 ' + lr +
+        (d.directAvailable ? ' · 远端有新修订 ' + String(d.directRemoteRev || '').slice(0, 10) : ' · 已是最新');
+    }
+  }).catch(() => { $('ruleUpdVer').textContent = '规则版本: 查询失败'; });
+}
+
+let ruleUpdTimer = null;
+function stopRuleUpdPoll() {
+  if (ruleUpdTimer) { clearInterval(ruleUpdTimer); ruleUpdTimer = null; }
+  $('btnRuleUpdGo').disabled = false;
+  $('btnRuleUpdGo').textContent = '一键更新';
+  loadRuleUpdStatus();
+}
+
+$('btnRuleUpdCheck').addEventListener('click', loadRuleUpdStatus);
+
+$('btnRuleUpdGo').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/rules/update/start', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert('无法启动更新: ' + (d.error || ('HTTP ' + r.status))); return; }
+    $('btnRuleUpdGo').disabled = true;
+    $('btnRuleUpdGo').textContent = '更新中...';
+    $('ruleUpdProg').textContent = '更新已启动, 等待下载...';
+    ruleUpdTimer = setInterval(async () => {
+      try {
+        const p = await (await fetch('/api/rules/update/progress')).json();
+        const pg = p.progress || {};
+        if (p.running) {
+          $('ruleUpdProg').textContent = '状态: ' + (pg.status || '...') + ' 进度: ' + (pg.done || 0) + '/' + (pg.total || 0) +
+            (pg.current ? ' 当前: ' + pg.current : '') + (pg.speed ? ' 速度: ' + (pg.speed / 1024).toFixed(1) + 'KB/s' : '');
+        } else {
+          stopRuleUpdPoll();
+          if (p.error) {
+            $('ruleUpdProg').textContent = '更新失败: ' + p.error + '(旧规则包未受影响, 详情见更新日志)';
+          } else if (p.result) {
+            $('ruleUpdProg').textContent = p.result.updated
+              ? '更新完成: ' + p.result.files + ' 个文件, 版本 ' + String(p.result.commit || '').slice(0, 12) + '(已自动热加载)'
+              : '暂无更新';
+          }
+        }
+      } catch (e) { /* 瞬时网络抖动, 下一轮重试 */ }
+    }, 1500);
+  } catch (e) { alert('无法启动更新: ' + e); }
+});
+
+// fmtBytesProg 把字节级进度格式化成 " 12.3/35.6MB (34%)"。
+//
+// 单包下载阶段 total/done(文件数)恒为 0/1, 没有任何信息量; 真正反映进度的是字节。
+// totalBytes 为 0 表示对端未给 Content-Length, 此时只显示已下载量, 不编造百分比。
+function fmtBytesProg(bytes, totalBytes) {
+  if (!bytes) return '';
+  const mb = n => (n / 1048576).toFixed(1);
+  if (!totalBytes) return ' · ' + mb(bytes) + 'MB';
+  return ' · ' + mb(bytes) + '/' + mb(totalBytes) + 'MB (' + Math.floor(bytes * 100 / totalBytes) + '%)';
+}
+
+// 官方源直连更新: 与"一键更新"共用同一套进度轮询与状态刷新, 只是启动端点不同
+$('btnRuleDirectGo').addEventListener('click', async () => {
+  const btn = $('btnRuleDirectGo');
+  if (!confirm('从官方仓库更新规则库(首次约 30-60MB)。\n请确认网络可达 github.com。继续?')) return;
+  try {
+    const r = await fetch('/api/rules/update/direct/start', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert('无法启动直连更新: ' + (d.error || ('HTTP ' + r.status))); return; }
+    btn.disabled = true; btn.textContent = '更新中...';
+    $('ruleUpdProg').textContent = '直连更新已启动, 正在查询官方仓库最新修订...';
+    ruleUpdTimer = setInterval(async () => {
+      try {
+        const p = await (await fetch('/api/rules/update/progress')).json();
+        const pg = p.progress || {};
+        if (p.running) {
+          $('ruleUpdProg').textContent = '直连: ' + (pg.status || '...') +
+            (pg.current ? ' · ' + pg.current : '') +
+            fmtBytesProg(pg.bytes, pg.totalBytes) +
+            (pg.speed ? ' · ' + (pg.speed / 1024).toFixed(1) + 'KB/s' : '');
+        } else {
+          stopRuleUpdPoll();
+          btn.textContent = '官方源直连更新';
+          if (p.error) {
+            $('ruleUpdProg').textContent = '直连更新失败: ' + p.error + '(本地规则未受影响)';
+          } else if (p.result) {
+            $('ruleUpdProg').textContent = p.result.updated
+              ? '直连更新完成: ' + p.result.files + ' 个模板, 修订 ' + String(p.result.commit || '').slice(0, 10) + '(已自动热加载)'
+              : '直连: 本地已是最新, 无需更新';
+          }
+        }
+      } catch (e) { /* 瞬时抖动, 下一轮重试 */ }
+    }, 1500);
+  } catch (e) { alert('无法启动直连更新: ' + e); }
+});
+
+$('btnRuleUpdLog').addEventListener('click', async () => {
+  $('ruleUpdLogMask').style.display = 'flex';
+  const box = $('ruleUpdLogBox');
+  box.textContent = '加载中...';
+  try {
+    const d = await (await fetch('/api/rules/update/log')).json();
+    const es = d.entries || [];
+    if (!es.length) { box.textContent = '暂无更新记录'; return; }
+    box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>' +
+      ['时间', '类型', '版本变化', '文件', '结果', '耗时', '说明'].map(h => '<th style="text-align:left;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.15)">' + h + '</th>').join('') +
+      '</tr></thead><tbody>' +
+      es.map(e => {
+        const st = e.status === 'success' ? '<span style="color:var(--green)">成功</span>' : '<span style="color:var(--red)">已回滚</span>';
+        return '<tr><td style="padding:4px 6px">' + esc(e.time) + '</td><td>' + esc(e.kind) + '</td><td>' +
+          esc(String(e.fromCommit || '—').slice(0, 8)) + ' → ' + esc(String(e.toCommit || '—').slice(0, 8)) +
+          '</td><td>' + (e.files || 0) + '</td><td>' + st + '</td><td>' + (e.durationMs || 0) + 'ms</td><td>' + esc(e.error || '') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  } catch (e) { box.textContent = '查询失败: ' + e; }
+});
+
+$('ruleUpdLogClose').addEventListener('click', () => { $('ruleUpdLogMask').style.display = 'none'; });
+
+// ===== 报告 =====
+function openReportModal() {
+  if (!reportScans.length) { alert('暂无已完成的扫描记录, 请先执行一次扫描'); return; }
+  // 模块多选: 勾选要导出哪些已完成的扫描(默认全选)
+  $('repScans').innerHTML = reportScans.map((s, i) =>
+    `<label class="rep-scan-item"><input type="checkbox" data-i="${i}" checked>` +
+    `<span>${esc(s.typeName)} · ${esc(s.target)} · ${esc(s.startTime)} · ${esc(s.summary)}</span></label>`
+  ).join('');
+  $('repTip').textContent = '只导出勾选的模块; 默认内置模板, 可放 report_template.html 自定义。';
+  $('reportMask').style.display = 'flex';
+}
+
+function selectedScans() {
+  // 导出报告时排除误报项(白名单命中在服务端已被过滤, 前端只见非白名单结果)
+  return [...document.querySelectorAll('#repScans input:checked')].map(cb => {
+    const s = reportScans[+cb.dataset.i];
+    const findings = (s.findings || []).filter(f => !f.falsePositive);
+    const out = { ...s, findings };
+    out.summary = buildSummary(out); // 摘要按排除误报后的口径重算
+    return out;
+  });
+}
+$('btnReport').addEventListener('click', openReportModal);
+$('repCancel').addEventListener('click', () => { $('reportMask').style.display = 'none'; });
+
+async function generateReport() {
+  const scans = selectedScans();
+  if (!scans.length) { alert('请至少勾选一个要导出的扫描模块'); return; }
+  try {
+    const r = await fetch('/api/report', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: $('repTitle').value.trim() || 'Yugsight 漏洞扫描报告', operator: $('repOperator').value.trim(), scans: scans }),
+    });
+    if (!r.ok) {
+      let msg = 'HTTP ' + r.status;
+      try { msg = (await r.json()).error || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    const blob = await r.blob();
+    let name = 'yugsight_report.html';
+    const m = (r.headers.get('Content-Disposition') || '').match(/filename="?([^";]+)/);
+    if (m) name = m[1];
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    $('reportMask').style.display = 'none';
+  } catch (e) {
+    alert('报告生成失败: ' + e.message);
+  }
+}
+$('repGo').addEventListener('click', generateReport);
+
+// ===== 抓包分析 =====
+let capTimer = null, capLastSeq = 0, capAnalysisText = '', capZeroWarned = false;
+// capPktSeq 报文列表的增量游标(与事件的 capLastSeq 分开: 两者速率差几个数量级,
+// 共用一个游标会导致慢的那个永远追不上)
+let capPktSeq = 0;
+// capPkts 当前缓冲内的报文(展示层过滤在这里做)
+let capPkts = [];
+// CAP_PKT_MAX 前端最多保留的报文条数。后端环形缓冲是 2000, 这里保持一致;
+// 超过就丢弃最老的 —— 与后端同口径, 用户看到的条数与提示一致。
+const CAP_PKT_MAX = 2000;
+
+// 过滤词示例: 这些是**展示层**过滤(不是 BPF), 抓包过程中可随时改, 不影响已抓到的数据。
+// 多个词之间是"与"; 支持 ip:/port:/proto:/mac:/src:/dst: 前缀精确限定字段。
+const BPF_EXAMPLES = [
+  { f: '', tip: '不过滤(显示全部)' },
+  { f: 'icmp', tip: '只看 ICMP(ping / 回显)' },
+  { f: 'arp', tip: '只看 ARP' },
+  { f: 'tcp', tip: '只看 TCP' },
+  { f: 'udp', tip: '只看 UDP' },
+  { f: 'ipv6', tip: '只看 IPv6' },
+  { f: 'icmpv6', tip: '只看 ICMPv6' },
+  { f: 'igmp', tip: '只看 IGMP(组播)' },
+  { f: 'syn', tip: '只看 SYN 包(建连/扫描)' },
+  { f: 'rst', tip: '只看 RST 包(连接被拒)' },
+  { f: 'fin', tip: '只看 FIN 包(断连)' },
+  { f: '广播', tip: '只看广播帧' },
+  { f: 'port:80', tip: 'HTTP' },
+  { f: 'port:443', tip: 'HTTPS' },
+  { f: 'port:53', tip: 'DNS' },
+  { f: 'port:22', tip: 'SSH' },
+  { f: 'port:3389', tip: '远程桌面' },
+  { f: 'port:445', tip: 'SMB 文件共享' },
+  { f: 'proto:icmp', tip: '按协议字段限定 ICMP' },
+  { f: 'ip:192.168.1.1', tip: '只看涉及该 IP 的报文' },
+  { f: 'src:192.168.1.1', tip: '只看该 IP 发出的报文' },
+  { f: 'dst:192.168.1.1', tip: '只看发给该 IP 的报文' },
+];
+function renderBpfExamples() {
+  const box = $('bpfEx');
+  // 空值的示例(不过滤)需要可见文字, 否则是一个点不到的空 chip
+  box.innerHTML = BPF_EXAMPLES.map(x =>
+    `<span class="bpf-chip" data-f="${esc(x.f)}" title="${esc(x.tip)}">${esc(x.f || '全部')}</span>`).join('');
+  const sync = () => {
+    box.querySelectorAll('.bpf-chip').forEach(c =>
+      c.classList.toggle('on', c.dataset.f === $('capFilter').value.trim()));
+  };
+  box.addEventListener('click', e => {
+    const c = e.target.closest('.bpf-chip');
+    if (!c) return;
+    $('capFilter').value = c.dataset.f;
+    sync();
+    // 点示例要立即生效(否则用户还得再敲一下键盘才看到筛选结果)
+    capRenderPkts();
+  });
+  // 输入时: 更新示例高亮 + 重绘报文列表(展示层过滤即时生效)
+  $('capFilter').addEventListener('input', () => { sync(); capRenderPkts(); });
+  sync();
+}
+
+// Npcap 回环适配器: 唯一能抓到"本机访问本机"流量的设备 —— ping 自己、本机服务互访
+// (如访问本机 8420 的 Web)都只走这里, 不过物理网卡。之前把它一并归入"伪适配器,
+// 不建议抓包", 结果用户选物理网卡 ping 自己时永远抓不到包, 误以为工具坏了。
+const LOOPBACK_DEV = /(loopback|回环)/i;
+const PSEUDO_DEV = /(wan miniport|bluetooth|tunnel|isatap|pseudo|virtual|vethernet|hyper-v|host virtual)/i;
+
+// devRank 适配器排序: 真实网卡 -> 回环适配器 -> 其它伪适配器
+function devRank(x) {
+  const s = (x.name || '') + ' ' + (x.desc || '');
+  if (LOOPBACK_DEV.test(s)) return 1;
+  if (PSEUDO_DEV.test(s)) return 2;
+  return 0;
+}
+// devTag 适配器后缀说明
+function devTag(x) {
+  const s = (x.name || '') + ' ' + (x.desc || '');
+  if (LOOPBACK_DEV.test(s)) return ' (回环适配器: ping 本机自己 / 本机互访选它)';
+  if (PSEUDO_DEV.test(s)) return ' (伪适配器, 不建议抓包)';
+  return '';
+}
+
+async function capDevices(refresh) {
+  if ($('capDev').options.length <= 1) $('capDev').innerHTML = '<option value="">加载中...</option>';
+  $('capHint').textContent = refresh ? '正在重新枚举适配器...' : $('capHint').textContent;
+  try {
+    const r = await fetch('/api/capture/devices' + (refresh ? '?refresh=1' : ''));
+    const d = await r.json();
+    if (d.error) {
+      $('capHint').textContent = d.error;
+      $('capDev').innerHTML = '<option value="">无可用适配器</option>';
+      // Npcap 未安装/驱动异常时显示一键安装按钮
+      $('capInstall').style.display = /wpcap|npcap/i.test(d.error) ? '' : 'none';
+      return;
+    }
+    $('capInstall').style.display = 'none';
+    // 真实网卡排前, 回环适配器次之, 其它伪适配器排最后并标注: 它们抓不到真实流量,
+    // 之前默认选第 1 个, 若第 1 个是伪适配器就会"抓不到包"
+    const list = (d.devices || []).slice().sort((a, b) => devRank(a) - devRank(b));
+    $('capDev').innerHTML = list.length
+      ? list.map(x => `<option value="${esc(x.name)}">${esc((x.desc || x.name) + devTag(x))}</option>`).join('')
+      : '<option value="">无可用适配器</option>';
+    $('capHint').textContent = list.length
+      ? list.length + ' 个适配器可用'
+      : '未找到适配器: 确认网卡已启用, 或安装 Npcap';
+  } catch (e) { $('capHint').textContent = '适配器列表获取失败(需 Npcap + 登录)'; }
+}
+
+$('capRefresh').addEventListener('click', () => capDevices(true));
+
+$('capInstall').addEventListener('click', async () => {
+  $('capInstall').disabled = true;
+  $('capHint').textContent = '弹出 Npcap 安装窗口, 跟随向导即可(约 1 分钟)...';
+  try {
+    const r = await fetch('/api/capture/install', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) { $('capHint').textContent = d.error || '安装失败'; $('capInstall').disabled = false; return; }
+    if (d.reboot) { $('capHint').textContent = 'Npcap 已安装, 请重启系统后重试'; return; }
+    $('capHint').textContent = 'Npcap 安装完成, 正在刷新适配器...';
+    await capDevices();
+  } catch (e) { $('capHint').textContent = '安装失败: ' + e.message; }
+  $('capInstall').disabled = false;
+});
+
+// capRecover 页面刷新后恢复抓包轮询。
+// 【为什么要这个】capTimer 只在"开始抓包"点击时创建 —— 刷新页面后 JS 状态全丢,
+// 但服务端抓包仍在进行, 页面会卡在"未抓包"、报文列表再也不刷新(用户现象:
+// 刷新过页面报文列表就不显示了)。进抓包页签时查一次状态, 在跑就恢复轮询;
+// 报文列表由 capPktSeq=0 起从环形缓冲重拉, 不会空。
+async function capRecover() {
+  try {
+    const r = await fetch('/api/capture/state', { cache: 'no-store' });
+    const d = await r.json();
+    if (!d.running) return;
+    if (!capTimer) capTimer = setInterval(capPoll, 1500);
+    capPoll();
+  } catch (e) { /* 瞬时抖动, 忽略 */ }
+}
+
+$('capStart').addEventListener('click', async () => {
+  $('capEvents').innerHTML = '';
+  $('capEvents').style.display = 'none';
+  $('capReport').style.display = 'none';
+  $('capAIBox').style.display = 'none';
+  $('capBindBody').innerHTML = '';
+  $('capBindEmpty').style.display = '';
+  $('capPktDetail').style.display = 'none';
+  capLastSeq = 0;
+  capAnalysisText = '';
+  capZeroWarned = false;
+  // 报文列表也重置: 否则上一次会话的报文会与新的混在一起
+  capPkts = [];
+  capPktSeq = 0;
+  capRenderPkts();
+  try {
+    const r = await fetch('/api/capture/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device: $('capDev').value, filter: $('capFilter').value.trim() }),
+    });
+    const d = await r.json();
+    if (!r.ok) { $('capHint').textContent = d.error || ('HTTP ' + r.status); return; }
+    $('capHint').textContent = '正在抓包: ' + d.device;
+    $('capStart').disabled = true;
+    $('capStop').disabled = false;
+    capTimer = setInterval(capPoll, 1500);
+    capPoll();
+  } catch (e) { $('capHint').textContent = '启动失败: ' + e.message; }
+});
+
+$('capStop').addEventListener('click', async () => {
+  try { await fetch('/api/capture/stop', { method: 'POST' }); } catch (e) {}
+  if (capTimer) { clearInterval(capTimer); capTimer = null; }
+  $('capStart').disabled = false;
+  $('capStop').disabled = true;
+  $('capHint').textContent = '已停止';
+  capPoll();
+});
+
+// ===== 报文列表(展示层过滤) =====
+
+// capMatch 判断一条报文是否命中当前过滤条件。
+//
+// 【语义设计】多个关键字之间是"与"(全部满足); 同一个关键字在任意字段命中即可。
+// 这样 "192.168.1.1 443" 表示"涉及该 IP 且涉及 443", 符合排障时的直觉。
+//
+// 前缀形式(ip:/port:/proto:/mac:)用于把匹配限定到具体字段 —— 否则 "80" 会同时
+// 命中端口 80 和 IP 里的 80, 结果一堆无关报文。
+// isBcastPkt 广播帧: 目的 MAC 全 f, 或目的 IP 是受限/直接广播地址。
+// "广播"是展示层关键字(报文数据里没有这个字面量), 不走文本匹配。
+function isBcastPkt(p) {
+  if (/^ff:ff:ff:ff:ff:ff$/i.test(p.dstMac || '')) return true;
+  return /^255\.255\.255\.255$/.test(p.dstIp || '') || /\.255$/.test(p.dstIp || '');
+}
+
+// 协议关键字严格口径(同 Wireshark 与 Vue 抓包页): "icmp" 只看 IPv4 的 ICMP,
+// 子串匹配会把 ICMPv6 的邻居发现/通告混进来, 想看 ping 却看到一堆 v6 噪声。
+const PROTO_ALIAS = {
+  tcp: ['TCP', 'TCPv6'], udp: ['UDP', 'UDPv6'], icmp: ['ICMP'],
+  icmpv6: ['ICMPv6'], igmp: ['IGMP'], arp: ['ARP'],
+};
+function protoHit(tok, p) {
+  const pr = p.protocol || '';
+  if (PROTO_ALIAS[tok]) return PROTO_ALIAS[tok].indexOf(pr) >= 0;
+  if (tok === 'ipv6') return pr === 'IPv6' || /v6$/i.test(pr);
+  return null; // 不是协议关键字: 交给文本匹配
+}
+
+function capMatch(p) {
+  const q = ($('capFilter').value || '').trim();
+  if (!q) return true;
+
+  // 可搜索文本: 把常见字段都拼进去, 用户不必记字段名也能搜到
+  const hay = [
+    p.srcIp, p.dstIp, p.srcMac, p.dstMac, p.protocol, p.info,
+    String(p.srcPort || ''), String(p.dstPort || ''), p.etherType,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  for (const tok of q.toLowerCase().split(/\s+/).filter(Boolean)) {
+    if (tok === '广播') { if (!isBcastPkt(p)) return false; continue; }
+    const m = tok.match(/^(ip|port|proto|mac|src|dst):(.*)$/);
+    if (m) {
+      const [, field, val] = m;
+      let ok = false;
+      switch (field) {
+        case 'ip': ok = [p.srcIp, p.dstIp].some(x => x && x.toLowerCase().includes(val)); break;
+        case 'port': ok = String(p.srcPort || '') === val || String(p.dstPort || '') === val; break;
+        case 'proto': ok = (p.protocol || '').toLowerCase().includes(val); break;
+        case 'mac': ok = [p.srcMac, p.dstMac].some(x => x && x.toLowerCase().includes(val)); break;
+        case 'src': ok = [p.srcIp, p.srcMac, String(p.srcPort || '')].filter(Boolean).join(' ').toLowerCase().includes(val); break;
+        case 'dst': ok = [p.dstIp, p.dstMac, String(p.dstPort || '')].filter(Boolean).join(' ').toLowerCase().includes(val); break;
+      }
+      if (!ok) return false;
+    } else {
+      const hit = protoHit(tok, p);
+      if (hit !== null) { if (!hit) return false; continue; }
+      if (!hay.includes(tok)) return false;
+    }
+  }
+  return true;
+}
+
+// capEndpoint 渲染 "源 -> 目的" 一栏(IP:端口 / MAC, 无则显示协议提示)
+function capEndpoint(ip, mac, port) {
+  if (ip) return esc(ip) + (port ? ':' + port : '');
+  if (mac) return esc(mac);
+  return '<span class="muted">-</span>';
+}
+
+// capRenderPkts 重绘报文列表(全量重绘: 条数上限 2000, DOM 操作可控)
+function capRenderPkts() {
+  const body = $('capPktBody');
+  const shown = capPkts.filter(capMatch);
+  if (!shown.length) {
+    body.innerHTML = '';
+    $('capPktEmpty').style.display = '';
+    $('capPktEmpty').textContent = capPkts.length
+      ? `已抓到 ${capPkts.length} 个报文, 但当前过滤条件下没有匹配项`
+      : '开始抓包后, 这里会列出每个报文的源/目的/协议与摘要';
+    return;
+  }
+  $('capPktEmpty').style.display = 'none';
+  // 只渲染末尾 500 条: 浏览器一次插入几千个 <tr> 会明显卡顿, 而排障时最关心最近发生的事
+  const view = shown.slice(-500);
+  body.innerHTML = view.map(p => {
+    const isBcast = /^ff:ff:ff:ff:ff:ff$/i.test(p.dstMac || '');
+    const cls = isBcast ? ' class="pkt-bcast"' : '';
+    return `<tr${cls} data-seq="${p.seq}">
+      <td class="mono muted">${esc(p.time || '')}</td>
+      <td><span class="proto-tag">${esc(p.protocol || '?')}</span></td>
+      <td class="mono">${capEndpoint(p.srcIp, p.srcMac, p.srcPort)}</td>
+      <td class="mono">${capEndpoint(p.dstIp, p.dstMac, p.dstPort)}</td>
+      <td class="mono muted">${p.length || 0}</td>
+      <td class="cap-info">${esc(p.info || '')}</td>
+    </tr>`;
+  }).join('');
+  if ($('capAutoScroll').checked) {
+    const box = body.closest('.cap-pkts');
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+  const hid = shown.length - view.length;
+  $('capListHint').textContent = `显示 ${view.length}/${shown.length} 条`
+    + (capPkts.length > shown.length ? ` (过滤自 ${capPkts.length} 条)` : '')
+    + (hid > 0 ? `, 已省略较早的 ${hid} 条` : '');
+}
+
+// capAppendPkts 拉取新报文并追加
+async function capAppendPkts() {
+  try {
+    const r = await fetch('/api/capture/packets?since=' + capPktSeq + '&limit=800');
+    const d = await r.json();
+    if (!d.packets || !d.packets.length) return;
+    for (const p of d.packets) {
+      capPkts.push(p);
+      if (p.seq > capPktSeq) capPktSeq = p.seq;
+    }
+    if (capPkts.length > CAP_PKT_MAX) capPkts = capPkts.slice(-CAP_PKT_MAX);
+    capRenderPkts();
+  } catch (e) { /* 瞬时抖动, 下一轮重试 */ }
+}
+
+// 点报文行看详情(十六进制 + 全部字段)
+$('capPktBody').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-seq]');
+  if (!tr) return;
+  const p = capPkts.find(x => String(x.seq) === tr.dataset.seq);
+  if (!p) return;
+  // Go []byte 在 JSON 里序列化为 base64 字符串(omitempty 时无 payload 为 undefined),
+  // 必须先解成字节数组再逐字节渲染 —— 直接当数组用 slice/map 会拿到空串或报错(同 Vue 页 Capture.vue)
+  const bytes = [];
+  if (p.payload) {
+    try { bytes.push(...atob(p.payload).split('').map(c => c.charCodeAt(0))); } catch (e) { /* 坏数据: 显示空 */ }
+  }
+  const hex = [];
+  for (let i = 0; i < bytes.length; i += 16) {
+    const chunk = bytes.slice(i, i + 16);
+    const h = chunk.map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const a = chunk.map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+    hex.push(`${i.toString(16).padStart(4, '0')}  ${h.padEnd(47)}  ${esc(a)}`);
+  }
+  $('capPktDetail').style.display = '';
+  $('capPktDetail').innerHTML =
+    `<div class="pkt-detail-head">报文 #${p.seq} · ${esc(p.time)} · ${p.length} 字节`
+    + `<button class="btn-mini" id="capPktClose" style="margin-left:10px">关闭</button></div>`
+    + `<div class="pkt-fields">`
+    + `<div><span>协议</span>${esc(p.protocol || '')}</div>`
+    + `<div><span>源 MAC</span><span class="mono">${esc(p.srcMac || '-')}</span></div>`
+    + `<div><span>目的 MAC</span><span class="mono">${esc(p.dstMac || '-')}</span></div>`
+    + `<div><span>源 IP</span><span class="mono">${esc(p.srcIp || '-')}${p.srcPort ? ':' + p.srcPort : ''}</span></div>`
+    + `<div><span>目的 IP</span><span class="mono">${esc(p.dstIp || '-')}${p.dstPort ? ':' + p.dstPort : ''}</span></div>`
+    + `<div><span>TTL</span><span class="mono">${p.ttl || '-'}</span></div>`
+    + `<div><span>以太类型</span><span class="mono">${esc(p.etherType || '-')}</span></div>`
+    + `<div><span>摘要</span>${esc(p.info || '-')}</div>`
+    + `</div>`
+    + (hex.length
+      ? `<div class="pkt-detail-note">原始字节(前 ${bytes.length} 字节${p.length > bytes.length ? ', 完整帧请用报告/PCAP 导出' : ''})</div>`
+        + `<pre class="pkt-hex">${hex.join('\n')}</pre>`
+      : '');
+  $('capPktClose').addEventListener('click', () => { $('capPktDetail').style.display = 'none'; });
+});
+
+$('capClear').addEventListener('click', () => {
+  // 只清页面显示, 不动后端会话(后端缓冲会自然滚掉旧数据)
+  capPkts = [];
+  capPktSeq = 0;
+  $('capPktDetail').style.display = 'none';
+  capRenderPkts();
+  $('capListHint').textContent = '列表已清空(后端仍在抓包)';
+});
+
+$('capProtoFilter').addEventListener('change', capRenderPkts);
+
+async function capPoll() {
+  try {
+    const r = await fetch('/api/capture/state?since=' + capLastSeq);
+    const d = await r.json();
+    const s = d.stats || {};
+    if (d.error) $('capHint').textContent = d.error;
+    $('capStart').disabled = !!d.running;
+    $('capStop').disabled = !d.running;
+    const stat = (label, val, cls) => `<span class="stat ${cls}"><b>${val}</b>${label}</span>`;
+    $('capStats').innerHTML = stat('总包', s.total || 0, '') + stat('速率', (s.pps || 0).toFixed(1) + '/s', 's-blue') +
+      stat('ARP', (s.arpPps || 0).toFixed(1) + '/s', 's-green') + stat('ARP 总', s.arpTotal || 0, '') +
+      stat('IPv4', s.ipv4 || 0, '') + stat('广播', s.broadcast || 0, 's-orange') +
+      stat('持续', (s.durationSec || 0) + 's', '') +
+      // 报文留存的占用情况: 缓冲满时提示"只保留最近 N 条", 否则用户会以为丢包了
+      stat('已记录', (s.pktBuffered || 0) + '/' + (s.pktCapacity || CAP_PKT_MAX), (s.pktBuffered >= s.pktCapacity) ? 's-orange' : '') +
+      // 环路检测是默认关闭的能力, 状态要可见(否则用户不知道开了没)
+      stat('环路检测', s.loopDetect ? '开' : '关', s.loopDetect ? 's-green' : '');
+    // 畸形帧 / 无法解码计数: 非 0 说明有包没进列表, 必须解释清楚, 否则用户会
+    // 认为"工具漏抓了"
+    if ((s.badFrames || 0) > 0 || (s.pktUndecodable || 0) > 0) {
+      $('capStats').innerHTML += stat('畸形/未识别', (s.badFrames || 0) + '/' + (s.pktUndecodable || 0), 's-orange');
+    }
+    // 简报轮询: 报文列表(与事件分开走, 报文量大得多)
+    capAppendPkts();
+    // 抓包 8 秒以上仍 0 包: 主动提示最常见原因(选错网卡)
+    //
+    // 【为什么不再提"放宽过滤器"】现在默认全量采集(内核只做 arp or ip 粗筛),
+    // 页面的过滤是展示层的、不会导致收不到包 —— 再让用户去改过滤器只会误导,
+    // 真正的原因几乎总是网卡选错。
+    if (d.running && (s.total || 0) === 0 && (s.durationSec || 0) >= 8 && !capZeroWarned) {
+      capZeroWarned = true;
+      $('capHint').textContent = '还没有收到任何包: 确认选对了网卡(伪适配器抓不到流量); 无流量可先 ping 网关。';
+    }
+    if (d.events && d.events.length) {
+      $('capEvents').style.display = '';
+      const box = $('capEvents');
+      for (const e of d.events) {
+        capLastSeq = Math.max(capLastSeq, e.seq);
+        const div = document.createElement('div');
+        const badge = e.severity === 'high' ? '高危' : e.severity === 'medium' ? '中危' : '低危';
+        div.innerHTML = `<span class="t">${e.time}</span><span class="ev-${e.severity}">[${badge}] ${esc(e.title)} — ${esc(e.detail)}${e.advice ? '<br>&nbsp;&nbsp;建议: ' + esc(e.advice) : ''}</span>`;
+        box.appendChild(div);
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+    const bs = d.bindings || [];
+    if (bs.length) {
+      $('capBindEmpty').style.display = 'none';
+      $('capBindBody').innerHTML = bs.map(b =>
+        `<tr><td>${esc(b.ip)}</td><td>${esc(b.mac)}</td><td>${b.count}</td><td>${esc(b.lastOp || '-')}</td>` +
+        `<td>${esc(b.firstSeen || '-')}</td><td>${esc(b.lastSeen || '-')}</td>` +
+        `<td>${b.flapping ? '<span class="badge b-flap">漂移</span>' : '<span class="badge b-open">正常</span>'}</td></tr>`
+      ).join('');
+    } else if (!d.running) {
+      $('capBindBody').innerHTML = '';
+      $('capBindEmpty').style.display = '';
+    }
+  } catch (e) {}
+}
+
+$('capAnalysis').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/capture/analysis');
+    const d = await r.json();
+    capAnalysisText = d.text || '';
+    $('capReport').style.display = '';
+    $('capReport').textContent = capAnalysisText;
+  } catch (e) { $('capHint').textContent = '分析失败: ' + e.message; }
+});
+
+function aiCfg() {
+  let cfg = {};
+  try { cfg = JSON.parse(localStorage.getItem('yugsight_ai') || '{}'); } catch (e) {}
+  return cfg;
+}
+
+$('capAI').addEventListener('click', async () => {
+  const cfg = aiCfg();
+  $('aiBase').value = cfg.apiBase || 'https://api.openai.com/v1';
+  $('aiKey').value = cfg.apiKey || '';
+  $('aiModel').value = cfg.model || 'gpt-4o-mini';
+  // 先取一次内置分析作为上下文
+  if (!capAnalysisText) {
+    try {
+      const r0 = await fetch('/api/capture/analysis');
+      capAnalysisText = (await r0.json()).text || '';
+    } catch (e) {}
+  }
+  if (!capAnalysisText) { alert('没有抓包数据, 请先开始抓包'); return; }
+  const box = $('capAIBox');
+  box.style.display = '';
+  box.textContent = '正在调用 AI 模型分析...';
+  try {
+    const r = await fetch('/api/ai', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        summary: capAnalysisText,
+        config: { apiBase: $('aiBase').value.trim(), apiKey: $('aiKey').value.trim(), model: $('aiModel').value.trim() },
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    localStorage.setItem('yugsight_ai', JSON.stringify({ apiBase: $('aiBase').value.trim(), apiKey: $('aiKey').value.trim(), model: $('aiModel').value.trim() }));
+    box.textContent = d.answer;
+  } catch (e) {
+    box.textContent = 'AI 分析失败: ' + e.message + '\n\n请检查 API Base / Key / 模型名称, 或确认服务器可访问该 API。';
+  }
+});
+
+// ===== 漏洞规则库管理 =====
+let vulnRulesCache = [];
+
+async function loadVulnRules() {
+  try {
+    const r = await fetch('/api/vuln/rules');
+    const d = await r.json();
+    vulnRulesCache = d.rules || [];
+    const builtin = vulnRulesCache.filter(x => x.source === 'builtin').length;
+    const stat = (label, val, cls) => `<span class="stat ${cls}"><b>${val}</b>${label}</span>`;
+    $('vulnStats').innerHTML = stat('规则总数', d.count != null ? d.count : vulnRulesCache.length, '') +
+      stat('内置规则', builtin, 's-blue') + stat('外部导入', vulnRulesCache.length - builtin, 's-green');
+    $('vulnDirHint').textContent = '外部规则目录: ' + (d.dir || 'vuln/') + ' (*.json, 导入即热加载, 无需重启)';
+    renderVulnTable();
+  } catch (e) {
+    $('vulnEmpty').textContent = '加载失败: ' + e;
+  }
+}
+
+function renderVulnTable() {
+  const q = $('vulnSearch').value.trim().toLowerCase();
+  const rows = vulnRulesCache.filter(r => !q ||
+    (r.id || '').toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q) ||
+    (r.pattern || '').toLowerCase().includes(q) || (r.detail || '').toLowerCase().includes(q));
+  $('vulnEmpty').style.display = rows.length ? 'none' : '';
+  $('vulnBody').innerHTML = rows.map(r => {
+    const [cls, name] = SEV[r.severity] || ['sev-info', '信息'];
+    const src = r.source === 'builtin'
+      ? '<span class="muted">内置</span>'
+      : `<span class="badge b-nuclei">${esc(r.source || '外部')}</span>`;
+    return `<tr><td>${esc(r.id)}</td><td>${esc(r.name)}</td><td><span class="badge ${cls}">${name}</span></td>` +
+      `<td>${esc(r.type)}</td><td>${src}</td><td>${esc((r.pattern || '').slice(0, 60))}</td><td class="fix">${esc(r.detail || '-')}</td></tr>`;
+  }).join('');
+}
+
+$('vulnSearch').addEventListener('input', renderVulnTable);
+
+// 查看内置规则原始 JSON
+$('btnVulnView').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/vuln/builtin');
+    $('vulnJsonPre').textContent = await r.text();
+    $('vulnJsonMask').style.display = 'flex';
+  } catch (e) { alert('获取失败: ' + e); }
+});
+$('vulnJsonClose').addEventListener('click', () => { $('vulnJsonMask').style.display = 'none'; });
+
+// 导入自定义规则
+$('btnVulnImport').addEventListener('click', () => {
+  $('vulnImportBox').value = '';
+  $('vulnImportName').value = '';
+  $('vulnImportWarn').textContent = '';
+  $('vulnImportMask').style.display = 'flex';
+});
+$('vulnImportCancel').addEventListener('click', () => { $('vulnImportMask').style.display = 'none'; });
+$('vulnImportGo').addEventListener('click', async () => {
+  const box = $('vulnImportBox').value.trim();
+  if (!box) { $('vulnImportWarn').textContent = '请粘贴规则 JSON'; return; }
+  try {
+    const r = await fetch('/api/vuln/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ json: box, filename: $('vulnImportName').value.trim() }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $('vulnImportWarn').textContent = d.error || ('HTTP ' + r.status); return; }
+    $('vulnImportWarn').textContent = '导入成功: 有效 ' + d.imported + ' 条, 当前共 ' + d.total + ' 条' +
+      (d.warnings && d.warnings.length ? '; 警告: ' + d.warnings.join('; ') : '');
+    $('vulnHint').textContent = '漏洞库: 已加载 ' + d.total + ' 条规则(内置 + vuln/ 目录)';
+    $('vulnImportMask').style.display = 'none';
+    await loadVulnRules();
+  } catch (e) { $('vulnImportWarn').textContent = e.message; }
+});
+
+// ===== 白名单 / 误报管控 =====
+const WL_TYPE_TXT = { ip: 'IP', cidr: 'IP 段', port: '端口', cve: 'CVE 编号', tag: '资产标签' };
+
+async function loadCtl() {
+  try {
+    const [st, wl, fp] = await Promise.all([
+      fetch('/api/vuln/control/status').then(r => r.json()),
+      fetch('/api/vuln/whitelist').then(r => r.json()),
+      fetch('/api/vuln/fps').then(r => r.json()),
+    ]);
+    const tiers = (st.scoring && st.scoring.tiers || []).map(t => t.range + ' ' + t.remark).join(' / ');
+    $('ctlStatus').innerHTML = '白名单条目 <b>' + (wl.count != null ? wl.count : 0) +
+      '</b> · 误报规则 <b>' + (fp.count != null ? fp.count : 0) +
+      '</b> · 打分模型: ' + (tiers || '-') +
+      '<br><span style="opacity:.75">白名单: 自动过滤; 误报: 同资产+同CVE 自动标记, 报告排除</span>';
+    renderWlTable(wl.entries || []);
+    renderFpTable(fp.rules || []);
+  } catch (e) {
+    $('ctlStatus').textContent = '状态加载失败: ' + e;
+  }
+}
+
+function renderWlTable(es) {
+  $('wlBody').innerHTML = es.map(e =>
+    '<tr><td>' + (WL_TYPE_TXT[e.type] || e.type) + '</td><td>' + esc(e.match) + '</td><td>' + esc(e.reason || '-') + '</td>' +
+    '<td>' + (e.expiresAt ? esc(String(e.expiresAt).slice(0, 10)) : '永久') + '</td>' +
+    '<td><button class="btn-mini" style="padding:2px 10px;font-size:11px" data-wl-del="' + esc(e.id) + '">删除</button></td></tr>'
+  ).join('');
+  $('wlEmpty').style.display = es.length ? 'none' : '';
+}
+
+function renderFpTable(rs) {
+  $('fpBody').innerHTML = rs.map(r =>
+    '<tr><td>' + esc(r.assetIp) + '</td><td>' + esc(r.cve || '-') + '</td><td>' + esc(r.title || '-') + '</td>' +
+    '<td>' + esc(r.note || '-') + '</td><td>' + esc(r.markedBy || '-') + '</td>' +
+    '<td>' + esc(String(r.createdAt || '').slice(0, 16).replace('T', ' ')) + '</td>' +
+    '<td><button class="btn-mini" style="padding:2px 10px;font-size:11px" data-fp-del="' + esc(r.id) + '">删除</button></td></tr>'
+  ).join('');
+  $('fpEmpty').style.display = rs.length ? 'none' : '';
+}
+
+$('btnWlAdd').addEventListener('click', async () => {
+  const match = $('wlMatch').value.trim();
+  if (!match) { $('wlHint').textContent = '请填写匹配值'; return; }
+  try {
+    const r = await fetch('/api/vuln/whitelist/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: $('wlType').value, match, reason: $('wlReason').value.trim(), expiresAt: $('wlExpires').value.trim() }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $('wlHint').textContent = d.error || ('HTTP ' + r.status); return; }
+    $('wlMatch').value = ''; $('wlReason').value = ''; $('wlExpires').value = '';
+    $('wlHint').textContent = '已添加';
+    await loadCtl();
+  } catch (e) { $('wlHint').textContent = e.message; }
+});
+
+$('btnFpAdd').addEventListener('click', async () => {
+  const ip = $('fpIp').value.trim();
+  const cve = $('fpCve').value.trim();
+  const title = $('fpTitle').value.trim();
+  if (!ip) { $('fpHint').textContent = '请填写资产 IP'; return; }
+  if (!cve && !title) { $('fpHint').textContent = 'CVE 与标题至少填一项'; return; }
+  try {
+    const r = await fetch('/api/vuln/fps/mark', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assetIp: ip, cve, title, note: $('fpNote').value.trim(), markedBy: 'Web' }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $('fpHint').textContent = d.error || ('HTTP ' + r.status); return; }
+    $('fpIp').value = ''; $('fpCve').value = ''; $('fpTitle').value = ''; $('fpNote').value = '';
+    $('fpHint').textContent = '已标记(后续扫描同资产+同CVE 自动生效)';
+    await loadCtl();
+  } catch (e) { $('fpHint').textContent = e.message; }
+});
+
+// 白名单/误报 删除按钮(事件委托)
+$('ctlCard').addEventListener('click', async e => {
+  const wlBtn = e.target.closest('[data-wl-del]');
+  const fpBtn = e.target.closest('[data-fp-del]');
+  const url = wlBtn ? '/api/vuln/whitelist/remove' : (fpBtn ? '/api/vuln/fps/remove' : '');
+  if (!url) return;
+  const id = wlBtn ? wlBtn.dataset.wlDel : fpBtn.dataset.fpDel;
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { alert('删除失败: ' + (d.error || 'HTTP ' + r.status)); return; }
+    await loadCtl();
+  } catch (err) { alert('删除失败: ' + err); }
+});
+
+// 扫描结果行 "误报" 按钮(事件委托): 标记误报 + 行内徽标
+function urlHost(u) {
+  try { return new URL(u, 'http://x').hostname; } catch (e) { return u; }
+}
+$('tbody').addEventListener('click', async e => {
+  const btn = e.target.closest('.fp-mark');
+  if (!btn) return;
+  const ip = curType === 'web' ? urlHost($('web-url').value.trim()) : $('host-ip').value.trim();
+  if (!ip) { alert('无法确定目标资产 IP'); return; }
+  const title = btn.dataset.title || '';
+  const cve = btn.dataset.cve || '';
+  if (!cve && !title) { alert('该结果缺少 CVE 与标题, 无法标记'); return; }
+  const note = (prompt('误报原因/备注 (可选):', '人工判定为误报') || '').trim();
+  try {
+    const r = await fetch('/api/vuln/fps/mark', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assetIp: ip, cve, title, note, markedBy: 'Web' }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert('标记失败: ' + (d.error || 'HTTP ' + r.status)); return; }
+    btn.remove();
+    const badge = document.createElement('span');
+    badge.className = 'badge b-fp';
+    badge.textContent = '误报';
+    btn.closest('td').appendChild(badge);
+    if (curScan) curScan.findings.forEach(f => { if (f.title === title) f.falsePositive = true; });
+    log('已标记误报: ' + title + ' (后续扫描自动生效, 不进报告)', '#8296bd');
+  } catch (err) { alert('标记失败: ' + err); }
+});
+
+// Nuclei 参数框: 勾选后显示(带默认扫描参数)
+$('host-nuclei').addEventListener('change', () => {
+  $('nucleiParams').style.display = $('host-nuclei').checked ? '' : 'none';
+});
+
+// ===== 任务 4.2: 实时事件流 (SSE 多客户端广播) =====
+let evtSrc = null, evtCount = 0;
+function openEvt() {
+  if (evtSrc) return;
+  $('evtState').textContent = '连接中...';
+  evtSrc = new EventSource('/api/events');
+  const onEv = (ev) => {
+    if (!ev.data) return;
+    evtCount++;
+    $('evtCount').textContent = evtCount;
+    let d;
+    try { d = JSON.parse(ev.data); } catch (e) { d = { msg: ev.data }; }
+    evtAppend(ev.type, d);
+  };
+  ['hello', 'status', 'ip', 'port', 'finding', 'info', 'ai', 'done'].forEach(t => evtSrc.addEventListener(t, onEv));
+  evtSrc.onmessage = onEv;
+  evtSrc.onopen = () => { $('evtState').textContent = '已连接'; };
+  evtSrc.onerror = () => { $('evtState').textContent = '重连中...'; };
+}
+function closeEvt() {
+  if (evtSrc) { evtSrc.close(); evtSrc = null; $('evtState').textContent = '未连接'; }
+}
+function evtAppend(type, d) {
+  const box = $('evtLog');
+  const line = document.createElement('div');
+  line.innerHTML = `<span class="t">${new Date().toLocaleTimeString('zh-CN', { hour12: false })}</span>`;
+  const span = document.createElement('span');
+  let text = type + ' ';
+  switch (type) {
+    case 'hello': text += '已接入事件流, 在线客户端 ' + (d.clients ?? 0); break;
+    case 'status': text += '[日志] ' + (d.msg || ''); break;
+    case 'ip': {
+      // 严格模式排除的主机带 excludedByStrict: 它确实在线(端口有应答), 只是没有
+      // ICMP/ARP 确定性证据 —— 直接写"存活"会与上方汇总的"存活 X/Y"矛盾,
+      // 写成"离线"又会掩盖"这台机器其实在"。故单列一种措辞。
+      const st = d.alive ? (d.excludedByStrict ? ' 端口推断(严格模式未计入)' : ' 存活') : ' 离线';
+      text += '[资产] ' + (d.ip || '') + st + ((d.ports || []).length ? ' 开放端口: ' + d.ports.join(',') : '');
+      break;
+    }
+    case 'port': text += '[资产] ' + (d.ip || '') + ':' + (d.port || '') + ' ' + (d.state || '') + ' ' + (d.service || ''); break;
+    case 'finding': text += '[漏洞][' + (d.severity || '?') + '] ' + (d.title || '') + (d.host ? ' @' + d.host + (d.port ? ':' + d.port : '') : ''); break;
+    case 'info': text += '[信息] ' + (d.key || '') + ' = ' + (d.value || ''); break;
+    case 'ai': text += '[AI] ' + (d.stage || '') + (d.delta ? ' ' + d.delta.slice(0, 120) : (d.error || '')); break;
+    case 'done': text += '[完成] ' + (d.msg || ''); break;
+    default: text += JSON.stringify(d).slice(0, 200);
+  }
+  span.textContent = text;
+  const color = { finding: '#f87171', status: '#8296bd', ip: '#34d399', port: '#60a5fa', info: '#8296bd', ai: '#c084fc', done: '#34d399', hello: '#8296bd' }[type];
+  if (color) span.style.color = color;
+  line.appendChild(span);
+  box.appendChild(line);
+  while (box.childNodes.length > 500) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+$('evtClear').addEventListener('click', () => { $('evtLog').innerHTML = ''; evtCount = 0; $('evtCount').textContent = '0'; });
+
+// ===== 任务 4.2: 引擎状态 (./bin/ 本地引擎 + Npcap 驱动) =====
+let envPoll = null;
+function loadEnv(silent) {
+  if (envPoll) { clearTimeout(envPoll); envPoll = null; }
+  fetch('/api/env').then(r => r.json()).then(d => {
+    renderEnv(d);
+    // 版本探测需要数秒, 检测中轮询直到完成
+    if (d.detecting) envPoll = setTimeout(() => loadEnv(true), 1500);
+  }).catch(e => { if (!silent) $('envHint').textContent = '检测失败: ' + e; });
+}
+function renderEnv(d) {
+  const rows = [];
+  (d.engines || []).forEach(e => {
+    let st;
+    if (e.state === 'ok') st = '<span class="badge b-open">就绪</span>';
+    else if (e.state === 'missing') st = '<span class="badge sev-high">未安装</span>';
+    else if (e.state === 'error') st = '<span class="badge sev-med">异常</span>';
+    else st = '<span class="muted">检测中...</span>';
+    const note = e.state === 'ok' ? '本地引擎优先' : (e.fallback ? '自动降级为内置引擎' : '');
+    rows.push(`<tr><td>${esc(e.name)}</td><td>${st}</td><td>${esc(e.version || '-')}</td><td class="muted">${esc(e.path || d.binDir || '-')}</td><td class="muted">${esc(e.error || note)}</td></tr>`);
+  });
+  // Java 运行时单列一行: 仅 ZAP 依赖它。
+  // 【为什么必须显示】把 dist 目录整体拷到别的电脑时, ZAP 的引擎文件会跟着过来
+  // (上面那行会显示"就绪"), 但目标机器可能只有 Java 8 甚至没装 Java —— 此时 ZAP
+  // 一执行就抛 UnsupportedClassVersionError。不单列这一行, 用户会以为"都就绪了"。
+  const j = d.java;
+  if (j && j.supported) {
+    let jSt = '<span class="muted">检测中...</span>';
+    let jVer = '-';
+    if (j.found) {
+      jSt = j.ok ? '<span class="badge b-open">满足</span>' : '<span class="badge sev-high">版本过低</span>';
+      jVer = j.version || '-';
+    } else if (j.note === '检测中...') {
+      jSt = '<span class="muted">检测中...</span>';
+    } else {
+      jSt = '<span class="badge sev-high">未安装</span>';
+    }
+    // 达标时不必刷红字, 只在有问题时把原因说清楚
+    const jNote = j.ok ? 'ZAP 运行依赖 (需 ' + j.minVersion + '+)' : (j.note || '');
+    rows.push(`<tr><td>Java 运行时</td><td>${jSt}</td><td class="mono">${esc(jVer)}</td>` +
+      `<td class="muted">PATH 中的 java</td><td style="color:${j.ok ? 'var(--muted)' : 'var(--red)'}">${esc(jNote)}</td></tr>`);
+  }
+  const n = d.npcap || {};
+  let nSt = '<span class="muted">检测中...</span>';
+  if (n.supported) nSt = n.installed ? '<span class="badge b-open">已安装</span>' : '<span class="badge sev-high">未安装</span>';
+  else nSt = '<span class="muted">不适用 (非 Windows)</span>';
+  const nNote = n.installer ? '安装器: ' + esc(n.installer) : (n.supported && !n.installed ? '根目录未找到安装器' : '');
+  rows.push(`<tr><td>Npcap 驱动</td><td>${nSt}</td><td>${esc(n.version || '-')}</td><td class="muted">${esc(n.source || '-')}</td><td class="muted">${nNote}</td></tr>`);
+  $('envBody').innerHTML = rows.join('');
+  $('envHint').textContent = '检测时间: ' + (d.checkedAt || '-') + (d.detecting ? ' (版本探测中...)' : '') + ' · bin 目录: ' + (d.binDir || '-');
+  // "安装网络驱动"按钮: 仅 Windows 且 Npcap 未安装时显示
+  const canInstall = n.supported && !n.installed;
+  $('btnNpcapInstall').style.display = canInstall ? '' : 'none';
+  $('npcapHint').textContent = canInstall
+    ? (n.installer ? '点击执行 Npcap 安装器, 跟随向导(约 1 分钟)' : '请将 npcap-*.exe 安装器放到 exe 同目录')
+    : (n.supported ? 'Npcap 已安装, 抓包可用' : '当前平台不需要 Npcap 驱动');
+  // 降级汇总 + 功能置灰依据: 引擎缺失 -> 顶栏 chip + 对应能力提示; Npcap 缺失 -> 抓包页签/按钮置灰
+  const deg = d.degraded || [];
+  $('envStats').innerHTML = deg.length
+    ? deg.map(x => `<span class="stat s-orange"><b>降级</b>${esc(x)} 未检测到, 使用内置引擎</span>`).join('')
+    : '<span class="stat s-green"><b>降级 0</b>本地引擎全部就绪 (内置引擎始终可用)</span>';
+  const chip = $('envChip');
+  if (deg.length) { chip.style.display = ''; chip.className = 'chip off'; chip.textContent = '引擎降级: ' + deg.join(', '); }
+  else chip.style.display = 'none';
+  const capTab = document.querySelector('.tab[data-type="cap"]');
+  if (capTab) capTab.classList.toggle('disabled', n.supported && !n.installed);
+  if (n.supported && !n.installed) $('capStart').disabled = true;
+  else if (n.supported) $('capStart').disabled = false; // 已安装: 恢复可用(抓包中会被轮询重新禁用)
+}
+$('btnEnvRefresh').addEventListener('click', () => {
+  fetch('/api/env/refresh', { method: 'POST' }).then(r => r.json()).then(d => {
+    $('envHint').textContent = '重新检测已触发' + (d.detecting ? ' (探测中...)' : '');
+    loadEnv(true);
+    loadEngDl();
+  }).catch(e => { $('envHint').textContent = '触发失败: ' + e; });
+});
+
+// ===== 外部引擎一键下载/安装 =====
+// 后端从厂商官方 Releases 拉包(Trivy/Nuclei 直接解包; nmap 从官方 setup.exe 中抽取
+// nmap.exe, 不运行安装向导; ZAP 默认不装)。默认总开关关闭, 需 engine.json 显式开启。
+let engDlPoll = null;
+function loadEngDl(silent) {
+  fetch('/api/engine/downloads').then(r => r.json()).then(d => { renderEngDl(d); if (!silent) {} })
+    .catch(e => { if (!silent) $('engDlHint').textContent = '查询失败: ' + e; });
+}
+function renderEngDl(d) {
+  const configured = !!d.configured;
+  const tools = (d.extractTools || []);
+  $('engDlHint').textContent = configured
+    ? '安装目录: ' + (d.binDir || 'bin/') + ' · 下载缓存: ' + ((d.cacheBytes || 0) / 1048576).toFixed(1) + 'MB / ' + (d.cacheFiles || 0) + ' 个包' +
+      (tools.length ? ' · 解包器: ' + tools.join(', ') : '')
+    : '未启用: 在 exe 同目录 engine.json 中增加 downloads.allowDownload=true 后重启即可一键安装官方引擎';
+  const rows = [];
+  (d.engines || []).forEach(e => {
+    const st = e.installed
+      ? '<span class="badge b-open">已安装</span>'
+      : (e.supported ? '<span class="badge sev-high">未安装</span>' : '<span class="badge sev-med">不可自动获取</span>');
+    let ops = '';
+    if (e.supported && configured) {
+      ops = e.installed
+        ? `<button class="btn-mini" data-engdl="reinstall" data-eng="${esc(e.engine)}">重新安装</button> ` +
+          `<button class="btn-mini" data-engdl="uninstall" data-eng="${esc(e.engine)}">卸载</button>`
+        : `<button class="btn-mini" data-engdl="install" data-eng="${esc(e.engine)}">下载安装</button>`;
+    } else if (!configured) {
+      ops = '<span class="muted">需开启总开关</span>';
+    } else {
+      ops = '<span class="muted">-</span>';
+    }
+    const note = [e.note, e.defaultOff ? '默认不勾选: ' + e.defaultOff : '', e.unsupportedReason, e.homepage]
+      .filter(Boolean).join(' · ');
+    rows.push(`<tr><td>${esc(e.display || e.engine)}</td><td>${st}</td>` +
+      `<td class="mono">${esc(e.installedVersion || e.latestVersion || '-')}</td>` +
+      `<td class="muted mono">${esc(e.assetName || '-')}</td><td>${ops}</td>` +
+      `<td class="muted">${esc(note)}</td></tr>`);
+  });
+  $('engDlBody').innerHTML = rows.join('') || '<tr><td colspan="6" class="muted">无可下载引擎</td></tr>';
+  $('btnEngDlAll').disabled = !configured;
+  $('btnEngDlAll').style.opacity = configured ? '' : '.5';
+  // 进度区: 运行中显示双进度条, 空闲时显示上一轮逐项结果(失败项带官方下载页)
+  const p = d.progress || {};
+  if (d.running) {
+    $('engDlProg').textContent = '进行中: ' + (p.phase || p.status || '...') + ' [' + (p.engine || '-') + ']';
+    renderEngDlBars(d);
+  } else if ((d.results || []).length) {
+    $('engDlBars').style.display = 'none';
+    $('engDlProg').innerHTML = d.results.map(r => {
+      const ok = r.ok ? '<span style="color:var(--green)">成功</span>' : (r.skipped ? '<span class="muted">跳过</span>' : '<span style="color:var(--red)">失败</span>');
+      let t = esc(r.display) + ': ' + ok + (r.version ? ' v' + esc(r.version) : '');
+      if (r.installed) t += ' → ' + esc(r.installed);
+      if (r.renameTo) t += ' (因命名冲突隔离安装为 ' + esc(r.renameTo) + ')';
+      if (r.error) t += ' · ' + esc(r.error);
+      if (r.homepage) t += ' · <a href="' + esc(r.homepage) + '" target="_blank" rel="noopener" style="color:var(--accent)">官方下载页</a>';
+      return '<div>' + t + '</div>';
+    }).join('');
+  } else {
+    $('engDlBars').style.display = 'none';
+    $('engDlProg').textContent = '';
+  }
+  $('engDlNote').textContent = d.lastError ? '上次任务: ' + d.lastError : '';
+}
+
+// renderEngDlBars 渲染下载进度条(供 /downloads 与 /downloads/progress 两条路复用)。
+//
+// 【为什么要单独抽出来】经典页原来只把进度拼成一行 textContent, 每次轮询整体覆盖:
+// 既看不出"总进度还剩几个引擎", 也没有体积/速度/剩余时间 —— 下载 ZAP 这种 273MB 的
+// 大包时, 用户完全无法判断是在正常下载还是卡死了。
+//
+// 【总进度为什么要折算】p.percent 只描述**当前这一个**引擎的下载百分比。批量安装 3 个
+// 引擎时, 第 2 个刚起步就显示 0%, 用户会以为卡住 —— 实际第 1 个早装完了。故按
+// "(已完成个数 + 当前引擎进度) / 总数" 折算; 解包/落位阶段没有百分比, 按 0.9 估,
+// 保证进度条只前进不回退。
+function renderEngDlBars(d) {
+  const p = d.progress || {};
+  const total = p.total || 0;
+  const done = p.done || 0;
+  const busy = ['extracting', 'installing'].includes(p.status);
+  const checking = p.status === 'checking';
+  const downloading = p.status === 'downloading';
+
+  // 当前引擎的完成度(0~1)
+  let cur = 0;
+  if (downloading) cur = (typeof p.percent === 'number' && p.percent >= 0) ? p.percent / 100 : 0;
+  else if (p.status === 'done') cur = 1;
+  else if (busy) cur = 0.9;
+  else if (checking) cur = 0.05;
+
+  const overall = total ? Math.max(0, Math.min(100, Math.round(((done + cur) / total) * 100))) : 0;
+  $('engDlBarTotal').style.width = overall + '%';
+  $('engDlPctTotal').textContent = overall + '%';
+  $('engDlBars').style.display = '';
+
+  // 只有"正在下载"才有真实的百分比意义(查版本/解包/落位都是瞬时阶段)
+  if (downloading && typeof p.percent === 'number' && p.percent >= 0) {
+    $('engDlRowCur').style.display = '';
+    $('engDlBarCur').style.width = p.percent + '%';
+    $('engDlPctCur').textContent = p.percent + '%';
+  } else {
+    $('engDlRowCur').style.display = 'none';
+  }
+
+  // 明细行: 体积 / 速度 / 剩余时间 / 第几个
+  const parts = [];
+  if (total > 1) parts.push('第 ' + Math.min(done + (p.status === 'done' ? 0 : 1), total) + '/' + total + ' 个');
+  if (downloading && p.totalBytes > 0) {
+    parts.push('<span class="mono">' + fmtSize(p.bytes || 0) + ' / ' + fmtSize(p.totalBytes) + '</span>');
+  } else if (downloading && p.bytes > 0) {
+    parts.push('<span class="mono">已下载 ' + fmtSize(p.bytes) + '</span>');
+  }
+  if (p.speed > 0) parts.push('<span class="mono">' + fmtSize(p.speed) + '/s</span>');
+  if (downloading && p.speed > 0 && p.totalBytes > 0 && p.bytes < p.totalBytes) {
+    const sec = Math.round((p.totalBytes - p.bytes) / p.speed);
+    parts.push('剩余约 ' + (sec >= 60 ? Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒' : sec + ' 秒'));
+  }
+  // 解包/落位阶段给一句解释, 否则进度条停着不动会被当成卡死
+  if (busy) parts.push('包体已下载完, 正在本地解包与写入(大包需数秒到一分钟)');
+  if (checking) parts.push('正在向上游查询最新版本号');
+  $('engDlMeta').innerHTML = parts.join(' · ');
+}
+
+// fmtSize 字节数转人类可读(与 Vue 页 fmtBytes 同口径: KB/MB/GB 均按 1024 进制)
+function fmtSize(n) {
+  n = n || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+async function engDlAction(eng, action) {
+  if (action === 'install' || action === 'reinstall') {
+    // 提示文案必须与真实行为一致(旧文案还停留在"Windows 只有安装器, 需要 7-Zip 抽取",
+    // 而 ZAP 现已改用官方跨平台免安装包, nmap 也改用免安装 zip —— 过期的提示会误导用户
+    // 去装根本用不到的解压工具, 或以为装完就能跑)。
+    let tip = '';
+    if (eng === 'zap') tip = '\nZAP 约 273MB, 需本机已装 Java 17+。';
+    else if (eng === 'nmap') tip = '\n官方免安装 zip, 解压到 bin/。';
+    if (!confirm('下载并安装 ' + eng + ' ?' + tip + '\n包体较大, 请确认网络可达。')) return;
+  } else {
+    if (!confirm('卸载 ' + eng + ' ?(内置引擎始终可用)')) return;
+  }
+  try {
+    const url = action === 'uninstall' ? '/api/engine/downloads/uninstall' : '/api/engine/downloads/start';
+    const r = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(action === 'uninstall' ? { engine: eng } : { engines: [eng] })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert('操作失败: ' + (d.error || ('HTTP ' + r.status))); return; }
+    if (action === 'uninstall') { loadEngDl(); return; }
+    $('engDlProg').textContent = '已启动下载任务...';
+    startEngDlPoll();
+  } catch (e) { alert('操作失败: ' + e); }
+}
+function startEngDlPoll() {
+  if (engDlPoll) clearInterval(engDlPoll);
+  engDlPoll = setInterval(async () => {
+    try {
+      const p = await (await fetch('/api/engine/downloads/progress')).json();
+      if (p.running) {
+        const g = p.progress || {};
+        $('engDlProg').textContent = '进行中: ' + (g.phase || g.status || '...') + ' [' + (g.engine || '-') + ']';
+        // 进度条与列表渲染共用同一函数, 避免"列表卡片"和"轮询"两套口径画出不一样的进度
+        renderEngDlBars({ progress: g, running: true });
+      } else {
+        clearInterval(engDlPoll); engDlPoll = null;
+        loadEngDl();
+        loadEnv(true); // 装完刷新探测结果(envdetect 已在后端 Refresh)
+      }
+    } catch (e) { /* 下一轮重试 */ }
+  }, 1500);
+}
+$('btnEngDlAll').addEventListener('click', async () => {
+  if (!confirm('按勾选项依次安装官方引擎(Trivy / Nuclei), 包体较大。继续?')) return;
+  try {
+    const r = await fetch('/api/engine/downloads/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert('无法启动: ' + (d.error || ('HTTP ' + r.status))); return; }
+    $('engDlProg').textContent = '已启动下载任务...';
+    startEngDlPoll();
+  } catch (e) { alert('无法启动: ' + e); }
+});
+$('btnEngDlRefresh').addEventListener('click', () => loadEngDl());
+// 表格内的操作按钮统一事件委托(动态渲染的按钮不方便逐个绑定)
+$('engDlBody').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-engdl]');
+  if (!b) return;
+  engDlAction(b.getAttribute('data-eng'), b.getAttribute('data-engdl'));
+});
+
+// ===== 任务 6.2: 引擎解析编排 / 自动降级状态 =====
+function loadEngine() {
+  fetch('/api/engine/status').then(r => r.json()).then(d => {
+    const on = !!d.enabled;
+    const deg = d.degradeCount || 0;
+    $('engStats').innerHTML = [
+      `<span class="stat ${on ? 's-green' : ''}"><b>${on ? '已启用' : '未启用'}</b>外部引擎编排</span>`,
+      `<span class="stat ${d.execReady ? 's-green' : 's-orange'}"><b>${d.execReady ? '就绪' : '未接入'}</b>外部执行器</span>`,
+      `<span class="stat s-green"><b>可用</b>内置引擎兜底</span>`,
+      `<span class="stat ${deg ? 's-orange' : 's-green'}"><b>${deg}</b>累计降级次数</span>`,
+      `<span class="stat"><b>${esc(d.lastSource || '-')}</b>最近结果来源</span>`,
+      `<span class="stat"><b>${d.timeoutSec || '-'}s</b>单引擎超时</span>`,
+    ].join('');
+    $('engHint').textContent = '配置: engine.json · ' + (on ? '引擎 ' + ((d.engines || []).join('/') || 'nmap/trivy/zap') : '外部引擎关闭, 全部使用内置引擎') + ' · bin: ' + (d.binDir || '-');
+    const log = d.degradeLog || [];
+    $('engLog').innerHTML = log.length
+      ? log.slice().reverse().map(l => `<div class="muted">${esc(l)}</div>`).join('')
+      : '<div class="muted">暂无编排日志</div>';
+  }).catch(e => { $('engHint').textContent = '读取失败: ' + e; });
+}
+$('btnEngRefresh').addEventListener('click', () => {
+  fetch('/api/engine/refresh', { method: 'POST' }).then(r => r.json()).then(d => {
+    $('engHint').textContent = '引擎配置已重载' + (d.enabled ? ' (外部引擎已启用)' : ' (外部引擎关闭)');
+    loadEngine();
+  }).catch(e => { $('engHint').textContent = '重载失败: ' + e; });
+});
+// ===== 任务 6.3: 分布式探针状态面板 =====
+let probeTimer = null;
+function probeCapHtml(p) {
+  return (p.capabilities || '').split(',').map(s => s.trim()).filter(Boolean)
+    .map(c => `<span class="chip" style="margin-right:3px">${esc(c)}</span>`).join('') || '<span class="muted">-</span>';
+}
+function loadProbe(silent) {
+  if (probeTimer) { clearTimeout(probeTimer); probeTimer = null; }
+  fetch('/api/v2/probe/status').then(r => r.json()).then(st => {
+    const d = st.data || {};
+    const enabled = d.centerEnabled || d.clientEnabled;
+    const roleText = d.centerEnabled && d.clientEnabled ? '中心+探针' : (d.centerEnabled ? '中心端' : (d.clientEnabled ? '探针端' : '单机'));
+    $('probeStats').innerHTML = [
+      `<span class="stat ${d.centerEnabled ? 's-green' : ''}"><b>${d.centerEnabled ? '运行中' : '未启用'}</b>中心端监听</span>`,
+      `<span class="stat ${d.clientEnabled && d.clientOnline ? 's-green' : (d.clientEnabled ? 's-orange' : '')}"><b>${d.clientEnabled ? (d.clientOnline ? '已连接' : '重连中') : '未启用'}</b>本机探针端</span>`,
+      `<span class="stat"><b>${esc(roleText)}</b>本机角色</span>`,
+      `<span class="stat"><b>v${d.protocol || '-'}</b>协议版本</span>`,
+    ].join('');
+    $('probeHint').textContent = '配置: ' + (d.configPath || 'probe.json') + (enabled ? '' : ' (未启用, 保持单机模式)');
+    const log = d.log || [];
+    $('probeLog').innerHTML = log.length
+      ? log.slice().reverse().map(l => `<div class="muted">${esc(l)}</div>`).join('')
+      : '<div class="muted">暂无探针日志</div>';
+    return fetch('/api/v2/probe/list').then(r => r.json()).then(ls => {
+      const list = (ls.data && ls.data.list) || [];
+      const box = $('probeBox');
+      if (!list.length) { box.style.display = 'none'; return; }
+      box.style.display = '';
+      $('probeBody').innerHTML = list.map(p => {
+        const ni = p.nodeInfo || {};
+        const ld = p.load || {};
+        const load = ld.cpuPercent == null ? '-' : `CPU ${Number(ld.cpuPercent).toFixed(1)}% / 内存 ${Number(ld.memPercent || 0).toFixed(1)}%`;
+        return `<tr>
+          <td><span class="chip ${p.online ? '' : 'off'}">${p.online ? '在线' : '离线'}</span></td>
+          <td class="mono">${esc(p.id)}</td>
+          <td>${esc(p.name || '-')}</td>
+          <td class="muted">${esc((ni.os || '-') + (ni.arch ? '/' + ni.arch : ''))}</td>
+          <td class="mono muted">${esc(p.addr || '-')}</td>
+          <td>${probeCapHtml(p)}</td>
+          <td class="muted">${load}</td>
+          <td class="muted mono">${esc(p.lastSeenAt ? new Date(p.lastSeenAt).toLocaleString() : '-')}</td>
+        </tr>`;
+      }).join('');
+    });
+  }).catch(e => {
+    $('probeHint').textContent = '读取失败: ' + e;
+  }).finally(() => {
+    if (!silent) return;
+    // 面板自动刷新: 60s。
+    // 【为什么是 60s 而不是 5s】探针在线状态与负载是"分钟级"变化的信息, 5s 轮询既不提升
+    // 可读性, 还会在每个 tick 打出两条请求日志(status + list), 把引擎安装/任务调度等
+    // 真正重要的日志冲掉。60s 既保证状态够新, 又让日志保持可读。
+    probeTimer = setTimeout(() => loadProbe(true), 60000);
+  });
+}
+$('btnProbeRefresh').addEventListener('click', () => loadProbe(false));
+
+// 执行位置切换 + 在线探针下拉填充(供"下发到探针节点执行")
+function refreshProbePick() {
+  const wrap = $('probePickWrap');
+  wrap.style.display = $('execAt').value === 'probe' ? '' : 'none';
+  if ($('execAt').value !== 'probe') return;
+  fetch('/api/v2/probe/list').then(r => r.json()).then(ls => {
+    const list = ((ls.data && ls.data.list) || []).filter(p => p.online);
+    const sel = $('probePick');
+    const cur = sel.value;
+    sel.innerHTML = list.length
+      ? list.map(p => `<option value="${esc(p.id)}">${esc(p.name || p.id)} (${esc(p.addr || '-')})</option>`).join('')
+      : '<option value="">(无在线探针)</option>';
+    if (cur && list.some(p => p.id === cur)) sel.value = cur;
+    $('probePickHint').textContent = list.length
+      ? '在线探针 ' + list.length + ' 个; 任务由探针执行, 结果见探针状态面板'
+      : '无在线探针 —— 请确认中心端已启用且探针已启动(probe.json)';
+  }).catch(() => {
+    $('probePick').innerHTML = '<option value="">(中心端未启用)</option>';
+    $('probePickHint').textContent = '读取探针列表失败: 需中心端 enabled=true';
+  });
+}
+$('execAt').addEventListener('change', refreshProbePick);
+
+$('btnNpcapInstall').addEventListener('click', async () => {
+  const btn = $('btnNpcapInstall');
+  btn.disabled = true;
+  $('npcapHint').textContent = '正在启动 Npcap 安装器, 请跟随安装向导点完"下一步"...';
+  try {
+    const r = await fetch('/api/env/install', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) { $('npcapHint').textContent = d.error || '安装失败'; btn.disabled = false; return; }
+    $('npcapHint').textContent = '已检测到 Npcap 安装完成, 正在刷新状态...';
+    loadEnv(true);
+    btn.disabled = false;
+  } catch (e) { $('npcapHint').textContent = '安装请求失败: ' + e; btn.disabled = false; }
+});
+
+// ===== 认证 =====
+function initApp() {
+  $('appHeader').style.display = '';
+  $('appWrap').style.display = '';
+  $('classicBanner').style.display = 'flex';
+  setTab('ip');
+  renderBpfExamples();
+  loadLocal();
+  loadEnv(); // 任务 4.2: 环境检测(引擎降级 chip / Npcap 置灰依据)
+  checkServiceLoop();
+}
+
+async function loadLocal() {
+  try {
+    const r = await fetch('/api/info');
+    const d = await r.json();
+    if (!d.localIP) return;
+    $('port-ip').value = d.localIP;
+    $('host-ip').value = d.localIP;
+    $('web-url').value = 'http://' + d.localIP + (d.port ? ':' + d.port : '');
+    const o = d.localIP.split('.');
+    if (o.length === 4) $('ip-cidr').value = o[0] + '.' + o[1] + '.' + o[2] + '.0/24';
+    let tip = '本机: ' + d.localIP;
+    if (d.hostname) tip += ' (' + d.hostname + ')';
+    if (d.ipList && d.ipList.length > 1) tip += ' 等 ' + d.ipList.length + ' 个地址';
+    $('localInfo').textContent = tip;
+    // 抓包页同步提示本机 IP: ping 这个 IP = ping 本机自己, 只走回环适配器
+    const lt = $('capLocalTip');
+    if (lt && d.localIP) {
+      lt.textContent = '本机 IP: ' + d.localIP + ' —— ping 本机自己(含这个 IP)只走回环适配器 NPF_Loopback(列表中已单独标出), 选物理网卡抓不到';
+      lt.style.display = '';
+    }
+    if (d.version) {
+      $('verInfo').textContent = 'Yugsight v' + d.version + ' · 开源协议 MIT';
+      $('verBadge').textContent = 'v' + d.version;
+    }
+    if (d.vulnRules) $('vulnHint').textContent = '漏洞库: 已加载 ' + d.vulnRules + ' 条规则(内置 + vuln/ 目录)';
+    // Nuclei 模板状态: 默认启用(带 -no-nuclei 启动时关闭); 展示内置/外部分量
+    if (d.nucleiEnabled) {
+      $('nucleiHint').textContent = 'Nuclei 模板: ' + (d.nucleiTemplatesBuilt || 0) + ' 内置 / ' + (d.nucleiTemplates || 0) + ' 外部 (已启用)';
+      $('btnNucleiReload').style.display = '';
+    } else {
+      $('nucleiHint').textContent = 'Nuclei 模板未启用 (以 -no-nuclei 启动, 去掉该参数即可启用)';
+      $('host-nuclei').disabled = true;
+      $('nucleiParams').style.display = 'none';
+      $('btnNucleiReload').style.display = 'none';
+    }
+  } catch (e) {
+    $('localInfo').textContent = '未检测到本机地址, 请手动输入';
+    $('port-ip').value = '127.0.0.1';
+    $('host-ip').value = '127.0.0.1';
+    $('web-url').value = 'http://127.0.0.1:' + location.port;
+  }
+}
+
+async function checkServiceLoop() {
+  const tick = async () => {
+    if (!authed) return;
+    try {
+      const r = await fetch('/api/info', { cache: 'no-store' });
+      if (r.status === 401) { location.reload(); return; }
+      $('svcStatus').textContent = '服务: 运行中';
+      $('svcStatus').className = 'chip on';
+      $('svcBanner').style.display = 'none';
+    } catch (e) {
+      $('svcStatus').textContent = '服务: 已断开';
+      $('svcStatus').className = 'chip off';
+      $('svcBanner').style.display = '';
+      $('svcBanner').textContent = '无法连接 Yugsight 服务, 可能主程序已关闭。请启动 yugsight_windows_amd64.exe 后刷新本页。';
+    }
+  };
+  tick();
+  // 服务存活探测: 30s。
+  // 【为什么放宽】这是"服务是否还活着"的看门狗, 不是实时数据流; 5s 一次只会在日志里
+  // 持续刷 GET /api/info 而毫无信息增量(服务断开时下一次 tick 同样能发现)。
+  // 保留 30s(比探针面板的 60s 更紧)是因为它承担"断线立刻提示"的职责。
+  setInterval(tick, 30000);
+}
+
+function showForm(id) {
+  // 设备绑定(迁移密钥)体系已整体移除: 只剩注册与登录两态
+  ['regForm', 'loginForm'].forEach(x => {
+    $(x).style.display = (x === id ? 'block' : 'none');
+  });
+}
+
+async function doRegister() {
+  $('regErr').textContent = '';
+  try {
+    const r = await fetch('/api/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: $('regUser').value.trim(), pass: $('regPass').value, pass2: $('regPass2').value }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $('regErr').textContent = d.error || '注册失败'; return; }
+    authed = true;
+    initApp();
+  } catch (e) { $('regErr').textContent = '无法连接服务: ' + e.message; }
+}
+
+$('btnReg').addEventListener('click', doRegister);
+$('regPass2').addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
+
+async function doLogin() {
+  $('loginErr').textContent = '';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: $('loginUser').value.trim(), pass: $('loginPass').value }),
+    });
+    if (!r.ok) {
+      let m = '登录失败';
+      try { m = (await r.json()).error || m; } catch (e) {}
+      $('loginErr').textContent = m;
+      return;
+    }
+    authed = true;
+    initApp();
+  } catch (e) {
+    $('loginErr').textContent = '无法连接服务: ' + e.message;
+  }
+}
+
+$('btnLogin').addEventListener('click', doLogin);
+$('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+$('btnLogout').addEventListener('click', async () => {
+  try { await fetch('/api/logout'); } catch (e) {}
+  location.reload();
+});
+
+function doQuit() {
+  if (!confirm('确定退出 Yugsight 吗? 扫描/抓包将全部停止。')) return;
+  fetch('/api/quit', { method: 'POST' }).catch(e => {});
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#94a3b8;font-size:15px">Yugsight 已退出, 可关闭此页面</div>';
+}
+
+$('btnQuit').addEventListener('click', doQuit);
+// 登录页(未登录时)也能退出程序: /api/quit 免登录
+$('btnQuitLogin').addEventListener('click', doQuit);
+
+// 启动: 检查登录态 -> 注册 / 登录 / 迁移绑定
+(async function boot() {
+  try {
+    const r = await fetch('/api/whoami', { cache: 'no-store' });
+    if (r.ok) { authed = true; initApp(); return; }
+  } catch (e) {}
+  $('loginMask').style.display = 'flex';
+  let s = { registered: true };
+  try { s = await (await fetch('/api/auth/status')).json(); } catch (e) {}
+  if (!s.registered) showForm('regForm');
+  else showForm('loginForm');
+})();
+</script>
+</body>
+</html>

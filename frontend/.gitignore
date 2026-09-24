@@ -1,0 +1,3 @@
+node_modules/
+*.local
+# 注意: dist/ 不忽略 —— 它是 go:embed 的嵌入源, 必须随仓库提交, 否则 go build 失败
