@@ -1,15 +1,15 @@
 # ===== 本仓库的内容边界 =====
-# 入库: 源码 + 构建输入资产(build/ 下的 geoip/ globe/ report_templates/) + 前端构建产物 frontend/dist/
+# 入库: 源码 + 构建输入资产(build/ 下的 geoip/ globe/ report_templates/) + 前端构建产物 app/frontend/dist/
 # 不入库: 一切可再生成的产物、运行期数据、下载来的第三方目录
 #
 # 【首次入库前必读: 两个容易踩的坑】
-#  1) frontend/dist/ 必须提交 —— 它是 go:embed 的嵌入源, 缺它 go build 直接失败
-#     (见 frontend/.gitignore 的说明)。因此下面所有运行期目录都带前导 "/" 锚定到
-#     仓库根: 不带斜杠的 "dist/" 会匹配任意层级的 dist 目录, 连 frontend/dist/ 一起
-#     忽略掉, 而 .gitignore 里的忽略优先于子目录里的 "不忽略" 说明, 症状是"编译报
+#  1) app/frontend/dist/ 必须提交 —— 它是 go:embed 的嵌入源, 缺它 go build 直接失败
+#     (见 app/frontend/.gitignore 的说明)。因此下面所有运行期目录都带前导 "/" 锚定到
+#     仓库根: 不带斜杠的 "dist/" 会匹配任意层级的 dist 目录, 连 app/frontend/dist/
+#     一起忽略掉, 而 .gitignore 里的忽略优先于子目录里的 "不忽略" 说明, 症状是"编译报
 #     pattern all:frontend/dist: no matching files found"或页面 404。
-#  2) npcap-1.86.exe(仓库根) 是构建输入但不是源码: 它被 *.exe 忽略, 需要时自行下载
-#     放到仓库根, scripts/build.ps1 会把它拷进产物(抓包页"安装网络驱动"按钮依赖它)。
+#  2) npcap-1.86.exe(build/) 是构建输入但不是源码: 它被 *.exe 忽略, 需要时自行下载
+#     放到 build/, scripts/build.ps1 会把它拷进产物(抓包页"安装网络驱动"按钮依赖它)。
 
 # ===== 构建产物(不入库, 重新 go build 即可) =====
 *.exe
@@ -61,7 +61,7 @@ tmp-verify/
 /cpe/
 /intel/
 /rules/
-# 直连下载的断点缓存(几十 MB 的官方源码包 .part, 见 scanner/rule_direct.go)
+# 直连下载的断点缓存(几十 MB 的官方源码包 .part, 见 internal/scanner/rule_direct.go)
 /cache/
 # 探针 agent 分发包目录(用户编译产出, 见 probe_agent_download.go; 中心端据此提供下载)
 /agents/

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"yugsight/probe"
+	"yugsight/internal/probe"
 )
 
 // warnLoopbackCenter 中心端地址指向本机时给一行提示。

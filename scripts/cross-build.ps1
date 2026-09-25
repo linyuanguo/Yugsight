@@ -30,7 +30,8 @@ foreach ($t in $targets) {
   $env:GOARCH = $t.GOARCH
   # 产物不带 .exe: 减少被当作"可分发安装程序"的概率(对内容类误报无效, 仅避免二次传播)
   $name = "yugsight_$($t.GOOS)_$($t.GOARCH)"
-  go build -trimpath -o (Join-Path $out $name) .
+  # 主程序包在 app/(2026-09-24 目录整理: 从仓库根移入, go:embed 源 frontend/dist 与 web/ 随之同移)
+  go build -trimpath -o (Join-Path $out $name) ./app
   $code = $LASTEXITCODE
   if ($code -eq 0) {
     # 先记录哈希再可能被杀软隔离: 误报申诉必须提供样本哈希, 文件被删就取不到了

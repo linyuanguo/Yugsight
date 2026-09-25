@@ -137,8 +137,9 @@ $Matrix = Resolve-Targets -All:$All -Targets $Targets
 # 维护 —— 不拿"上次构建产物"推断版本, 因为产物会被删/被拷走/被手工替换,
 # 那样会出现版本号回退或卡住不动。
 #
-# 注入方式: -ldflags "-X main.appVersion=<ver>"。因此 main.go 里 appVersion 必须是
-# **var 而非 const**(链接器只能改写变量)。
+# 注入方式: -ldflags "-X main.appVersion=<ver>"(main 包对链接器固定叫 "main",
+# 与主程序所在目录无关 —— 2026-09-24 目录整理移入 app/ 后实测仍然生效)。
+# 因此 app/main.go 里 appVersion 必须是 **var 而非 const**(链接器只能改写变量)。
 #
 # -NoBumpVersion 用于"只想重新编译一次、不想动版本号"的场景(如反复调试构建参数);
 # -VersionDryRun 则用于"试构建但不留痕"。两者都不写回 VERSION 文件。
@@ -168,10 +169,11 @@ if ($VersionArg -ne '') {
 }
 Write-Host ''
 
-# 图标资源(rsrc.syso)必须放在 build/ 子目录, 构建时临时拷到包目录:
-# Go 会把包目录下的 .syso 链接进**所有** GOOS 构建, 若常驻根目录会破坏 linux/darwin 编译。
+# 图标资源(rsrc.syso)必须放在 build/ 子目录, 构建时临时拷到主程序包目录 app/:
+# Go 会把包目录下的 .syso 链接进**所有** GOOS 构建, 若常驻包目录会破坏 linux/darwin 编译。
+# (2026-09-24 目录整理: 主程序包从仓库根移入 app/, syso 随之改为拷到 app/)
 $syso = Join-Path $Root 'build\rsrc.syso'
-$tmpSyso = Join-Path $Root 'rsrc.syso'
+$tmpSyso = Join-Path $Root 'app\rsrc.syso'
 $copiedSyso = $false
 
 # 原环境(构建结束必须还原, 否则调用者后续的 go 命令会意外产出别平台产物)
@@ -226,14 +228,16 @@ try {
         # 两个参数, go 报 "flag provided but not defined: -w"(实测)。所以这里显式带上
         # 转义引号, 让 go 收到单个 -ldflags 值。
         # 【ldflags 里的变量名必须是 main.appVersion】appVersion 定义在 main 包
-        # (main.go), 链接器要求完整包路径。写成其它名字会静默不生效 —— 表现为
+        # (app/main.go)。链接器对 main 包固定用 "main" 作 import path —— 与包所在目录
+        # 无关(2026-09-24 实测: 主程序移入 app/ 后 -X yugsight/app.appVersion 静默
+        # 不生效, -X main.appVersion 依然生效)。写成其它名字会静默不生效 —— 表现为
         # "构建成功但 UI 里版本号还是旧值", 很难排查, 所以版本号注入后会在下面校验。
         $ldflags = '"-s -w'
         if ($VersionArg -ne '') { $ldflags += ' -X main.appVersion=' + $VersionArg }
         $ldflags += '"'
 
         $proc = Start-Process -FilePath 'go' `
-            -ArgumentList @('build', '-trimpath', '-ldflags', $ldflags, '-o', $outExe, '.') `
+            -ArgumentList @('build', '-trimpath', '-ldflags', $ldflags, '-o', $outExe, './app') `
             -NoNewWindow -Wait -PassThru `
             -RedirectStandardOutput $logFile -RedirectStandardError $errFile
         $buildLog = @()
@@ -286,7 +290,8 @@ try {
             # 配置文件(engine.json/probe.json 等)刻意**不自动拷**: 它们是用户按需写的,
             # 自动拷一份会导致"改了仓库根那份却不生效"的经典困惑。
             $runtimeRes = @(
-                @{ Src = (Join-Path $Root 'npcap-1.86.exe'); Desc = 'Npcap 安装器(抓包驱动一键安装用)' }
+                # 2026-09-24 仓库整理: 构建输入资产统一收进 build/(Npcap 安装器从仓库根移入)
+                @{ Src = (Join-Path $Root 'build\npcap-1.86.exe'); Desc = 'Npcap 安装器(抓包驱动一键安装用)' }
             )
             foreach ($res in $runtimeRes) {
                 if (Test-Path $res.Src) {
@@ -306,16 +311,17 @@ try {
             }
             # build/geoip(IP 地理段表, 任务 10c)与 build/globe(three.js/globe.gl/贴图, 任务 10d)
             # 是运行期按需读取的数据/前端资源(不嵌入二进制, 见 geoip/ 与 dashboard_api.go 头注释):
-            # 运行时分别按 "exe 同目录 geoip/" 与 "exe 同目录 globe/" 查找, 缺失时降级
-            # (地理查询全 unknown / 地球白屏占位), 不报错 —— 故缺失也照样构建, 只提示。
+            # 2026-09-24 dist 目录整理: 运行时按 "exe 同目录 res/geoip/" 与 "res/globe/" 查找
+            # (内置数据资源统一收进 res/), 缺失时降级(地理查询全 unknown / 地球白屏占位),
+            # 不报错 —— 故缺失也照样构建, 只提示。
             foreach ($resDir in @('geoip', 'globe')) {
                 $src = Join-Path $Root ('build\' + $resDir)
                 if (Test-Path $src) {
-                    $dst = Join-Path $OutAbs $resDir
+                    $dst = Join-Path $OutAbs ('res\' + $resDir)
                     if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Force -Path $dst | Out-Null }
                     Copy-Item (Join-Path $src '*') $dst -Force -Recurse
                     $n = (Get-ChildItem $dst -File -ErrorAction SilentlyContinue | Measure-Object).Count
-                    Write-Host ("      附带: {0}/ {1} 个文件" -f $resDir, $n) -ForegroundColor DarkGray
+                    Write-Host ("      附带: res\{0}/ {1} 个文件" -f $resDir, $n) -ForegroundColor DarkGray
                 } else {
                     Write-Host ("      跳过: build\{0} 不存在(地理映射/3D 地球将降级, 可跑 scripts\geoip_sync.go 生成)" -f $resDir) -ForegroundColor DarkYellow
                 }
@@ -324,9 +330,10 @@ try {
             # 与 geoip/globe 的关键差别: 这是**用户可写目录**(模板管理会往里写自定义
             # 模板), 因此只补缺失文件, 绝不覆盖已存在的 —— 升级时冲掉用户自己做的
             # 模板是不可逆丢失, 而"少一个示例模板"毫无损失。
+            # 2026-09-24 dist 目录整理: 镜像到 res/report_templates/(内置数据资源统一收进 res/)。
             $rtSrc = Join-Path $Root 'build\report_templates'
             if (Test-Path $rtSrc) {
-                $rtDst = Join-Path $OutAbs 'report_templates'
+                $rtDst = Join-Path $OutAbs 'res\report_templates'
                 if (-not (Test-Path $rtDst)) { New-Item -ItemType Directory -Force -Path $rtDst | Out-Null }
                 $added = 0
                 Get-ChildItem $rtSrc -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
@@ -379,7 +386,7 @@ if ($VersionArg -ne '') {
                 Write-Host "版本校验: 产物报告 v$VersionArg (与 VERSION 一致)" -ForegroundColor Green
             } else {
                 Write-Host "警告: 产物版本号校验未通过 — 期望含 '$VersionArg', 实际输出: $actual" -ForegroundColor Yellow
-                Write-Host "      请检查 main.go 里 appVersion 是否为 var(链接器无法改写 const)" -ForegroundColor Yellow
+                Write-Host "      请检查 app/main.go 里 appVersion 是否为 var(链接器无法改写 const)" -ForegroundColor Yellow
             }
         } catch {
             Write-Host "警告: 版本校验未执行($_)" -ForegroundColor Yellow

@@ -1,1 +1,0 @@
-import{k as a,c,d as e,t as s}from"./index-CtcveFKl.js";const n={class:"empty"},o={class:"big"},d={__name:"Empty",props:{text:{type:String,default:"暂无数据"},icon:{type:String,default:"∅"}},setup(t){return(i,r)=>(a(),c("div",n,[e("div",o,s(t.icon||"∅"),1),e("div",null,s(t.text),1)]))}};export{d as _};

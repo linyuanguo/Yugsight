@@ -83,7 +83,7 @@ func main() {
 			log.Printf("geoip6.tsv 生成: %d 段(/%d 前缀)", n, *flV6Prefix)
 		}
 	}
-	log.Println("完成。geoip 包运行时按 exe 同目录 geoip/ 查找这些文件")
+	log.Println("完成。geoip 包运行时按 exe 同目录 res/geoip/ 查找这些文件(build.ps1 会把 build/geoip 镜像到 dist/res/geoip)")
 }
 
 // download 断点续传下载。返回本地路径; 彻底失败返回 ""(不 fatal: 数据可选, 缺失降级)。

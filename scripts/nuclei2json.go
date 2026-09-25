@@ -410,13 +410,14 @@ func truncate(s string, n int) string {
 }
 
 // resolveTemplateDir 默认模板目录解析(按序): NUCLEI_TEMPLATES_DIR 环境变量 ->
-// 当前目录/nuclei-templates -> 上级目录/nuclei-templates(go:generate 在包目录下执行,
-// 上级即仓库根; 手动 go run 在仓库根执行时当前目录即命中)。找不到返回空串。
+// 当前目录/nuclei-templates -> 上两级目录/nuclei-templates(go:generate 在包目录
+// internal/scanner/ 下执行, 上两级即仓库根; 手动 go run 在仓库根执行时当前目录即命中)。
+// 找不到返回空串。
 func resolveTemplateDir() string {
 	if d := strings.TrimSpace(os.Getenv("NUCLEI_TEMPLATES_DIR")); d != "" {
 		return d
 	}
-	for _, cand := range []string{"nuclei-templates", "../nuclei-templates"} {
+	for _, cand := range []string{"nuclei-templates", "../nuclei-templates", "../../nuclei-templates"} {
 		if st, err := os.Stat(cand); err == nil && st.IsDir() {
 			return cand
 		}

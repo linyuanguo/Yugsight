@@ -33,8 +33,8 @@ Requires Go 1.25+; Node 20+ if you modify the front end.
 # Recommended: build script (injects icon and version, multi-platform, versioned output name)
 powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -OutDir dist
 
-# Manual build (current platform only)
-go build -trimpath -ldflags "-s -w" -o yugsight_windows_amd64.exe .
+# Manual build (current platform only; the main package lives in app/)
+go build -trimpath -ldflags "-s -w" -o yugsight_windows_amd64.exe ./app
 
 # Probe agent = separate binary
 go build -trimpath -ldflags "-s -w" -o yugsight-agent.exe ./cmd/agent
@@ -43,12 +43,12 @@ go build -trimpath -ldflags "-s -w" -o yugsight-agent.exe ./cmd/agent
 The front end **must be rebuilt before the back end** (its output is embedded into the executable via `go:embed`):
 
 ```bash
-cd frontend && npm install && npm run build
-cd .. && powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -OutDir dist
+cd app/frontend && npm install && npm run build
+cd ../.. && powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -OutDir dist
 ```
 
-- `frontend/dist/` is committed to the repository and is the embed source; `go build` fails outright if it is missing.
-- The version comes from the `VERSION` file: the build script bumps the last digit and injects it via `-ldflags -X main.appVersion=`.
+- `app/frontend/dist/` is committed to the repository and is the embed source; `go build` fails outright if it is missing.
+- The version comes from the `VERSION` file: the build script bumps the last digit and injects it via `-ldflags -X main.appVersion=` (the linker always addresses the main package as `main`, regardless of its directory).
 
 ## License
 

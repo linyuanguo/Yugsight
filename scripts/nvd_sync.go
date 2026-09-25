@@ -1,17 +1,21 @@
 //go:build ignore
 
 // nvd_sync.go NVD 全量 CVE 同步工具: 把 NVD 数据库过滤成 Yugsight CPE 引擎可消费
-// 的产品字典(版本 -> CVE), 输出到 exe 同目录 cpe/ 热更新目录。
+// 的产品字典(版本 -> CVE), 输出到 exe 同目录 vuln/cpe/ 热更新目录
+// (2026-09-24 dist 目录整理: 规则库统一收进 vuln/)。
 //
-// 用法(任意目录, 输出位置用 --out 指定, 默认 dist/cpe/):
+// 用法(任意目录, 输出位置用 --out 指定, 默认 dist/vuln/cpe/):
 //
-//	go run scripts/nvd_sync.go --out e:/project/Yugsight/dist/cpe
-//	go run scripts/nvd_sync.go --out ./cpe --min-cvss 4.0 --since 2015-01-01
+//	go run scripts/nvd_sync.go --out e:/project/Yugsight/dist/vuln/cpe
+//	go run scripts/nvd_sync.go --out ./vuln/cpe --min-cvss 4.0 --since 2015-01-01
 //	go run scripts/nvd_sync.go --limit 1        # 只拉第一页(冒烟测试)
 //
 // 设计说明:
-//   - NVD 2.0 API 分页全量拉取(每页 2000 条), 限速 5 req/s(无 API Key 的限额);
-//     代理走环境变量 HTTP(S)_PROXY(Go 默认行为), 国内网络需先配代理。
+//   - NVD 2.1 API 分页全量拉取(每页 2000 条, 0 基 startIndex); 旧 2.0 端点
+//     (services.nist.gov/api/cve) 已于 2025-07 退役(回 403)。
+//   - 限流(官方口径): 匿名 5 次/30 秒, 带 API Key 50 次/30 秒, 超限回 429 +
+//     Retry-After —— 用滑动窗口节流, 不再按"每秒 N 次"发请求。
+//   - 代理走环境变量 HTTP(S)_PROXY(Go 默认行为), 国内网络需先配代理。
 //   - 只保留"网络可指纹"的产品(vendor:product 映射表): 版本匹配的前提是能从
 //     banner/主动探测拿到版本号, 拿不到版本的产品(JDK/Spring/Log4j 等)进字典
 //     也不会被命中, 白白撑大体积, 故在同步时过滤。
@@ -21,7 +25,7 @@
 //   - 版本约束转换: NVD 的 versionStartIncluding/Excluding + versionEndIncluding/
 //     Excluding 四边界 -> 我们的 ">= a, < b" 子句(AND); 任一边界非数字
 //     (alpha1/*/空值异常)时该 match 跳过(宁缺毋滥, 避免误报)。
-//   - 输出格式与 scanner/cpe_builtin.json 完全一致(cpeFile), 放入 cpe/ 目录后
+//   - 输出格式与 scanner/cpe_builtin.json 完全一致(cpeFile), 放入 vuln/cpe/ 目录后
 //     程序热加载即生效(同 CPE 外部覆盖内置), 无需重启、无需重新编译。
 
 package main
@@ -39,6 +43,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -72,51 +77,58 @@ var nvdKeyMap = map[string]string{
 	"haproxy:haproxy":           "haproxy",
 }
 
-// ===== NVD API 数据结构(只取需要的字段) =====
+// ===== NVD 2.1 API 数据结构(只取需要的字段) =====
+//
+// 2.1 与 2.0 的形态差异: items[](编号在项级 cveId) → vulnerabilities[]
+// (每项再包一层 cve, 编号在 cve.id); 响应没有 totalPages, 用 totalResults
+// 自算页数。
 
 type cveItem struct {
-	CveID string `json:"cveId"`
-	Cve   struct {
-		Descriptions []struct {
-			Lang  string `json:"lang"`
-			Value string `json:"value"`
-		} `json:"descriptions"`
-		Metrics struct {
-			CvssMetricV31 []struct {
-				CvssData struct {
-					BaseScore float64 `json:"baseScore"`
-				} `json:"cvssData"`
-			} `json:"cvssMetricV31"`
-			CvssMetricV30 []struct {
-				CvssData struct {
-					BaseScore float64 `json:"baseScore"`
-				} `json:"cvssData"`
-			} `json:"cvssMetricV30"`
-			CvssMetricV2 []struct {
-				CvssData struct {
-					BaseScore float64 `json:"baseScore"`
-				} `json:"cvssData"`
-			} `json:"cvssMetricV2"`
-		} `json:"metrics"`
-		Configurations []struct {
-			Nodes []struct {
-				CpeMatch []struct {
-					Criteria              string `json:"criteria"`
-					Vulnerable            bool   `json:"vulnerable"`
-					VersionStartIncluding string `json:"versionStartIncluding"`
-					VersionStartExcluding string `json:"versionStartExcluding"`
-					VersionEndIncluding   string `json:"versionEndIncluding"`
-					VersionEndExcluding   string `json:"versionEndExcluding"`
-				} `json:"cpeMatch"`
-			} `json:"nodes"`
-		} `json:"configurations"`
-	} `json:"cve"`
+	CVE cveDetail `json:"cve"`
+}
+
+type cveDetail struct {
+	ID           string `json:"id"`
+	Descriptions []struct {
+		Lang  string `json:"lang"`
+		Value string `json:"value"`
+	} `json:"descriptions"`
+	Metrics struct {
+		CvssMetricV31 []struct {
+			CvssData struct {
+				BaseScore float64 `json:"baseScore"`
+			} `json:"cvssData"`
+		} `json:"cvssMetricV31"`
+		CvssMetricV30 []struct {
+			CvssData struct {
+				BaseScore float64 `json:"baseScore"`
+			} `json:"cvssData"`
+		} `json:"cvssMetricV30"`
+		CvssMetricV2 []struct {
+			CvssData struct {
+				BaseScore float64 `json:"baseScore"`
+			} `json:"cvssData"`
+		} `json:"cvssMetricV2"`
+	} `json:"metrics"`
+	Configurations []struct {
+		Nodes []struct {
+			CpeMatch []struct {
+				Criteria              string `json:"criteria"`
+				Vulnerable            bool   `json:"vulnerable"`
+				VersionStartIncluding string `json:"versionStartIncluding"`
+				VersionStartExcluding string `json:"versionStartExcluding"`
+				VersionEndIncluding   string `json:"versionEndIncluding"`
+				VersionEndExcluding   string `json:"versionEndExcluding"`
+			} `json:"cpeMatch"`
+		} `json:"nodes"`
+	} `json:"configurations"`
 }
 
 type cvePage struct {
-	TotalResults int       `json:"totalResults"`
-	TotalPages   int       `json:"totalPages"`
-	Items        []cveItem `json:"items"`
+	ResultsPerPage  int       `json:"resultsPerPage"`
+	StartIndex      int       `json:"startIndex"`
+	TotalResults    int       `json:"totalResults"`
+	Vulnerabilities []cveItem `json:"vulnerabilities"`
 }
 
 // ===== 版本约束转换 =====
@@ -210,11 +222,12 @@ func vendorProduct(criteria string) (string, bool) {
 // ===== 同步主体 =====
 
 func main() {
-	outDir := flag.String("out", "dist/cpe", "输出目录(程序 exe 同目录的 cpe/)")
+	outDir := flag.String("out", "dist/vuln/cpe", "输出目录(程序 exe 同目录的 vuln/cpe/)")
 	minCVSS := flag.Float64("min-cvss", 0, "最低 CVSS 基础分(0=不过滤)")
 	since := flag.String("since", "", "只同步该日期之后发布的 CVE(如 2015-01-01, 空=全量)")
 	limit := flag.Int("limit", 0, "只拉取前 N 页(冒烟测试用, 0=全量)")
-	base := flag.String("base", "https://services.nist.gov/api/cve/cves", "NVD API 基础 URL(可指向镜像/自建源, 便于离线环境)")
+	base := flag.String("base", "https://services.nvd.nist.gov/rest/json/cves/2.0", "NVD 2.1 API 基础 URL(可指向镜像/自建源, 便于离线环境)")
+	apiKey := flag.String("api-key", "", "NVD API Key(带 Key 限流 50 次/30 秒, 不带 5 次/30 秒)")
 	flag.Parse()
 
 	client := &http.Client{
@@ -228,45 +241,52 @@ func main() {
 	total := 0
 	kept := 0
 
+	// 滑动窗口节流(官方限流是"每 30 秒 N 次"而非"每秒 N 次")
+	rate := newRate(*apiKey != "")
+
 	page := 1
+	const pageSize = 2000
 	q := url.Values{}
-	q.Set("pageSize", "2000")
+	q.Set("resultsPerPage", strconv.Itoa(pageSize))
 	if *since != "" {
-		// NVD 2.0 API: lastModStartDate 过滤"该日期之后新发布/修订"的 CVE
+		// NVD 2.1: lastModStartDate 过滤"该日期之后新发布/修订"的 CVE
 		q.Set("lastModStartDate", *since+"T00:00:00.000+00:00")
+	}
+	if *apiKey != "" {
+		q.Set("apiKey", *apiKey)
 	}
 	for {
 		if *limit > 0 && page > *limit {
 			break
 		}
-		q.Set("page", strconv.Itoa(page))
+		q.Set("startIndex", strconv.Itoa((page-1)*pageSize))
 		fullURL := *base + "?" + q.Encode()
 		body, err := fetchPage(client, fullURL)
 		if err != nil {
-			log.Fatalf("拉取第 %d 页失败: %v\n(提示: 国内网络通常需先设置 HTTPS_PROXY 环境变量, 见 docs/vuln-rules-roadmap.md)", page, err)
+			log.Fatalf("拉取第 %d 页失败: %v\n(提示: 旧 2.0 端点已退役; 国内网络通常需先设置 HTTPS_PROXY 环境变量)", page, err)
 		}
 		var pg cvePage
 		if err := json.Unmarshal(body, &pg); err != nil {
 			log.Fatalf("解析第 %d 页失败: %v", page, err)
 		}
-		total += len(pg.Items)
-		for _, it := range pg.Items {
+		total += len(pg.Vulnerabilities)
+		for _, it := range pg.Vulnerabilities {
 			if !processItem(it, prods, *minCVSS) {
 				continue
 			}
 			kept++
 		}
+		totalPages := (pg.TotalResults + pageSize - 1) / pageSize // 2.1 无 totalPages 字段, 自算
 		fmt.Printf("  第 %d/%d 页 (%d 条 CVE, 累计 %d, 命中可指纹产品 %d)\n",
-			page, pg.TotalPages, len(pg.Items), total, kept)
-		if page >= pg.TotalPages {
+			page, totalPages, len(pg.Vulnerabilities), total, kept)
+		if page >= totalPages {
 			break
 		}
 		page++
-		// 限速: 无 API Key 为 5 req/s, 留点余量
-		time.Sleep(250 * time.Millisecond)
+		rate.wait()
 	}
 
-	// 输出: 每个产品一个 JSON(与 cpe_builtin.json 同格式), 放入 cpe/ 热更新目录
+	// 输出: 每个产品一个 JSON(与 cpe_builtin.json 同格式), 放入 vuln/cpe/ 热更新目录
 	if err := os.MkdirAll(*outDir, 0o755); err != nil {
 		log.Fatalf("创建输出目录失败: %v", err)
 	}
@@ -301,7 +321,7 @@ func main() {
 	}
 	fmt.Printf("\n完成: 共 %d 条 CVE, 其中 %d 条来自可指纹产品, 输出 %d 个产品文件 / %d 条 CVE 到 %s\n",
 		total, kept, len(names), totalCves, *outDir)
-	fmt.Println("下一步: 把上述文件放入程序 exe 同目录的 cpe/ 目录(本工具默认已输出到 dist/cpe), 重启程序或等待规则更新即热生效。")
+	fmt.Println("下一步: 把上述文件放入程序 exe 同目录的 vuln/cpe/ 目录(本工具默认已输出到 dist/vuln/cpe), 重启程序或等待规则更新即热生效。")
 }
 
 // nvdProduct 聚合同一产品键的 CVE
@@ -331,11 +351,11 @@ var keyCpe = func() map[string]string {
 
 func processItem(it cveItem, prods map[string]*nvdProduct, minCVSS float64) bool {
 	cvss := 0.0
-	if m := it.Cve.Metrics.CvssMetricV31; len(m) > 0 {
+	if m := it.CVE.Metrics.CvssMetricV31; len(m) > 0 {
 		cvss = m[0].CvssData.BaseScore
-	} else if m := it.Cve.Metrics.CvssMetricV30; len(m) > 0 {
+	} else if m := it.CVE.Metrics.CvssMetricV30; len(m) > 0 {
 		cvss = m[0].CvssData.BaseScore
-	} else if m := it.Cve.Metrics.CvssMetricV2; len(m) > 0 {
+	} else if m := it.CVE.Metrics.CvssMetricV2; len(m) > 0 {
 		cvss = m[0].CvssData.BaseScore
 	}
 	if cvss < minCVSS {
@@ -343,14 +363,14 @@ func processItem(it cveItem, prods map[string]*nvdProduct, minCVSS float64) bool
 	}
 	// 标题: 优先英文描述
 	title := ""
-	for _, d := range it.Cve.Descriptions {
+	for _, d := range it.CVE.Descriptions {
 		if d.Lang == "en" {
 			title = strings.TrimSpace(d.Value)
 			break
 		}
 	}
-	if title == "" && len(it.Cve.Descriptions) > 0 {
-		title = strings.TrimSpace(it.Cve.Descriptions[0].Value)
+	if title == "" && len(it.CVE.Descriptions) > 0 {
+		title = strings.TrimSpace(it.CVE.Descriptions[0].Value)
 	}
 
 	// 按产品聚合约束(同一 CVE 可能有多个 configuration 节点/多个 match)。
@@ -362,7 +382,7 @@ func processItem(it cveItem, prods map[string]*nvdProduct, minCVSS float64) bool
 		allVer   bool
 	}
 	byProd := map[string]*acc{}
-	for _, cfg := range it.Cve.Configurations {
+	for _, cfg := range it.CVE.Configurations {
 		for _, node := range cfg.Nodes {
 			for _, m := range node.CpeMatch {
 				if !m.Vulnerable {
@@ -411,7 +431,7 @@ func processItem(it cveItem, prods map[string]*nvdProduct, minCVSS float64) bool
 		}
 		// allVer 时不写 constraints 字段(引擎: 缺省 = 全部版本受影响)
 		entry := map[string]any{
-			"cve":   it.CveID,
+			"cve":   it.CVE.ID,
 			"title": title,
 			"cvss":  cvss,
 		}
@@ -439,10 +459,50 @@ func appendUnique(list []string, items ...string) []string {
 	return list
 }
 
-// fetchPage 拉取单页(带重试: NVD 偶发 5xx; 必须带 User-Agent, 否则 NVD 返回 403)
+// rate 滑动窗口节流器(与主程序 rules_sync.go 的 nvdRate 同口径, 独立实现
+// 因为本脚本是 //go:build ignore 的单文件工具, 不能 import 主包)。
+type rate struct {
+	mu     sync.Mutex
+	limit  int
+	window time.Duration
+	stamps []time.Time
+}
+
+func newRate(withKey bool) *rate {
+	limit := 5
+	if withKey {
+		limit = 50
+	}
+	return &rate{limit: limit, window: 30 * time.Second}
+}
+
+func (t *rate) wait() {
+	for {
+		t.mu.Lock()
+		now := time.Now()
+		cutoff := now.Add(-t.window)
+		i := 0
+		for i < len(t.stamps) && t.stamps[i].Before(cutoff) {
+			i++
+		}
+		t.stamps = t.stamps[i:]
+		if len(t.stamps) < t.limit {
+			t.stamps = append(t.stamps, now)
+			t.mu.Unlock()
+			return
+		}
+		wake := t.stamps[0].Add(t.window).Sub(now)
+		t.mu.Unlock()
+		time.Sleep(wake + 150*time.Millisecond)
+	}
+}
+
+// fetchPage 拉取单页(带重试: NVD 偶发 5xx / 429 限流; 必须带 User-Agent,
+// 否则 NVD 返回 403)。403/404 属端点级错误(如旧 2.0 地址已退役), 重试无意义。
 func fetchPage(client *http.Client, url string) ([]byte, error) {
 	var lastErr error
-	for i := 0; i < 3; i++ {
+	const maxAttempts = 8
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			return nil, err
@@ -461,11 +521,29 @@ func fetchPage(client *http.Client, url string) ([]byte, error) {
 			time.Sleep(2 * time.Second)
 			continue
 		}
-		if resp.StatusCode == http.StatusOK {
+		switch resp.StatusCode {
+		case http.StatusOK:
 			return body, nil
+		case http.StatusTooManyRequests:
+			d := 30 * time.Second
+			if ra := strings.TrimSpace(resp.Header.Get("Retry-After")); ra != "" {
+				if secs, perr := strconv.Atoi(ra); perr == nil && secs > 0 {
+					d = time.Duration(secs) * time.Second
+				}
+			}
+			if d > 60*time.Second {
+				d = 60 * time.Second
+			}
+			lastErr = fmt.Errorf("HTTP 429 限流, %s 后重试", d)
+			time.Sleep(d + 150*time.Millisecond)
+			continue
+		case http.StatusForbidden, http.StatusNotFound:
+			return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		default:
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			time.Sleep(2 * time.Second)
+			continue
 		}
-		lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-		time.Sleep(3 * time.Second)
 	}
 	return nil, lastErr
 }

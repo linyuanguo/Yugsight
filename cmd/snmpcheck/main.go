@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"yugsight/snmp"
+	"yugsight/internal/snmp"
 )
 
 func main() {

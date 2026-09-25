@@ -34,10 +34,10 @@ import (
 	"syscall"
 	"time"
 
-	"yugsight/pathrel"
-	"yugsight/probe"
-	"yugsight/probe/agentexec"
-	"yugsight/scanner"
+	"yugsight/internal/pathrel"
+	"yugsight/internal/probe"
+	"yugsight/internal/probe/agentexec"
+	"yugsight/internal/scanner"
 )
 
 const (
