@@ -475,25 +475,25 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="t in tasks" :key="t.id">
-                <td class="mono small">{{ t.id }}</td>
-                <td class="small">{{ kindName(t.kind) }}</td>
-                <td class="mono small" :title="t.target">{{ t.target }}</td>
-                <td class="small">{{ t.strategy || '-' }}</td>
-                <td class="small">{{ t.node || t('console.queueNodeLocal') }}</td>
-                <td><span class="badge" :class="schedClass(t.status)">{{ schedStatusName(t.status) }}</span></td>
-                <td class="small mono">{{ t.priority || 0 }}</td>
-                <td class="small" :title="t.result || t.err || t.progress || ''">
-                  {{ short(t.progress || t.result || t.err || '-') }}
+              <tr v-for="tk in tasks" :key="tk.id">
+                <td class="mono small">{{ tk.id }}</td>
+                <td class="small">{{ kindName(tk.kind) }}</td>
+                <td class="mono small" :title="tk.target">{{ tk.target }}</td>
+                <td class="small">{{ tk.strategy || '-' }}</td>
+                <td class="small">{{ tk.node || t('console.queueNodeLocal') }}</td>
+                <td><span class="badge" :class="schedClass(tk.status)">{{ schedStatusName(tk.status) }}</span></td>
+                <td class="small mono">{{ tk.priority || 0 }}</td>
+                <td class="small" :title="tk.result || tk.err || tk.progress || ''">
+                  {{ short(tk.progress || tk.result || tk.err || '-') }}
                 </td>
-                <td class="muted small mono">{{ costText(t) }}</td>
+                <td class="muted small mono">{{ costText(tk) }}</td>
                 <td>
                   <div class="row-actions">
-                    <button class="btn xs" v-if="t.status === 'queued' || t.status === 'running'" @click="act('pause', t)">{{ t('console.actionPause') }}</button>
-                    <button class="btn xs green" v-if="t.status === 'paused'" @click="act('resume', t)">{{ t('console.actionResume') }}</button>
-                    <button class="btn xs danger" v-if="t.status === 'queued' || t.status === 'running' || t.status === 'paused'" @click="act('cancel', t)">{{ t('console.actionCancel') }}</button>
-                    <button class="btn xs" v-if="t.status === 'failed' || t.status === 'cancelled'" @click="act('retry', t)">{{ t('console.actionRetry') }}</button>
-                    <button class="btn xs danger" @click="delTask(t)">{{ t('console.actionDelete') }}</button>
+                    <button class="btn xs" v-if="tk.status === 'queued' || tk.status === 'running'" @click="act('pause', tk)">{{ t('console.actionPause') }}</button>
+                    <button class="btn xs green" v-if="tk.status === 'paused'" @click="act('resume', tk)">{{ t('console.actionResume') }}</button>
+                    <button class="btn xs danger" v-if="tk.status === 'queued' || tk.status === 'running' || tk.status === 'paused'" @click="act('cancel', tk)">{{ t('console.actionCancel') }}</button>
+                    <button class="btn xs" v-if="tk.status === 'failed' || tk.status === 'cancelled'" @click="act('retry', tk)">{{ t('console.actionRetry') }}</button>
+                    <button class="btn xs danger" @click="delTask(tk)">{{ t('console.actionDelete') }}</button>
                   </div>
                 </td>
               </tr>
@@ -552,26 +552,26 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="t in histList" :key="t.id">
-                <td><input type="checkbox" :checked="histSel.includes(t.id)" @change="toggleHistSel(t.id)"></td>
-                <td class="muted small mono">{{ fmtHistT(t.createdAt) }}</td>
-                <td class="small" :title="t.jobName">{{ t.jobName || '-' }}</td>
-                <td class="small">{{ kindName(t.type) }}</td>
-                <td class="mono small" :title="t.target + (paramsBrief(t) ? ' | ' + paramsBrief(t) : '')">{{ t.target }}</td>
-                <td><span class="badge" :class="schedClass(t.status)">{{ schedStatusName(t.status) }}</span></td>
-                <td class="small" :title="t.probeProgress || ''">{{ histProgressText(t) }}</td>
-                <td class="small">{{ t.createdBy || '-' }}</td>
-                <td class="small">{{ t.probeNode || t('console.execLocal') }}</td>
+              <tr v-for="ht in histList" :key="ht.id">
+                <td><input type="checkbox" :checked="histSel.includes(ht.id)" @change="toggleHistSel(ht.id)"></td>
+                <td class="muted small mono">{{ fmtHistT(ht.createdAt) }}</td>
+                <td class="small" :title="ht.jobName">{{ ht.jobName || '-' }}</td>
+                <td class="small">{{ kindName(ht.type) }}</td>
+                <td class="mono small" :title="ht.target + (paramsBrief(ht) ? ' | ' + paramsBrief(ht) : '')">{{ ht.target }}</td>
+                <td><span class="badge" :class="schedClass(ht.status)">{{ schedStatusName(ht.status) }}</span></td>
+                <td class="small" :title="ht.probeProgress || ''">{{ histProgressText(ht) }}</td>
+                <td class="small">{{ ht.createdBy || '-' }}</td>
+                <td class="small">{{ ht.probeNode || t('console.execLocal') }}</td>
                 <td>
                   <div class="row-actions">
                     <!-- 2026-09-27: 取消(用户口径: 任务开始了去哪里取消) —— 运行中/待执行可取消,
                          后端按任务属性路由: 本地扫描/探针任务/调度任务(POST /scans/{id}/cancel) -->
-                    <button class="btn xs danger" v-if="t.status === 'running' || t.status === 'pending'"
-                      :title="t('console.confirmCancelTitle')" @click="cancelHistTask(t)">{{ t('console.actionCancel') }}</button>
+                    <button class="btn xs danger" v-if="ht.status === 'running' || ht.status === 'pending'"
+                      :title="t('console.confirmCancelTitle')" @click="cancelHistTask(ht)">{{ t('console.actionCancel') }}</button>
                     <!-- 2026-09-27: 详情(用户口径: 扫描历史要点进去看当时扫描的状态) -->
-                    <button class="btn xs" :title="t('console.actionDetailTitle')" @click="openHistDetail(t)">{{ t('console.actionDetail') }}</button>
-                    <button class="btn xs green" :disabled="t.status === 'running'" :title="t('console.actionRescanTitle')" @click="rescanTask(t)">{{ t('console.actionRescan') }}</button>
-                    <button class="btn xs danger" @click="delHistTask(t)">{{ t('console.actionDelete') }}</button>
+                    <button class="btn xs" :title="t('console.actionDetailTitle')" @click="openHistDetail(ht)">{{ t('console.actionDetail') }}</button>
+                    <button class="btn xs green" :disabled="ht.status === 'running'" :title="t('console.actionRescanTitle')" @click="rescanTask(ht)">{{ t('console.actionRescan') }}</button>
+                    <button class="btn xs danger" @click="delHistTask(ht)">{{ t('console.actionDelete') }}</button>
                   </div>
                 </td>
               </tr>
@@ -1716,9 +1716,9 @@ async function act(kind, t) {
   } catch (e) { alert(e.message) }
 }
 
-async function delTask(t) {
-  if (!confirm(t('console.confirmDelTask', { id: t.id }))) return
-  try { await v2('/scheduler/tasks/' + encodeURIComponent(t.id), { method: 'DELETE' }); await loadTasks() }
+async function delTask(task) {
+  if (!confirm(t('console.confirmDelTask', { id: task.id }))) return
+  try { await v2('/scheduler/tasks/' + encodeURIComponent(task.id), { method: 'DELETE' }); await loadTasks() }
   catch (e) { alert(e.message) }
 }
 
@@ -1793,10 +1793,10 @@ function paramsBrief(t) {
 // 统一任务记录(/scans/{id}) + 探针执行明细(/probe/tasks, 探针执行的任务才有:
 // 进度/摘要/回传结果 —— trivy 这类探针任务的结果正文就在这里)。
 const histDetail = ref(null) // { loading, task, probeTask }
-async function openHistDetail(t) {
-  histDetail.value = { loading: true, task: { ...t }, probeTask: null }
+async function openHistDetail(task) {
+  histDetail.value = { loading: true, task: { ...task }, probeTask: null }
   try {
-    const d = await v2('/scans/' + encodeURIComponent(t.id))
+    const d = await v2('/scans/' + encodeURIComponent(task.id))
     histDetail.value.task = d
     if (d.probeNode) {
       try {
@@ -1823,18 +1823,18 @@ function truncateDetail(s) {
 
 // 重扫: 按该任务的原始参数(后端存了完整 scanReq JSON)回填"立即扫描"表单,
 // 切回扫描页并自动启动 —— 结果流在扫描页实时可见(不另开隐藏 SSE 流)。
-async function rescanTask(t) {
+async function rescanTask(task) {
   if (running.value) { alert(t('console.confirmRescanBusy')); return }
-  const label = (kindName(t.type) + ' ' + (t.target || ''))
+  const label = (kindName(task.type) + ' ' + (task.target || ''))
   if (!confirm(t('console.confirmRescan', { label }))) return
   try {
-    const d = await v2('/scans/' + encodeURIComponent(t.id))
+    const d = await v2('/scans/' + encodeURIComponent(task.id))
     let p = d.params
     if (typeof p === 'string') { try { p = JSON.parse(p) } catch (e) { p = null } }
     if (!p || typeof p !== 'object') p = {}
-    if (!p.type) p.type = t.type
-    if (!p.target) p.target = t.target
-    if (!applyTaskToForm(p, t)) return
+    if (!p.type) p.type = task.type
+    if (!p.target) p.target = task.target
+    if (!applyTaskToForm(p, task)) return
     setTab('scan')
     start()
   } catch (e) { alert(e.message) }
@@ -1842,8 +1842,8 @@ async function rescanTask(t) {
 
 // 参数 → 表单字段映射(重扫用): 目标/端口/引擎多选/nuclei/web 深度等。
 // 后端 Params 是 scanReq 的 JSON(字段名与 payload() 基本一致)。
-function applyTaskToForm(p, t) {
-  const target = p.ip || p.cidr || p.url || p.trivyTarget || t.target || ''
+function applyTaskToForm(p, task) {
+  const target = p.ip || p.cidr || p.url || p.trivyTarget || task.target || ''
   if (!target) { alert(t('console.alertNoTarget')); return false }
   const ty = String(p.type || '').toLowerCase()
   let ft = 'quick'
@@ -1886,11 +1886,11 @@ function applyTaskToForm(p, t) {
   return true
 }
 
-async function delHistTask(t) {
-  if (!confirm(t('console.confirmDelHist', { label: (t.type || '-') + ' ' + (t.target || '') }))) return
+async function delHistTask(task) {
+  if (!confirm(t('console.confirmDelHist', { label: (task.type || '-') + ' ' + (task.target || '') }))) return
   try {
-    await v2('/scans/' + encodeURIComponent(t.id), { method: 'DELETE' })
-    histSel.value = histSel.value.filter(id => id !== t.id)
+    await v2('/scans/' + encodeURIComponent(task.id), { method: 'DELETE' })
+    histSel.value = histSel.value.filter(id => id !== task.id)
     await loadHist()
   } catch (e) { alert(e.message) }
 }
@@ -1921,11 +1921,11 @@ function histProgressText(t) {
 // 2026-09-27: 取消运行中的扫描(用户口径: "任务开始了, 去哪里取消?")。
 // 统一入口 POST /scans/{id}/cancel, 后端按任务属性路由:
 // 本地立即扫描(ctx 取消, 立即停) / 探针任务(通知探针停, trivy 等子进程一并杀) / 调度任务。
-async function cancelHistTask(t) {
-  const label = t.jobName || (kindName(t.type) + ' ' + t.target)
+async function cancelHistTask(task) {
+  const label = task.jobName || (kindName(task.type) + ' ' + task.target)
   if (!confirm(t('console.confirmCancel', { label }))) return
   try {
-    const r = await v2('/scans/' + encodeURIComponent(t.id) + '/cancel', { method: 'POST' })
+    const r = await v2('/scans/' + encodeURIComponent(task.id) + '/cancel', { method: 'POST' })
     const via = r.via === 'probe' ? t('console.viaProbe')
       : r.via === 'scheduler' ? t('console.viaSched')
       : t('console.viaLocal')

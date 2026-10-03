@@ -82,7 +82,9 @@ type defaultSettingsDoc struct {
 //   - auth: enabled=true(缺失 = 登录开启), user/pass 为初始账号默认
 //     (admin/admin123, 仅全新安装自动建号时读取)。
 //   - whitelist: 空列表(无任何豁免条目)。
-//   - authcheck / tls / collect: 零值 = 关闭, 显式写 false 与缺失等价。
+//   - authcheck: 默认启用(2026-10-03 用户口径) —— 显式写 false 才关; 安全由
+//     targets 白名单兜底(白名单为空时 start 接口直接拒绝, 不会无差别发包)。
+//   - tls / collect: 零值 = 关闭, 显式写 false 与缺失等价。
 //   - audit: 保留 90 天(代码默认, 仅 admin 可改)。
 //   - dashboard / geoip: 加载器用 hasExplicitEnabled 区分"未写"与"显式 false"
 //     —— 显式写 true 与"未写"同为默认开, 行为等价。
@@ -133,7 +135,7 @@ func buildDefaultSettings() defaultSettingsDoc {
 		Database: map[string]any{"type": "sqlite", "dir": ""}, // 空 dir = 代码默认数据目录
 		Auth:     map[string]any{"enabled": true, "user": "admin", "pass": "admin123"},
 		Whitelist: map[string]any{"entries": []string{}},
-		AuthCheck: map[string]any{"enabled": false},
+		AuthCheck: map[string]any{"enabled": true}, // 2026-10-03 用户口径: 默认启用(白名单兜底安全)
 		TLS:       map[string]any{"enabled": false},
 		Audit:     map[string]any{"retentionDays": 90},
 		Monitor:   map[string]any{"enabled": true, "intervalSec": 60, "targets": []string{}},

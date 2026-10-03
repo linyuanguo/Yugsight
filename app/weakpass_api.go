@@ -226,15 +226,25 @@ func authCheckAuditLine(a weakpass.Attempt) string {
 //
 // 走 section() 而不是自己 ReadFile: BOM 剥离与"显式 null 视为未配置"的口径
 // 必须和全项目一致(统一配置中心约定)。
+//
+// 2026-10-03 用户口径: 弱口令检测**默认启用**。区分"未写 enabled"(默认开)与
+// "显式写 false"(关): 与 report/dashboard 同用 hasExplicitEnabled 判定, 避免
+// bool 零值把"没写"当成 false。安全性仍由 targets 白名单兜底 —— 白名单为空时
+// start 接口直接拒绝(不限制=无差别测试不可接受), 故默认启用不会产生无受控连接。
 func loadAuthCheckConfig() AuthCheckConfig {
-	var cfg AuthCheckConfig
 	data, ok := section(secAuthCheck, "")
 	if !ok {
-		return cfg
+		// 节不存在 = 从未配置 = 默认启用
+		return AuthCheckConfig{Enabled: true}
 	}
+	var cfg AuthCheckConfig
 	if json.Unmarshal(data, &cfg) != nil {
-		logLine("authcheck 配置解析失败, 按未启用处理")
-		return AuthCheckConfig{}
+		logLine("authcheck 配置解析失败, 按默认启用处理")
+		return AuthCheckConfig{Enabled: true}
+	}
+	// "未显式写 enabled" = 默认启用; 仅当"显式写 false"时才关闭
+	if !hasExplicitEnabled(data) {
+		cfg.Enabled = true
 	}
 	return cfg
 }
