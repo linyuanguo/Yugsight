@@ -61,6 +61,7 @@ export default {
     faTitle: '动态验证码',
     faRemain: '每 90 秒刷新 · 剩余 {sec}s',
     faHint: '点击上方数字一键填入',
+    faHintOff: '点击自动填入已关闭 · 请手动输入 6 位码',
     faPh: '照上方 6 位数字输入',
     remember: '1天内记住密码(仅存本机)',
     errNeedCred: '请输入账号和密码',

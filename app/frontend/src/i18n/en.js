@@ -61,6 +61,7 @@ export default {
     faTitle: 'Dynamic Code',
     faRemain: 'Refreshes every 90s · {sec}s left',
     faHint: 'Click the numbers above to auto-fill',
+    faHintOff: 'Click-to-fill is off · type the 6-digit code manually',
     faPh: 'Enter the 6-digit code above',
     remember: 'Remember password for 1 day (local only)',
     errNeedCred: 'Please enter account and password',

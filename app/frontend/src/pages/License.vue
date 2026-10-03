@@ -21,6 +21,20 @@
           <div class="k">模式</div>
           <div class="v"><span class="badge" :class="st.disabled ? 'st-success' : 'st-pending'">{{ st.disabled ? '免登录' : '标准' }}</span></div>
         </div>
+        <!-- 2FA 动态码"点击自动填入"开关(2026-10-03 用户要求): 本机浏览器偏好,
+             存 localStorage, 默认开(保持既有行为); 关后登录页点数字不填入需手输。
+             与登录页 Login.vue 共用 key=yugsight_2fa_clickfill, 免重启即时生效。
+             注: 本页整体尚未接入 i18n(批次 8), 文案暂为中文, 与本页现状一致 -->
+        <div style="border-top:1px solid var(--border); margin-top:12px; padding-top:12px">
+          <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); cursor:pointer">
+            <input type="checkbox" v-model="clickFillOn" @change="saveClickFill" />
+            2FA 动态码点击自动填入
+          </label>
+          <p class="muted small" style="margin:6px 0 0; line-height:1.6">
+            开启: 登录页点击动态码即自动填入并提交; 关闭: 需手动输入 6 位码。
+            <span class="muted">(仅本机浏览器生效, 免重启)</span>
+          </p>
+        </div>
       </div>
 
       <!-- 用户管理(仅管理员可见; auditor 的写接口会被后端 403 兜底) -->
@@ -251,6 +265,16 @@ const sessions = ref([])
 const audits = ref([])
 const users = ref([])
 const newUser = ref({ name: '', pass: '', role: 'auditor' })
+
+// ===== 2FA 动态码"点击自动填入"开关(2026-10-03): 本机浏览器偏好, localStorage =====
+// 与登录页 Login.vue 共用 key; 默认开(保持既有行为), 存 '0' 表示关闭。
+// 纯客户端 UX 偏好, 不写 settings.json(它只影响"点数字自动填入"这个交互,
+// 码值本身始终展示, 安全性与开关无关)
+const CLICKFILL_KEY = 'yugsight_2fa_clickfill'
+const clickFillOn = ref(localStorage.getItem(CLICKFILL_KEY) !== '0')
+function saveClickFill() {
+  try { localStorage.setItem(CLICKFILL_KEY, clickFillOn.value ? '1' : '0') } catch { /* 存储不可用: 仅本次会话生效 */ }
+}
 
 // ===== 品牌自定义(2026-09-28): 系统名称 + 页脚版权(仅 2 个可配置字段) =====
 // brandBase 记录加载时的原值, 用于"有改动才允许保存"(避免无意义写盘)

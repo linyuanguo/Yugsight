@@ -138,9 +138,15 @@ async function fetchCode() {
   } catch { fa.value = { enabled: false, code: '', remain: 0 } }
 }
 
-// 点击展示的数字一键填入(填入满 6 位后由 watch 自动提交登录)
+// 2FA 动态码"点击自动填入"开关(2026-10-03): 本机浏览器偏好, 存 localStorage,
+// 默认开(保持既有行为); 在「授权与模型」页(License.vue)可关闭。
+// 关后点击数字不填入, 需手动输入 6 位码。与 License.vue 共用同一 key。
+const CLICKFILL_KEY = 'yugsight_2fa_clickfill'
+const clickFillOn = ref(localStorage.getItem(CLICKFILL_KEY) !== '0')
+
+// 点击展示的数字一键填入(填入满 6 位后由 watch 自动提交登录); 开关关闭时不填入
 function fillCode() {
-  if (fa.value.code) code.value = fa.value.code
+  if (clickFillOn.value && fa.value.code) code.value = fa.value.code
 }
 
 // 每秒刷新倒计时; 90s 时间片翻转时拉新码(码值每片变化, 本地倒计时跨片自动跟新)
@@ -291,8 +297,9 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
           <span>{{ t('login.faTitle') }}</span>
           <span class="fa-remain">{{ t('login.faRemain', { sec: fa.remain }) }}</span>
         </div>
-        <div class="fa-show" @click="fillCode" :title="t('login.faHint')">{{ fa.code || '······' }}</div>
-        <div class="fa-hint">{{ t('login.faHint') }}</div>
+        <div class="fa-show" :class="{ clickable: clickFillOn }" @click="fillCode"
+             :title="clickFillOn ? t('login.faHint') : ''">{{ fa.code || '······' }}</div>
+        <div class="fa-hint">{{ clickFillOn ? t('login.faHint') : t('login.faHintOff') }}</div>
         <input v-model="code" class="code-input" inputmode="numeric" maxlength="6"
                autocomplete="one-time-code" :placeholder="t('login.faPh')" />
       </div>
@@ -358,8 +365,10 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
 .fa-box { display: flex; flex-direction: column; gap: 6px; background: rgba(76, 141, 255, .06); border: 1px solid var(--line, #232c45); border-radius: 10px; padding: 12px 14px; }
 .fa-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--dim, #7d8db0); }
 .fa-remain { font-size: 11px; color: var(--dim, #7d8db0); }
-.fa-show { font-size: 20px; letter-spacing: 10px; text-align: center; color: var(--accent, #4c8dff); font-family: monospace; padding: 2px 0; cursor: pointer; user-select: none; transition: color .15s, transform .1s; }
-.fa-show:hover { color: var(--fg, #e8ecf5); transform: translateY(-1px); }
+.fa-show { font-size: 20px; letter-spacing: 10px; text-align: center; color: var(--accent, #4c8dff); font-family: monospace; padding: 2px 0; user-select: none; transition: color .15s, transform .1s; }
+/* 点击自动填入开关关闭时: 无手型光标/无 hover 反馈(授权与模型页可重新开启) */
+.fa-show.clickable { cursor: pointer; }
+.fa-show.clickable:hover { color: var(--fg, #e8ecf5); transform: translateY(-1px); }
 .fa-hint { font-size: 11px; color: var(--dim, #7d8db0); text-align: center; }
 .code-input { letter-spacing: 8px; text-align: center; font-size: 20px; }
 .opts { display: flex; flex-direction: column; gap: 6px; }
