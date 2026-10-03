@@ -21,6 +21,7 @@
 
 import { reactive, computed } from 'vue'
 import { v2 } from '../../api/http'
+import { t } from '../../i18n'
 
 const KEY = 'yugsight_asset_tree'
 const VERSION = 1
@@ -245,7 +246,7 @@ export function syncTree() {
       state.nodes[nodeId] = {
         nodeId,
         type: 'scan_task',
-        name: r.title || ('扫描 ' + (r.target || r.id)),
+        name: r.title || t('at.scanName', { x: r.target || r.id }),
         scanTime: r.createdAt,
         reportId: r.id,
         children: kids,
@@ -367,7 +368,7 @@ function genId(prefix) {
 
 export function addFolder(name, remark) {
   const id = genId('f')
-  state.nodes[id] = { nodeId: id, type: 'folder', name: name || '未命名目录', remark: remark || '', children: [] }
+  state.nodes[id] = { nodeId: id, type: 'folder', name: name || t('at.untitled'), remark: remark || '', children: [] }
   state.order.push('f:' + id)
   state.expanded[id] = true
   persist()

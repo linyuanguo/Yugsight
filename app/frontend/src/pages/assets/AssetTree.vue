@@ -12,21 +12,21 @@
   <div>
     <div class="card">
       <div class="toolbar">
-        <input class="input" v-model.trim="q" placeholder="搜索 IP / 主机名 / 目录名 / 任务名" style="max-width:260px">
+        <input class="input" v-model.trim="q" :placeholder="t('at.searchPh')" style="max-width:260px">
         <!-- 2026-10-02 用户口径: 类型筛选选项=当前树里真实存在的类型(某类节点全没了选项消失) -->
         <select class="input" v-model="typeF" style="max-width:140px">
-          <option value="">全部类型</option>
-          <option v-for="k in typeOpts" :key="k" :value="k">{{ TYPE_CN[k] }}</option>
+          <option value="">{{ t('at.allTypes') }}</option>
+          <option v-for="k in typeOpts" :key="k" :value="k">{{ t(TYPE_CN[k]) }}</option>
         </select>
-        <button class="btn sm" @click="openFolder">新增目录</button>
-        <button class="btn sm" :disabled="busy" @click="resync">{{ busy ? '同步中...' : '同步扫描快照' }}</button>
-        <button class="btn sm danger" @click="doReset">重置树</button>
+        <button class="btn sm" @click="openFolder">{{ t('at.addFolder') }}</button>
+        <button class="btn sm" :disabled="busy" @click="resync">{{ busy ? t('at.syncing') : t('at.sync') }}</button>
+        <button class="btn sm danger" @click="doReset">{{ t('at.reset') }}</button>
         <div class="spacer"></div>
         <span class="muted small">{{ statText }}</span>
-        <span class="muted small" v-if="state.truncated">(台账超 1 万条已截断, 请到台账表分页查看)</span>
+        <span class="muted small" v-if="state.truncated">{{ t('at.truncated') }}</span>
       </div>
 
-      <Empty v-if="loadError" :text="'资产树加载失败: ' + loadError" />
+      <Empty v-if="loadError" :text="t('at.loadFail', { err: loadError })" />
 
       <div class="atree" ref="wrapRef" v-else>
         <!-- 原生 SVG 连接线层: 位置随节点行实测重算, 纯装饰不拦事件 -->
@@ -48,7 +48,7 @@
               <span class="caret" v-if="e.kind === 'folder' || e.kind === 'scan'"
                     @click.stop="toggleExpand(e.node.nodeId)">{{ isExpanded(e.node.nodeId) ? '▾' : '▸' }}</span>
               <span class="caret ghost" v-else>&nbsp;</span>
-              <span class="tp" :class="'tp-' + e.kind">{{ tpLabel(e.kind) }}</span>
+              <span class="tp" :class="'tp-' + e.kind">{{ t(tpLabel(e.kind)) }}</span>
               <b class="atree-name">{{ e.kind === 'folder' || e.kind === 'scan' ? e.node.name : e.name }}</b>
               <span class="muted small mono" v-if="e.kind === 'single' && e.asset.hostname">{{ e.asset.ip }}</span>
               <!-- 元信息: 目录备注 / 快照时间 / 设备 IP -->
@@ -57,24 +57,24 @@
               <span class="muted small mono" v-else-if="e.kind === 'monitor' && e.ip">{{ e.ip }}</span>
               <span class="badge" :class="'cnt-' + e.kind" v-if="e.kind === 'folder' || e.kind === 'scan'">{{ e.children.length }}</span>
               <span class="badge" :class="'st-' + statusClass(e)" v-else-if="e.kind === 'monitor'">{{ statusLabel(e) }}</span>
-              <span class="badge st-failed" v-if="e.kind === 'scan' && e.node.reportGone">报告已删除</span>
+              <span class="badge st-failed" v-if="e.kind === 'scan' && e.node.reportGone">{{ t('at.reportGone') }}</span>
               <!-- 操作 -->
               <div class="row-actions">
                 <template v-if="e.kind === 'folder'">
-                  <button class="btn xs" @click.stop="openRename(e.node)">重命名</button>
-                  <button class="btn xs danger" @click.stop="delFolder(e.node)">删除</button>
+                  <button class="btn xs" @click.stop="openRename(e.node)">{{ t('at.rename') }}</button>
+                  <button class="btn xs danger" @click.stop="delFolder(e.node)">{{ t('common.del') }}</button>
                 </template>
                 <template v-else-if="e.kind === 'scan'">
-                  <button class="btn xs" :disabled="!!e.node.reportGone" @click.stop="openReport(e.node)">查看报告</button>
-                  <button class="btn xs danger" @click.stop="delScan(e.node)">移除快照</button>
+                  <button class="btn xs" :disabled="!!e.node.reportGone" @click.stop="openReport(e.node)">{{ t('at.viewReport') }}</button>
+                  <button class="btn xs danger" @click.stop="delScan(e.node)">{{ t('at.delScan') }}</button>
                 </template>
-                <button class="btn xs" v-else-if="e.kind === 'monitor'" @click.stop="gotoMonitor(e)">节点监控</button>
+                <button class="btn xs" v-else-if="e.kind === 'monitor'" @click.stop="gotoMonitor(e)">{{ t('at.gotoMonitor') }}</button>
                 <template v-else>
                   <!-- 独立资产: 与二级资产行同操作 -->
-                  <button class="btn xs" @click.stop="$emit('edit', e.asset)">编辑</button>
-                  <button class="btn xs" @click.stop="gotoReportByAsset(e.asset)">原始报告</button>
-                  <button class="btn xs" @click.stop="$emit('locate', e.asset)">定位</button>
-                  <button class="btn xs danger" @click.stop="delAsset(e.asset)">删除</button>
+                  <button class="btn xs" @click.stop="$emit('edit', e.asset)">{{ t('common.edit') }}</button>
+                  <button class="btn xs" @click.stop="gotoReportByAsset(e.asset)">{{ t('at.rawReport') }}</button>
+                  <button class="btn xs" @click.stop="$emit('locate', e.asset)">{{ t('at.locate') }}</button>
+                  <button class="btn xs danger" @click.stop="delAsset(e.asset)">{{ t('common.del') }}</button>
                 </template>
               </div>
             </div>
@@ -86,7 +86,7 @@
                    :class="[rowDropClass(e.key + '#' + e.children.indexOf(c)), { 'atree-focus': focusKey === (e.key + '#' + e.children.indexOf(c)) }]"
                    :ref="el => setRowRef(e.key + '#' + e.children.indexOf(c), el)"
                    :draggable="e.kind === 'folder'"
-                   :title="e.kind === 'scan' ? '扫描快照只读, 不可移动' : '拖到其它目录 / 独立资产行可移动归属'"
+                   :title="e.kind === 'scan' ? t('at.readonlyTip') : t('at.dragTip')"
                    @dragstart="onAssetDragStart(e, c, $event)"
                    @dragover="onDragOver(e, $event, e.children.indexOf(c))"
                    @drop="onDropOnChild(e, c, e.children.indexOf(c), $event)">
@@ -94,35 +94,35 @@
                 <span class="mono">{{ c.ip }}</span>
                 <span class="small" v-if="c.asset && c.asset.hostname">{{ c.asset.hostname }}</span>
                 <span class="badge" :class="c.asset && c.asset.alive ? 'st-success' : 'st-failed'" v-if="c.asset">
-                  {{ c.asset.alive ? '存活' : '未存活' }}
+                  {{ c.asset.alive ? t('as.alive') : t('as.dead') }}
                 </span>
-                <span class="muted small" v-if="c.ghost">已不在台账(历史保留)</span>
+                <span class="muted small" v-if="c.ghost">{{ t('at.ghost') }}</span>
                 <span class="tag" v-for="t in (c.asset && c.asset.tags) || []" :key="t">{{ t }}</span>
                 <div class="row-actions" v-if="c.asset && e.kind === 'folder'">
-                  <button class="btn xs" @click.stop="$emit('edit', c.asset)">编辑</button>
-                  <button class="btn xs" @click.stop="gotoReportByAsset(c.asset)">原始报告</button>
-                  <button class="btn xs" @click.stop="$emit('locate', c.asset)">定位</button>
-                  <button class="btn xs danger" @click.stop="delAsset(c.asset)">删除</button>
+                  <button class="btn xs" @click.stop="$emit('edit', c.asset)">{{ t('common.edit') }}</button>
+                  <button class="btn xs" @click.stop="gotoReportByAsset(c.asset)">{{ t('at.rawReport') }}</button>
+                  <button class="btn xs" @click.stop="$emit('locate', c.asset)">{{ t('at.locate') }}</button>
+                  <button class="btn xs danger" @click.stop="delAsset(c.asset)">{{ t('common.del') }}</button>
                 </div>
               </div>
             </div>
           </div>
         </template>
 
-        <Empty v-if="!visibleEntries.length" text="没有匹配的节点(试试清空搜索/类型筛选, 或点「新增目录」「同步扫描快照」)" />
+        <Empty v-if="!visibleEntries.length" :text="t('at.noMatch')" />
       </div>
     </div>
 
     <!-- 新增/重命名目录 -->
-    <Modal v-if="showFolder" :title="renaming ? '重命名目录' : '新增目录'" width="420px" @close="showFolder = false">
-      <div class="field"><label class="label">目录名 *</label>
-        <input class="input" v-model="folderName" placeholder="如 核心机房 / 财务区" @keyup.enter="saveFolder"></div>
-      <div class="field"><label class="label">备注</label>
-        <input class="input" v-model="folderRemark" placeholder="可选"></div>
+    <Modal v-if="showFolder" :title="renaming ? t('at.renameFolder') : t('at.addFolder')" width="420px" @close="showFolder = false">
+      <div class="field"><label class="label">{{ t('at.folderName') }} *</label>
+        <input class="input" v-model="folderName" :placeholder="t('at.folderPh')" @keyup.enter="saveFolder"></div>
+      <div class="field"><label class="label">{{ t('at.remark') }}</label>
+        <input class="input" v-model="folderRemark" :placeholder="t('as.phOpt')"></div>
       <div class="login-err" style="text-align:left">{{ folderErr }}</div>
       <template #footer>
-        <button class="btn" @click="showFolder = false">取消</button>
-        <button class="btn primary" @click="saveFolder">保存</button>
+        <button class="btn" @click="showFolder = false">{{ t('common.cancel') }}</button>
+        <button class="btn primary" @click="saveFolder">{{ t('common.save') }}</button>
       </template>
     </Modal>
   </div>
@@ -135,6 +135,7 @@ import Modal from '../../components/Modal.vue'
 import Empty from '../../components/Empty.vue'
 import { v2 } from '../../api/http'
 import { fmtDT } from '../../utils'
+import { t } from '../../i18n'
 import {
   assetTree, entries, loadAll, isExpanded, addFolder, updateFolder, removeFolder,
   removeScanNode, moveAsset, reorderEntry, toggleExpand, resetTree, focusKeyOf
@@ -164,11 +165,11 @@ init()
 
 async function resync() {
   busy.value = true
-  try { await loadAll() } catch (e) { alert('同步失败: ' + e.message) } finally { busy.value = false }
+  try { await loadAll() } catch (e) { alert(t('at.syncFail', { err: e.message })) } finally { busy.value = false }
 }
 
 function doReset() {
-  if (!confirm('重置资产树?\n\n将清空所有目录分组、顺序与快照条目(资产本身、扫描报告存档完全不受影响),\n随后按当前台账与扫描快照重建视图。')) return
+  if (!confirm(t('at.resetConfirm'))) return
   resetTree()
   drawLines()
 }
@@ -192,7 +193,8 @@ function matchText(e) {
 }
 
 // 2026-10-02: 类型筛选选项 = 当前树里真实存在的类型(只含存在的)
-const TYPE_CN = { folder: '自定义目录', scan: '扫描任务快照', monitor: '监控设备', single: '独立资产' }
+// 值存 i18n 词条键, 模板 t() 解析(2026-10-04 i18n)
+const TYPE_CN = { folder: 'at.tFolder', scan: 'at.tScan', monitor: 'at.tMonitor', single: 'at.tSingle' }
 const typeOpts = computed(() => ['folder', 'scan', 'monitor', 'single'].filter(k => entries.value.some(e => e.kind === k)))
 watch(entries, () => {
   if (typeF.value && !typeOpts.value.includes(typeF.value)) typeF.value = ''
@@ -218,17 +220,19 @@ function visibleChildren(e) {
 const statText = computed(() => {
   const c = { folder: 0, scan: 0, monitor: 0, single: 0 }
   for (const e of entries.value) c[e.kind] = (c[e.kind] || 0) + 1
-  return `目录 ${c.folder} · 快照 ${c.scan} · 监控设备 ${c.monitor} · 独立资产 ${c.single}`
+  return t('at.stat', { folder: c.folder, scan: c.scan, monitor: c.monitor, single: c.single })
 })
 
+// tpLabel 值存词条键, 调用处(模板) t() 解析; 未知 key 原样返回
 function tpLabel(k) {
-  return { folder: '目录', scan: '扫描快照', monitor: '监控设备', single: '独立资产' }[k] || k
+  return { folder: 'at.tFolder', scan: 'at.tScanShort', monitor: 'at.tMonitor', single: 'at.tSingle' }[k] || k
 }
 function statusClass(e) {
   return { online: 'st-success', warning: 'st-running', offline: 'st-failed' }[e.status] || 'st-pending'
 }
 function statusLabel(e) {
-  return { online: '在线', warning: '预警', offline: '离线' }[e.status] || e.status
+  const k = { online: 'at.stOnline', warning: 'at.stWarn', offline: 'at.stOffline' }[e.status]
+  return k ? t(k) : e.status
 }
 
 // ===== 节点/资产业务动作 =====
@@ -254,7 +258,7 @@ function openRename(node) {
 }
 function saveFolder() {
   const name = folderName.value.trim()
-  if (!name) { folderErr.value = '目录名不能为空'; return }
+  if (!name) { folderErr.value = t('at.nameReq'); return }
   if (renaming.value) updateFolder(renaming.value.nodeId, { name, remark: folderRemark.value.trim() })
   else addFolder(name, folderRemark.value.trim())
   showFolder.value = false
@@ -262,13 +266,13 @@ function saveFolder() {
 }
 function delFolder(node) {
   const n = (node.children || []).length
-  if (!confirm(`删除目录「${node.name}」?\n\n目录内的 ${n} 台资产不会删除, 全部退回「独立资产」一级。`)) return
+  if (!confirm(t('at.delFolderConfirm', { name: node.name, n }))) return
   removeFolder(node.nodeId)
   emit('changed')
   drawLines()
 }
 function delScan(node) {
-  if (!confirm(`从资产树移除扫描快照「${node.name}」?\n\n只移除本树的快照条目, 报告中心的原始报告存档不受影响(删错了可点「同步扫描快照」找回来)。`)) return
+  if (!confirm(t('at.delScanConfirm', { name: node.name }))) return
   removeScanNode(node.nodeId)
   drawLines()
 }
@@ -284,7 +288,7 @@ function gotoReportByAsset(a) {
   router.push({ path: '/reports', query: { tab: 'raw', asset: a.ip } })
 }
 async function delAsset(a) {
-  if (!confirm('确认删除资产 ' + a.ip + ' ?\n\n删除后不可恢复, 扫描快照里的历史记录仍保留(灰显)。')) return
+  if (!confirm(t('at.delAssetConfirm', { ip: a.ip }))) return
   try {
     await v2('/assets/' + a.id, { method: 'DELETE' })
     await loadAll() // 台账删了, 整体重同步(目录/独立条目自动摘除, 快照 absent 化)
@@ -399,20 +403,20 @@ function onDropOnChild(e, c, childIndex, ev) {
   const after = drop.zone === 'after' // 必须在 clearDrop() 前读, 否则恒为假
   clearDrop()
   if (!p) return
-  if (e.kind !== 'folder') { flash('扫描快照是只读历史, 不能往里放资产'); return }
+  if (e.kind !== 'folder') { flash(t('at.flashScan')); return }
   if (p.kind === 'asset') {
-    if (p.ref.startsWith('absent:')) { flash('快照中的历史资产不能拖入目录'); return }
+    if (p.ref.startsWith('absent:')) { flash(t('at.flashGhost')); return }
     let idx = childIndex + (after ? 1 : 0)
     if (p.fromKey === e.key) {
       const fromIdx = (e.node.children || []).indexOf(p.ref)
       if (fromIdx >= 0 && fromIdx < idx) idx-- // 同目录内下移: 先剔除再插入, 下标前移
     }
-    if (!moveAsset(p.ref, e.key, idx)) flash('移动失败')
+    if (!moveAsset(p.ref, e.key, idx)) flash(t('at.flashMove'))
   } else if (p.kind === 'entry' && p.key.startsWith('a:')) {
     // 独立资产一级行拖进目录二级位置
-    if (!moveAsset(p.key.slice(2), e.key, childIndex + (after ? 1 : 0))) flash('移动失败')
+    if (!moveAsset(p.key.slice(2), e.key, childIndex + (after ? 1 : 0))) flash(t('at.flashMove'))
   } else {
-    flash('目录不能放进另一个目录')
+    flash(t('at.flashFolder'))
     return
   }
   emit('changed')
@@ -440,9 +444,9 @@ function moveAssetToSingle(assetId, targetKey, before) {
 }
 
 function dropMsg(e, p) {
-  if (p.kind === 'entry' && e.kind !== 'single') return '该位置不能放置此类节点'
-  if (e.kind === 'scan') return '扫描快照是只读历史'
-  return '该位置不能放置此类节点'
+  if (p.kind === 'entry' && e.kind !== 'single') return t('at.dropMsg')
+  if (e.kind === 'scan') return t('at.flashScan2')
+  return t('at.dropMsg')
 }
 function flash(msg) { alert(msg) }
 

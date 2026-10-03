@@ -1,14 +1,14 @@
 <template>
   <div>
-    <PageHeader title="资产管理" desc="统一资产台账: 二级混合树(扫描快照 / 自定义目录 / 监控设备 / 独立资产) + 台账明细表">
-      <button class="btn sm primary" @click="openAdd">新增资产</button>
+    <PageHeader :title="t('as.title')" :desc="t('as.desc')">
+      <button class="btn sm primary" @click="openAdd">{{ t('as.add') }}</button>
     </PageHeader>
 
     <!-- 双 tab(2026-09-28 资产树重构): tab 状态放 URL query(先例 /env?tab=rules),
          刷新/书签/深链(/assets?tab=tree&focus=<id>)都能停在同一视图 -->
     <div class="tabs">
-      <div class="tab" :class="{ active: tab === 'tree' }" @click="setTab('tree')">资产树</div>
-      <div class="tab" :class="{ active: tab === 'list' }" @click="setTab('list')">台账表</div>
+      <div class="tab" :class="{ active: tab === 'tree' }" @click="setTab('tree')">{{ t('as.tabTree') }}</div>
+      <div class="tab" :class="{ active: tab === 'list' }" @click="setTab('list')">{{ t('as.tabList') }}</div>
     </div>
 
     <!-- ===== Tab1: 二级混合树 ===== -->
@@ -18,28 +18,28 @@
     <div v-else>
       <div class="card">
         <div class="toolbar">
-          <input class="input" v-model.trim="filter.ip" placeholder="按 IP 过滤" @keyup.enter="reload">
-          <input class="input" v-model.trim="filter.tag" placeholder="按标签过滤" @keyup.enter="reload">
-          <button class="btn sm" @click="reload">查询</button>
-          <button class="btn sm" @click="resetFilter">清空</button>
-          <label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" v-model="onlyAlive" @change="reload"> 只看存活</label>
-          <button class="btn sm danger" @click="cleanDead">清理未存活</button>
-          <button class="btn sm danger" @click="cleanArpGhosts">清理幽灵资产</button>
+          <input class="input" v-model.trim="filter.ip" :placeholder="t('as.fIp')" @keyup.enter="reload">
+          <input class="input" v-model.trim="filter.tag" :placeholder="t('as.fTag')" @keyup.enter="reload">
+          <button class="btn sm" @click="reload">{{ t('as.query') }}</button>
+          <button class="btn sm" @click="resetFilter">{{ t('as.reset') }}</button>
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" v-model="onlyAlive" @change="reload"> {{ t('as.onlyAlive') }}</label>
+          <button class="btn sm danger" @click="cleanDead">{{ t('as.cleanDead') }}</button>
+          <button class="btn sm danger" @click="cleanArpGhosts">{{ t('as.cleanGhosts') }}</button>
           <!-- 删除选中(批量): 表格 checkbox 勾选, 走 /assets/batch-delete -->
           <button class="btn sm danger" :disabled="!sel.length || busy" @click="batchDel">
-            删除选中{{ sel.length ? ' (' + sel.length + ')' : '' }}
+            {{ t('as.delSel') }}{{ sel.length ? ' (' + sel.length + ')' : '' }}
           </button>
           <div class="spacer"></div>
-          <span class="muted small">共 {{ total }} 台主机</span>
+          <span class="muted small">{{ t('as.totalHosts', { n: total }) }}</span>
         </div>
 
         <div class="table-wrap" v-if="list.length">
           <table class="table">
             <thead>
               <tr>
-                <th style="width:30px"><input type="checkbox" :checked="allSel" @change="toggleAll" :disabled="!list.length" title="全选/取消本页"></th>
-                <th>IP</th><th>存活</th><th>主机名</th><th>操作系统</th><th>主服务</th>
-                <th>开放端口</th><th>探针节点</th><th>标签</th><th>发现时间</th><th>操作</th>
+                <th style="width:30px"><input type="checkbox" :checked="allSel" @change="toggleAll" :disabled="!list.length" :title="t('as.selAll')"></th>
+                <th>IP</th><th>{{ t('as.cAlive') }}</th><th>{{ t('as.cHost') }}</th><th>{{ t('as.cOs') }}</th><th>{{ t('as.cService') }}</th>
+                <th>{{ t('as.cPorts') }}</th><th>{{ t('as.cProbe') }}</th><th>{{ t('as.cTags') }}</th><th>{{ t('as.cFound') }}</th><th>{{ t('pb.cOp') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -48,7 +48,7 @@
                 <td class="mono">{{ a.ip }}</td>
                 <!-- 存活: 最近一轮扫描的判定(Alive 由存活扫描回写, 见 scan_persist.go) -->
                 <td>
-                  <span class="badge" :class="a.alive ? 'st-success' : 'st-failed'">{{ a.alive ? '存活' : '未存活' }}</span>
+                  <span class="badge" :class="a.alive ? 'st-success' : 'st-failed'">{{ a.alive ? t('as.alive') : t('as.dead') }}</span>
                 </td>
                 <td>{{ a.hostname || '-' }}</td>
                 <td>{{ a.os || '-' }}</td>
@@ -57,90 +57,90 @@
                   {{ (a.ports || []).length ? (a.ports || []).slice(0, 6).join(', ') + ((a.ports || []).length > 6 ? ' …' : '') : '-' }}
                 </td>
                 <td v-if="a.probeNode">{{ a.probeNode }}</td>
-                <td v-else class="muted">本地</td>
+                <td v-else class="muted">{{ t('as.local') }}</td>
                 <td>
                   <span class="tag" v-for="t in a.tags" :key="t">{{ t }}
-                    <button title="移除标签" @click="removeTag(a, t)">×</button>
+                    <button :title="t('as.rmTag')" @click="removeTag(a, t)">×</button>
                   </span>
                   <span class="muted small" v-if="!a.tags || !a.tags.length">-</span>
                 </td>
                 <td class="muted small mono">{{ fmtDT(a.foundAt) }}</td>
                 <td>
                   <div class="row-actions">
-                    <button class="btn xs" @click="openEdit(a)">编辑</button>
-                    <button class="btn xs" @click="openTag(a)">加标签</button>
-                    <button class="btn xs" @click="locateInTree(a)" title="到资产树中定位这台资产">树</button>
-                    <button class="btn xs danger" @click="del(a)">删除</button>
+                    <button class="btn xs" @click="openEdit(a)">{{ t('common.edit') }}</button>
+                    <button class="btn xs" @click="openTag(a)">{{ t('as.addTag') }}</button>
+                    <button class="btn xs" @click="locateInTree(a)" :title="t('as.locateTree')">{{ t('as.tree') }}</button>
+                    <button class="btn xs danger" @click="del(a)">{{ t('common.del') }}</button>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else :text="filter.ip || filter.tag ? '无匹配资产' : '暂无资产, 可手动新增或等待扫描管线回传'" />
+        <Empty v-else :text="filter.ip || filter.tag ? t('as.noMatch') : t('as.noAssets')" />
 
         <div class="pager" v-if="total > page * size">
-          <span>第 {{ page }} 页</span>
+          <span>{{ t('as.pageOf', { p: page }) }}</span>
           <div class="spacer"></div>
-          <button class="btn xs" :disabled="page <= 1" @click="page--; load()">上一页</button>
-          <button class="btn xs" :disabled="page * size >= total" @click="page++; load()">下一页</button>
+          <button class="btn xs" :disabled="page <= 1" @click="page--; load()">{{ t('al.prev') }}</button>
+          <button class="btn xs" :disabled="page * size >= total" @click="page++; load()">{{ t('al.next') }}</button>
         </div>
       </div>
     </div>
 
     <!-- 新增/编辑(树/表两 tab 共用; 新增时可选归属目录) -->
-    <Modal v-if="showForm" :title="editing ? '编辑资产' : '新增资产'" @close="showForm = false">
+    <Modal v-if="showForm" :title="editing ? t('as.edit') : t('as.add')" @close="showForm = false">
       <div class="field"><label class="label">IP *</label>
-        <input class="input mono" v-model.trim="form.ip" :disabled="!!editing" placeholder="如 192.168.1.10"></div>
+        <input class="input mono" v-model.trim="form.ip" :disabled="!!editing" :placeholder="t('as.phIp')"></div>
       <div class="form-row">
         <div class="field"><label class="label">MAC</label>
-          <input class="input mono" v-model.trim="form.mac" placeholder="可选"></div>
-        <div class="field"><label class="label">主机名</label>
-          <input class="input" v-model.trim="form.hostname" placeholder="可选"></div>
+          <input class="input mono" v-model.trim="form.mac" :placeholder="t('as.phOpt')"></div>
+        <div class="field"><label class="label">{{ t('as.cHost') }}</label>
+          <input class="input" v-model.trim="form.hostname" :placeholder="t('as.phOpt')"></div>
       </div>
       <div class="form-row">
-        <div class="field"><label class="label">操作系统</label>
-          <input class="input" v-model.trim="form.os" placeholder="如 Windows Server 2019"></div>
-        <div class="field"><label class="label">探针节点</label>
-          <input class="input" v-model.trim="form.probeNode" placeholder="空 = 本地"></div>
+        <div class="field"><label class="label">{{ t('as.cOs') }}</label>
+          <input class="input" v-model.trim="form.os" :placeholder="t('as.phOs')"></div>
+        <div class="field"><label class="label">{{ t('as.cProbe') }}</label>
+          <input class="input" v-model.trim="form.probeNode" :placeholder="t('as.phProbe')"></div>
       </div>
       <div class="form-row">
-        <div class="field"><label class="label">主服务</label>
-          <input class="input" v-model.trim="form.service" placeholder="如 http / ssh"></div>
-        <div class="field"><label class="label">服务版本</label>
-          <input class="input" v-model.trim="form.version" placeholder="如 nginx 1.24.0"></div>
+        <div class="field"><label class="label">{{ t('as.cService') }}</label>
+          <input class="input" v-model.trim="form.service" :placeholder="t('as.phService')"></div>
+        <div class="field"><label class="label">{{ t('as.cVer') }}</label>
+          <input class="input" v-model.trim="form.version" :placeholder="t('as.phVer')"></div>
       </div>
       <div class="field"><label class="label">Banner</label>
-        <input class="input mono" v-model.trim="form.banner" placeholder="服务横幅(可选)"></div>
+        <input class="input mono" v-model.trim="form.banner" :placeholder="t('as.phBanner')"></div>
       <div class="form-row">
-        <div class="field"><label class="label">开放端口(逗号分隔)</label>
-          <input class="input mono" v-model="form.portsStr" placeholder="如 22,80,443,3389"></div>
-        <div class="field"><label class="label">标签(逗号分隔)</label>
-          <input class="input" v-model="form.tagsStr" placeholder="如 core,finance"></div>
+        <div class="field"><label class="label">{{ t('as.fPorts') }}</label>
+          <input class="input mono" v-model="form.portsStr" :placeholder="t('as.phPorts')"></div>
+        <div class="field"><label class="label">{{ t('as.fTags') }}</label>
+          <input class="input" v-model="form.tagsStr" :placeholder="t('as.phTags')"></div>
       </div>
       <!-- 2026-09-28 资产树: 新增资产可选归属目录(留空 = 独立资产一级节点);
            编辑不改归属(归属调整走资产树拖拽), 所以只在新增时显示 -->
-      <div class="field" v-if="!editing"><label class="label">归属目录(资产树)</label>
+      <div class="field" v-if="!editing"><label class="label">{{ t('as.folder') }}</label>
         <select class="input" v-model="form.folder">
-          <option value="">独立资产(树顶层)</option>
+          <option value="">{{ t('as.standalone') }}</option>
           <option v-for="f in folderOptions" :key="f.nodeId" :value="f.nodeId">{{ f.name }}</option>
         </select>
       </div>
       <div class="login-err" style="text-align:left">{{ formErr }}</div>
       <template #footer>
-        <button class="btn" @click="showForm = false">取消</button>
-        <button class="btn primary" :disabled="busy" @click="save">{{ busy ? '保存中...' : '保存' }}</button>
+        <button class="btn" @click="showForm = false">{{ t('common.cancel') }}</button>
+        <button class="btn primary" :disabled="busy" @click="save">{{ busy ? t('pb.saving') : t('common.save') }}</button>
       </template>
     </Modal>
 
     <!-- 加标签 -->
-    <Modal v-if="showTag" title="添加标签" width="420px" @close="showTag = false">
-      <div class="field"><label class="label">标签(逗号分隔可多个)</label>
-        <input class="input" v-model="tagInput" placeholder="如 test,web" @keyup.enter="addTag"></div>
+    <Modal v-if="showTag" :title="t('as.addTag')" width="420px" @close="showTag = false">
+      <div class="field"><label class="label">{{ t('as.fTagsMulti') }}</label>
+        <input class="input" v-model="tagInput" :placeholder="t('as.phTags2')" @keyup.enter="addTag"></div>
       <div class="login-err" style="text-align:left">{{ formErr }}</div>
       <template #footer>
-        <button class="btn" @click="showTag = false">取消</button>
-        <button class="btn primary" :disabled="busy" @click="addTag">添加</button>
+        <button class="btn" @click="showTag = false">{{ t('common.cancel') }}</button>
+        <button class="btn primary" :disabled="busy" @click="addTag">{{ t('as.addTagBtn') }}</button>
       </template>
     </Modal>
   </div>
@@ -156,6 +156,7 @@ import AssetTree from './assets/AssetTree.vue'
 import { entries as treeEntries, moveAsset } from './assets/treeStore'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
+import { t } from '../i18n'
 
 // ===== tab 状态(URL query 驱动, 与 /env?tab=rules 同口径) =====
 const route = useRoute()
@@ -265,7 +266,7 @@ async function save() {
 }
 
 async function del(a) {
-  if (!confirm('确认删除资产 ' + a.ip + ' ?')) return
+  if (!confirm(t('as.delConfirm', { ip: a.ip }))) return
   try { await v2('/assets/' + a.id, { method: 'DELETE' }); await load() }
   catch (e) { alert(e.message) }
 }
@@ -274,14 +275,14 @@ async function del(a) {
 async function batchDel() {
   const n = sel.value.length
   if (!n) return
-  if (n > 500) { alert('单次最多删除 500 条'); return }
+  if (n > 500) { alert(t('as.batchMax')); return }
   const ips = list.value.filter(a => sel.value.includes(a.id)).map(a => a.ip)
-  const preview = ips.slice(0, 10).join(', ') + (ips.length > 10 ? ' 等 ' + ips.length + ' 台' : '')
-  if (!confirm('确认删除选中的 ' + n + ' 台资产?\n' + preview + '\n\n删除后不可恢复, 继续?')) return
+  const preview = ips.slice(0, 10).join(', ') + (ips.length > 10 ? t('as.etC', { n: ips.length }) : '')
+  if (!confirm(t('as.batchConfirm', { n, preview }) + '\n\n' + t('as.irreversible'))) return
   busy.value = true
   try {
     const r = await v2('/assets/batch-delete', { method: 'POST', body: { ids: sel.value } })
-    alert('已删除 ' + (r.deleted || 0) + ' 台资产')
+    alert(t('as.deletedN', { n: r.deleted || 0 }))
     sel.value = []
     await load()
   } catch (e) {
@@ -295,10 +296,10 @@ async function cleanDead() {
   try {
     const d = await v2('/assets?alive=0&page=1&size=1')
     const n = d.total || 0
-    if (n === 0) { alert('没有未存活资产可清理'); return }
-    if (!confirm(`确认清理所有「未存活」资产？\n将删除 ${n} 台(删除后不可恢复)。\n\n曾上线后下线的资产不受影响(它们始终显示存活)。`)) return
+    if (n === 0) { alert(t('as.noDead')); return }
+    if (!confirm(t('as.cleanDeadConfirm', { n }) + '\n\n' + t('as.cleanDeadNote'))) return
     const r = await v2('/assets/dead', { method: 'DELETE' })
-    alert('已清理 ' + (r.deleted || 0) + ' 台未存活资产')
+    alert(t('as.deadCleaned', { n: r.deleted || 0 }))
     await load()
   } catch (e) { alert(e.message) }
 }
@@ -307,18 +308,18 @@ async function cleanDead() {
 async function cleanArpGhosts() {
   try {
     const p = await v2('/assets/arp-ghosts')
-    if (!p.count) { alert('未检测到代理 ARP 幽灵资产'); return }
-    let msg = `检测到 ${p.count} 个幽灵资产将删除:\n`
+    if (!p.count) { alert(t('as.noGhosts')); return }
+    let msg = t('as.ghostWillDel', { n: p.count }) + '\n'
     for (const g of (p.groups || [])) {
       if (g.unresolved) {
-        msg += `\nMAC ${g.mac}: ${g.ips.length} 台同 MAC 但无真身证据, 不删(需人工复核)`
+        msg += `\nMAC ${g.mac}: ` + t('as.ghostUnresolved', { n: g.ips.length })
       } else if (g.ghosts && g.ghosts.length) {
-        msg += `\nMAC ${g.mac}: 真身 ${(g.real || []).join(', ')} 保留, 删 ${g.ghosts.length} 个`
+        msg += `\nMAC ${g.mac}: ` + t('as.ghostGroup', { real: (g.real || []).join(', '), n: g.ghosts.length })
       }
     }
-    if (!confirm(msg + '\n\n删除后不可恢复, 继续?')) return
+    if (!confirm(msg + '\n\n' + t('as.irreversible'))) return
     const r = await v2('/assets/arp-ghosts/cleanup', { method: 'POST' })
-    alert('已删除 ' + (r.deleted || 0) + ' 个幽灵资产')
+    alert(t('as.ghostDeleted', { n: r.deleted || 0 }))
     await load()
   } catch (e) { alert(e.message) }
 }
