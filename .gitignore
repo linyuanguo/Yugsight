@@ -48,3 +48,6 @@ docs/Zabbix拓扑与节点监控设计分析.md
 
 # ===== 编译中间产物(手动 windres/gcc 产物; 构建脚本自产的 .o 会自行清理) =====
 *.o
+
+# ===== 调试/登录临时文件(curl cookie jar 等, 不入库) =====
+/cookies.txt
