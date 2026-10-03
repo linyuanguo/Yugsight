@@ -9,18 +9,22 @@
 // 强行引 three 需要新增 npm 依赖或本地 ESM 文件, 违反"零第三方依赖 + 单二进制"约束。
 // 平移/缩放/旋转/复位/自动巡检这些 OrbitControls 能力在 CSS 3D 下同样能实现。
 
+// 2026-10-04 i18n: 本页模型层展示文案一律词条键, 渲染期 t() 解析
+// (组件侧对常量值套 t(), 用户自定义层名/组名自由文本经 t() 三级回退原样显示)
+import { t as tr } from '../../i18n'
+
 // 分组盒(2026-09-29 用户要求"框框自定义"): 物理分层盒(核心/汇聚/接入)与逻辑业务组
 // 都是用户数据 —— 可改名/增删/调高度, localStorage 持久化。这里是**默认值**,
 // 页面 loadGroups() 无本地数据时以它为初始; 运行期以页面传入的 bands/clusters 为准。
 export const DEFAULT_BANDS = [
-  { key: 'b1', name: '核心层', h: 200 },
-  { key: 'b2', name: '汇聚层', h: 220 },
-  { key: 'b3', name: '接入层', h: 200 },
+  { key: 'b1', name: 'topo.bandCore', h: 200 },
+  { key: 'b2', name: 'topo.bandAgg', h: 220 },
+  { key: 'b3', name: 'topo.bandAccess', h: 200 },
 ]
 export const DEFAULT_CLUSTERS = [
-  { key: 'network', name: '网络设备' },
-  { key: 'service', name: '业务服务' },
-  { key: 'other', name: '其它' },
+  { key: 'network', name: 'topo.clNetwork' },
+  { key: 'service', name: 'topo.clService' },
+  { key: 'other', name: 'topo.clOther' },
 ]
 // 自定义层列表 → 逐层累计 top(层高可拖拽/输入调整, 盒高即节点排布带的上下界)
 export function bandTops(bands) {
@@ -41,32 +45,33 @@ export const LAYERS = DEFAULT_BANDS.map((b, i) => ({ layer: i + 1, label: b.name
 // 图标用辨识度高的几何字形(零第三方依赖, 不引图标库), 各类型互不重复。
 export const TYPES = {
   // 网络设备
-  router:     { t: '路由器',     g: '⇄', layer: 1, group: 'network' },
-  coresw:     { t: '核心交换机', g: '▤', layer: 1, group: 'network' },
-  l3sw:       { t: '三层交换机', g: '⋔', layer: 2, group: 'network' },
-  l2sw:       { t: '二层交换机', g: '⊞', layer: 2, group: 'network' },
-  aggsw:      { t: '汇聚交换机', g: '▦', layer: 2, group: 'network' },
-  firewall:   { t: '防火墙',     g: '⛨', layer: 2, group: 'network' },
+  router:     { t: 'topo.tRouter',     g: '⇄', layer: 1, group: 'network' },
+  coresw:     { t: 'topo.tCoreSw',     g: '▤', layer: 1, group: 'network' },
+  l3sw:       { t: 'topo.tL3Sw',       g: '⋔', layer: 2, group: 'network' },
+  l2sw:       { t: 'topo.tL2Sw',       g: '⊞', layer: 2, group: 'network' },
+  aggsw:      { t: 'topo.tAggSw',      g: '▦', layer: 2, group: 'network' },
+  firewall:   { t: 'topo.tFirewall',   g: '⛨', layer: 2, group: 'network' },
   // 业务服务
-  database:   { t: '数据库',     g: '⛁', layer: 3, group: 'service' },
-  middleware: { t: '中间件',     g: '⧉', layer: 3, group: 'service' },
-  web:        { t: 'Web 服务',   g: '◈', layer: 3, group: 'service' },
-  server:     { t: '服务器',     g: '▥', layer: 3, group: 'service' },
-  probe:      { t: '探针终端',   g: '◎', layer: 3, group: 'service' },
+  database:   { t: 'topo.tDatabase',   g: '⛁', layer: 3, group: 'service' },
+  middleware: { t: 'topo.tMiddleware', g: '⧉', layer: 3, group: 'service' },
+  web:        { t: 'topo.tWeb',        g: '◈', layer: 3, group: 'service' },
+  server:     { t: 'topo.tServer',     g: '▥', layer: 3, group: 'service' },
+  probe:      { t: 'topo.tProbe',      g: '◎', layer: 3, group: 'service' },
 }
 export const TYPE_GROUPS = [
-  { key: 'network', label: '网络设备' },
-  { key: 'service', label: '业务服务' },
+  { key: 'network', label: 'topo.tgNetwork' },
+  { key: 'service', label: 'topo.tgService' },
 ]
 // 平铺(按组序)供"添加设备"菜单/设备库使用, 网络在前、业务在后
 export const TYPE_OPTIONS = TYPE_GROUPS.flatMap(g =>
   Object.keys(TYPES).filter(v => TYPES[v].group === g.key).map(v => ({ v, t: TYPES[v].t })))
-export function typeText(t) { return (TYPES[t] && TYPES[t].t) || t || '未识别' }
+// 2026-10-04 i18n: 参数改名 k(避免遮蔽 i18n 的 t); 类型名是词条键, tr() 解析, 未知原样
+export function typeText(k) { return (TYPES[k] && TYPES[k].t) ? tr(TYPES[k].t) : (k || tr('topo.tUnknown')) }
 export function typeGlyph(t) { return (TYPES[t] && TYPES[t].g) || '▣' }
 export function layerForType(t) { return (TYPES[t] && TYPES[t].layer) || 3 }
 export function bizGroup(t) { return (TYPES[t] && TYPES[t].group) || 'other' }
 
-export const STATUS_CN = { normal: '正常', warn: '告警', error: '异常', down: '断开' }
+export const STATUS_CN = { normal: 'topo.stNormal', warn: 'topo.stWarn', error: 'topo.stError', down: 'topo.stDown' }
 export const STATUS_COLOR = { normal: '#34d399', warn: '#fbbf24', error: '#f87171', down: '#94a3b8' }
 // 链路颜色按"连通状态"三色口径(2026-09-29 新拓扑架构): 绿=正常 / 黄=告警 / 红=中断,
 // 与节点安全状态四色同源, 便于整屏一眼对齐。旧版青/橙已改绿/黄。
@@ -80,7 +85,7 @@ export const LINK_COLOR = { normal: '#34d399', warn: '#fbbf24', down: '#f87171' 
 //   告警/中危(warn)           → yellow
 //   在线且低风险(normal)      → green
 export const SAFE_COLOR = { green: '#34d399', yellow: '#fbbf24', red: '#f87171', gray: '#64748b' }
-export const SAFE_CN = { green: '在线/低风险', yellow: '告警/中风险', red: '离线/高危', gray: '未监控' }
+export const SAFE_CN = { green: 'topo.sgGreen', yellow: 'topo.sgYellow', red: 'topo.sgRed', gray: 'topo.sgGray' }
 export function safeStatus(n) {
   if (!n || !n.isMonitor) return 'gray'
   if (n.status === 'down' || n.status === 'error') return 'red'
@@ -91,7 +96,7 @@ export function safeColor(n) { return SAFE_COLOR[safeStatus(n)] || SAFE_COLOR.gr
 
 // 告警级别三色(规格: 提示=蓝 / 一般=黄 / 严重=红)
 export const ALERT_LEVEL_COLOR = { info: '#38bdf8', warning: '#fbbf24', critical: '#f87171' }
-export const ALERT_LEVEL_CN = { info: '提示', warning: '一般', critical: '严重' }
+export const ALERT_LEVEL_CN = { info: 'topo.alInfo', warning: 'topo.alWarning', critical: 'topo.alCritical' }
 // 后端有两套级别词: collect.Event 用 info|warn|critical, node_alerts 用 info|warning|critical
 // → 统一归一到 info|warning|critical 三档, 避免前端按词面判断漏档。
 export function normAlertLevel(lv) {
@@ -278,7 +283,7 @@ export function subnetKey(ip) {
 }
 export function subnetLabel(ip) {
   const k = subnetKey(ip)
-  return k === '_ungrouped' ? '未分组网段' : k + '.0/24'
+  return k === '_ungrouped' ? tr('topo.ungrouped') : k + '.0/24'
 }
 // 子网整体状态 = 成员中最差的安全状态(red>yellow>green>gray), 供折叠汇总节点着色
 export function subnetStatus(members) {

@@ -11,12 +11,12 @@
     <!-- 顶部(全屏浏览时自动上移隐藏, 见 script"浏览模式自动隐藏"节) -->
     <div class="tp-top" ref="topBarEl" :class="{ 'ui-hidden': autohideOn && !uiTop }">
       <div class="tp-crumb">
-        <a href="javascript:void(0)" @click="goHome">首页</a> / <span>网络拓扑</span>
-        <a class="tp-back" href="javascript:void(0)" @click="goBigScreen">返回安全大屏</a>
+        <a href="javascript:void(0)" @click="goHome">{{ t('topo.home') }}</a> / <span>{{ t('topo.name') }}</span>
+        <a class="tp-back" href="javascript:void(0)" @click="goBigScreen">{{ t('topo.backToScreen') }}</a>
       </div>
       <div class="tp-search">
-        <input v-model="kw" placeholder="搜索 IP / 名称(支持模糊)" @input="onKwInput" @keyup.enter="onSearchEnter" @blur="showResults = false" />
-        <button type="button" @click="onSearchEnter">定位</button>
+        <input v-model="kw" :placeholder="t('topo.searchPh')" @input="onKwInput" @keyup.enter="onSearchEnter" @blur="showResults = false" />
+        <button type="button" @click="onSearchEnter">{{ t('topo.locate') }}</button>
         <div v-if="showResults && searchList.length" class="tp-search-list">
           <div v-for="n in searchList" :key="n.nodeId" @mousedown.prevent="onPickSearch(n)">
             <i :style="{ background: safeColor(n) }"></i>
@@ -27,61 +27,59 @@
       </div>
       <!-- 2026-09-30 用户要求: "3D 三维"移除(不能展示真实三维状态), "2D 平面"改名"当前画布"
            —— 现在只有一种画布形态, 静态标签不再做切换 -->
-      <span class="tp-canvas-tag">当前画布</span>
+      <span class="tp-canvas-tag">{{ t('topo.canvasTag') }}</span>
       <!-- 框(2026-09-30 用户要求: 取消"框框设置"面板, 改按钮下拉 + 画布右键"在此添加框") -->
       <div class="tp-groups" v-if="mode === 'edit'">
-        <button type="button" :class="{ on: boxesOpen }" title="新建框(也可右键画布在指定位置添加)" @click="boxesOpen = !boxesOpen">框 ▾</button>
+        <button type="button" :class="{ on: boxesOpen }" :title="t('topo.boxTitle')" @click="boxesOpen = !boxesOpen">{{ t('topo.boxBtn') }}</button>
         <div v-if="boxesOpen" class="tp-groups-panel">
-          <button type="button" class="tp-gp-add" @click="addBoxAtCenter">＋ 新建框(画布中心)</button>
-          <div class="tp-gp-note">也可右键画布: "在此添加框" / "添加设备…"(设备库)。
-            框可拖拽移动、拖右下角拉大拉小、点击选中改属性、双击改名、右键删除。
-            左键拖空白=框选多台设备/多框(整体移动 · 右下金色手柄整体缩放 · Ctrl+点击增删 · ESC 取消; Shift+左键/中键拖=平移)。</div>
+          <button type="button" class="tp-gp-add" @click="addBoxAtCenter">{{ t('topo.addBox') }}</button>
+          <div class="tp-gp-note">{{ t('topo.boxNote') }}</div>
         </div>
       </div>
       <!-- 浏览/编辑: 2D/3D 通用(2026-09-30 用户要求: 3D 与 2D 一样可编辑) -->
       <div class="tp-mode">
-        <button type="button" :class="{ on: mode === 'browse' }" @click="setMode('browse')">浏览模式</button>
-        <button type="button" :class="{ on: mode === 'edit' }" @click="setMode('edit')">编辑模式</button>
+        <button type="button" :class="{ on: mode === 'browse' }" @click="setMode('browse')">{{ t('bpro.modeBrowse') }}</button>
+        <button type="button" :class="{ on: mode === 'edit' }" @click="setMode('edit')">{{ t('bpro.modeEdit') }}</button>
       </div>
       <!-- 显示设置(2026-10-02 用户要求: 顶部按钮+勾选, 控制设备名字/速率/线上网口信息显隐;
            独立页与大屏拓扑卡共用同一份偏好 LS yugsight_topo_display) -->
       <div class="tp-display">
-        <button type="button" :class="{ on: dispOpen }" title="显示元素显隐(设备名字 / 速率与流量环 / 连线光效 / 线上网口信息)" @click="dispOpen = !dispOpen">显示 ▾</button>
+        <button type="button" :class="{ on: dispOpen }" :title="t('topo.dispTitle')" @click="dispOpen = !dispOpen">{{ t('topo.dispBtn') }}</button>
         <div v-if="dispOpen" class="tp-display-panel">
-          <label><input type="checkbox" :checked="displayCfg.name" @change="setDisplayCfg('name', $event.target.checked)" />设备名字</label>
-          <label><input type="checkbox" :checked="displayCfg.rate" @change="setDisplayCfg('rate', $event.target.checked)" />速率与流量环</label>
+          <label><input type="checkbox" :checked="displayCfg.name" @change="setDisplayCfg('name', $event.target.checked)" />{{ t('topo.dName') }}</label>
+          <label><input type="checkbox" :checked="displayCfg.rate" @change="setDisplayCfg('rate', $event.target.checked)" />{{ t('topo.dRate') }}</label>
           <!-- 2026-10-02 v255: 光效独立开关(只影响流动光点, 不联动设备速率标签) -->
-          <label title="仅“绑定端口且有真实流量”的线显示; 流速∝端口速率; 与设备速率开关互不影响"><input type="checkbox" :checked="displayCfg.flow" @change="setDisplayCfg('flow', $event.target.checked)" />连线光效</label>
-          <label><input type="checkbox" :checked="displayCfg.port" @change="setDisplayCfg('port', $event.target.checked)" />线上网口信息</label>
+          <label :title="t('topo.flowTitle')"><input type="checkbox" :checked="displayCfg.flow" @change="setDisplayCfg('flow', $event.target.checked)" />{{ t('topo.dFlow') }}</label>
+          <label><input type="checkbox" :checked="displayCfg.port" @change="setDisplayCfg('port', $event.target.checked)" />{{ t('topo.dPort') }}</label>
         </div>
       </div>
       <!-- 多套拓扑视图(2026-09-30 用户要求: 物理/逻辑子视图取消, 改多套独立视图:
            每套=完整拓扑文档(节点/链路/框/摆位), 互相不影响; 编辑即写当前视图, 自动落盘) -->
       <div class="tp-views">
         <select :value="store.active" @change="switchView($event.target.value)" :disabled="!store.views.length"
-                title="拓扑视图列表(每套视图独立, 互不影响)">
+                :title="t('topo.viewsTitle')">
           <option v-for="v in store.views" :key="v.name" :value="v.name">{{ v.name }}</option>
         </select>
-        <button type="button" title="新建空视图" @click="newView">新建</button>
-        <button type="button" title="复制当前视图(节点/链路/框全部独立)" @click="duplicateView">复制</button>
-        <button type="button" class="tp-v-del" :class="{ warn: deletingView === store.active }" title="删除当前视图(二连击确认, 保留至少一套)" @click="deleteViewCur">
-          {{ deletingView === store.active ? '确认删除' : '删除' }}
+        <button type="button" :title="t('topo.newViewTitle')" @click="newView">{{ t('topo.new') }}</button>
+        <button type="button" :title="t('topo.dupTitle')" @click="duplicateView">{{ t('topo.dup') }}</button>
+        <button type="button" class="tp-v-del" :class="{ warn: deletingView === store.active }" :title="t('topo.delViewTitle')" @click="deleteViewCur">
+          {{ deletingView === store.active ? t('topo.confirmDel') : t('bpro.del') }}
         </button>
         <!-- 视图轮播(2026-09-30 用户要求: 视图多了可以轮播; ≥2 套才可开; 仅浏览态转, 编辑态自动暂停) -->
         <span class="tp-v-car">
           <button type="button" :class="{ on: carOn }" :disabled="store.views.length < 2"
-                  title="视图轮播: 按间隔自动切换视图(仅浏览态; 大屏拓扑卡同步跟随)" @click="toggleCar">
-            {{ carOn ? '轮播中' : '轮播' }}
+                  :title="t('topo.carTitle')" @click="toggleCar">
+            {{ carOn ? t('topo.carOn') : t('topo.car') }}
           </button>
-          <select v-if="carOn" :value="carInterval" @change="setCarInterval($event.target.value)" title="轮播间隔">
+          <select v-if="carOn" :value="carInterval" @change="setCarInterval($event.target.value)" :title="t('topo.carInterval')">
             <option v-for="i in CAR_INTERVALS" :key="i.v" :value="i.v">{{ i.t }}</option>
           </select>
         </span>
         <!-- 新窗口分显(2026-10-02 用户要求: 多屏各显一套视图): 在新窗口打开当前选中的视图,
              新窗口钉住自己的视图不跟随全局激活, 两窗口可同时显示不同视图; 视图文档仍共享 -->
-        <button type="button" title="在新窗口打开当前选中的视图(多屏分显: 两个窗口各显示各的视图, 互不跟随; 视图文档仍共享, 编辑互见)" @click="openViewInNewWindow">新窗口</button>
+        <button type="button" :title="t('topo.newWinTitle')" @click="openViewInNewWindow">{{ t('topo.newWin') }}</button>
       </div>
-      <button type="button" class="tp-fs" @click="toggleFullscreen">{{ isFs ? '退出全屏' : '一键全屏' }}</button>
+      <button type="button" class="tp-fs" @click="toggleFullscreen">{{ isFs ? t('bpro.exitFullscreen') : t('bpro.fullscreenHint') }}</button>
     </div>
 
     <!-- 主体: 画布全幅占满(≥85%), 设备树/属性告警/控制栏全部改为半透明贴边悬浮, 不占画布空间 -->
@@ -89,7 +87,7 @@
       <!-- 加载态: 数据未就绪 -->
       <div v-if="!ready" class="tp-state">
         <div class="tp-state-spin"></div>
-        <span>正在加载拓扑数据…</span>
+        <span>{{ t('topo.loading') }}</span>
       </div>
       <!-- 画布: 编辑态即使空视图也渲染(2026-09-30 用户反馈: 新建视图2后"暂无拓扑数据"
            整层挡住画布, 编辑态下既加不了设备也加不了框) —— 空态提示只作不挡操作的覆盖层 -->
@@ -109,15 +107,15 @@
                    @add-box="onAddBox" @box-rename="onBoxRename" @delete-box="onBoxDelete" @delete-multi="onDeleteMulti" />
       <!-- 空态提示: 编辑态=pointer-events:none 覆盖层(底下画布可加设备/加框); 浏览态=整层占位 -->
       <div v-if="ready && !nodes.length" class="tp-state" :class="{ 'no-block': mode === 'edit' }">
-        <span class="tp-state-empty">暂无拓扑数据</span>
-        <span class="tp-state-sub">编辑模式: 左侧设备库拖拽/点"+"添加设备, 或右键画布"添加设备…/在此添加框"</span>
+        <span class="tp-state-empty">{{ t('topo.empty') }}</span>
+        <span class="tp-state-sub">{{ t('topo.emptyHint') }}</span>
       </div>
       <div v-if="srcTip" class="tp-src">{{ srcTip }}</div>
 
       <!-- 右上角实时告警条(SSE nodecollect 实时推送; 提示蓝/一般黄/严重红; 点击定位放大对应节点) -->
       <div v-if="RT.alerts.length" class="tp-alerts">
-        <div class="tp-alerts-h">实时告警 <b>{{ RT.alerts.length }}</b>
-          <i class="tp-conn" :class="{ on: RT.connected }">{{ RT.connected ? 'SSE 已连' : '重连中' }}</i>
+        <div class="tp-alerts-h">{{ t('topo.alerts') }} <b>{{ RT.alerts.length }}</b>
+          <i class="tp-conn" :class="{ on: RT.connected }">{{ RT.connected ? t('topo.sseOn') : t('topo.sseOff') }}</i>
         </div>
         <div class="tp-alerts-list">
           <div v-for="a in RT.alerts.slice(0, 5)" :key="a.id" class="tp-alert" :class="'lv-' + a.level" @click="onAlertClick(a)">
@@ -126,7 +124,7 @@
               <b>{{ a.name }}</b>
               <span>{{ a.content }}</span>
             </div>
-            <em>{{ ALERT_LEVEL_CN[a.level] }}</em>
+            <em>{{ t(ALERT_LEVEL_CN[a.level]) }}</em>
           </div>
         </div>
       </div>
@@ -137,7 +135,7 @@
         <TopoTree v-show="leftVisible" :nodes="nodes" :mode="mode" :sel-node="selId"
                   @pick="onTreePick" @batch-hide="batchHide"
                   @quick-add="onQuickAdd" />
-        <button type="button" class="tp-tab" @click="treeOpen = !treeOpen">{{ leftVisible ? '‹' : '设备树 ›' }}</button>
+        <button type="button" class="tp-tab" @click="treeOpen = !treeOpen">{{ leftVisible ? '‹' : t('topo.tree') }}</button>
       </div>
 
       <!-- 右侧属性面板(选中节点/链路从右侧滑出; 框选多个时显示多选清单; 点画布空白或手动 › 收起) -->
@@ -145,7 +143,7 @@
         <TopoInspector v-show="rightVisible" :sel-obj="selObj" :sel-kind="selKind" :nodes="nodes" :links="viewLinks"
                        :devices="S.devices" :last-alert="lastAlert" :mode="mode" :multi-items="multiItems"
                        @update="onUpdate" @delete="onDelete({})" @locate="locate" @close="closePanel" @check="onCheckLink" />
-        <button type="button" class="tp-tab" @click="inspToggle = !inspToggle">{{ rightVisible ? '›' : '属性告警 ‹' }}</button>
+        <button type="button" class="tp-tab" @click="inspToggle = !inspToggle">{{ rightVisible ? '›' : t('topo.inspector') }}</button>
       </div>
     </div>
 
@@ -153,22 +151,22 @@
          2026-10-02 用户反馈: 底部文字太啰嗦 —— 图例说明文字与"近 24h/趋势"占位块删除(未接真实数据, 纯噪音) -->
     <div class="tp-bottom">
       <!-- 心跳(2026-10-02 用户要求): 有告警/红线/节点掉线 → 红闪, 否则绿点缓脉冲 -->
-      <span class="tp-hb" :class="{ bad: hbBad }" :title="hbBad ? '存在告警 / 红线 / 节点掉线' : '正常'">
-        <i></i>{{ hbBad ? '异常' : '心跳' }}
+      <span class="tp-hb" :class="{ bad: hbBad }" :title="hbBad ? t('topo.hbBad') : t('topo.hbOk')">
+        <i></i>{{ hbBad ? t('topo.hbBadShort') : t('topo.hb') }}
       </span>
       <div class="tp-stats">
-        <span>设备总数 <b>{{ nodes.length }}</b></span>
-        <span>在线率 <b>{{ onlineRate }}%</b></span>
-        <span>带宽均值 <b>{{ avgUtil }}%</b></span>
-        <span>丢包率 <b>{{ avgLoss }}%</b></span>
-        <span class="tp-src-tag" :class="{ err: !!S.errLink }" :title="S.errLink || ''">数据源: {{ linkSourceText }}</span>
+        <span>{{ t('topo.total') }} <b>{{ nodes.length }}</b></span>
+        <span>{{ t('topo.onlineRate') }} <b>{{ onlineRate }}%</b></span>
+        <span>{{ t('topo.avgUtil') }} <b>{{ avgUtil }}%</b></span>
+        <span>{{ t('topo.avgLoss') }} <b>{{ avgLoss }}%</b></span>
+        <span class="tp-src-tag" :class="{ err: !!S.errLink }" :title="S.errLink || ''">{{ t('topo.src') }}: {{ linkSourceText }}</span>
       </div>
       <!-- 精简图例(2026-10-02 用户要求: 只留四色线语义, 说明文字删) -->
       <div class="tp-legend">
-        <span><i class="lg lg-green"></i>连通</span>
-        <span><i class="lg lg-red"></i>不通</span>
-        <span><i class="lg lg-untested"></i>未测</span>
-        <span><i class="lg lg-inferred"></i>推测</span>
+        <span><i class="lg lg-green"></i>{{ t('topo.lgConn') }}</span>
+        <span><i class="lg lg-red"></i>{{ t('topo.lgDown') }}</span>
+        <span><i class="lg lg-untested"></i>{{ t('topo.lgUntested') }}</span>
+        <span><i class="lg lg-inferred"></i>{{ t('topo.lgInferred') }}</span>
       </div>
     </div>
 
@@ -181,22 +179,22 @@
       <div class="tp-dr-h">
         <div class="tp-dr-title">
           <b>{{ drillNode.name }}</b>
-          <span class="tp-dr-sub">{{ drillNode.ip || '—' }} · 端口视图</span>
+          <span class="tp-dr-sub">{{ drillNode.ip || '—' }} · {{ t('topo.portView') }}</span>
         </div>
-        <button type="button" title="关闭" @click="drillNode = null">×</button>
+        <button type="button" :title="t('topo.close')" @click="drillNode = null">×</button>
       </div>
       <div v-if="drillData && !drillData.loading && drillData.ports && drillData.ports.length" class="tp-dr-tools">
-        <input v-model="portKw" class="tp-dr-kw" placeholder="搜索端口(如 1/23 / VLAN / TenGig)" />
+        <input v-model="portKw" class="tp-dr-kw" :placeholder="t('topo.portSearchPh')" />
         <div class="tp-dr-seg">
-          <button type="button" :class="{ on: portFilter === 'all' }" @click="portFilter = 'all'">全部 {{ drillData.ports.length }}</button>
+          <button type="button" :class="{ on: portFilter === 'all' }" @click="portFilter = 'all'">{{ t('topo.all') }} {{ drillData.ports.length }}</button>
           <button type="button" :class="{ on: portFilter === 'up' }" @click="portFilter = 'up'">UP {{ upCount }}</button>
           <button type="button" :class="{ on: portFilter === 'down' }" @click="portFilter = 'down'">DOWN {{ downCount }}</button>
         </div>
       </div>
       <div class="tp-dr-body">
-        <div v-if="drillData && drillData.loading" class="tp-modal-note">正在读取端口数据…</div>
+        <div v-if="drillData && drillData.loading" class="tp-modal-note">{{ t('topo.portLoading') }}</div>
         <table v-else-if="portRows.length" class="tp-ports">
-          <thead><tr><th>端口</th><th>状态</th><th>下行</th><th>上行</th><th>带宽</th><th>利用率</th></tr></thead>
+          <thead><tr><th>{{ t('topo.colPort') }}</th><th>{{ t('topo.colState') }}</th><th>{{ t('topo.down') }}</th><th>{{ t('topo.up') }}</th><th>{{ t('topo.bandwidth') }}</th><th>{{ t('topo.util') }}</th></tr></thead>
           <tbody>
             <tr v-for="p in portRows" :key="p.port">
               <td class="tp-port-name">{{ p.port }}</td>
@@ -209,7 +207,7 @@
             </tr>
           </tbody>
         </table>
-        <div v-else class="tp-modal-note">{{ (drillData && drillData.note) || '没有匹配的端口' }}</div>
+        <div v-else class="tp-modal-note">{{ (drillData && drillData.note) || t('topo.noPorts') }}</div>
       </div>
       <div v-if="drillData && drillData.note" class="tp-dr-foot">{{ drillData.note }}</div>
     </aside>
@@ -251,6 +249,7 @@ import { applyApiLinks, autoCheckManualLinks, markChecking, isChecking } from '.
 import { fetchNodePorts } from '../components/topo3d/topoPorts.js'
 import { useShared, shared, loadNetworkLinks, setTopoCustomCount } from '../components/cards/dashData.js'
 import { enterFullscreen, setFsIntent, scheduleFullscreenRestore } from '../fullscreen.js'
+import { t } from '../i18n'
 
 const S = useShared()          // 与仪表盘/大屏共用同一份 15s 轮询快照
 const router = useRouter()
@@ -274,8 +273,9 @@ const ready = ref(false)                     // 数据加载完成前显示加�
 // ===== 视图轮播(2026-09-30 用户要求: 视图多了可以进行轮播设置) =====
 // 开关/间隔持久化(yugsight_topo_view_carousel, 默认关); 仅浏览态运行(编辑态自动暂停,
 // 切回浏览恢复); 全局计时器在 topoViews.js, 大屏拓扑卡(TopoCard)与本页共用同一配置。
+// 2026-10-04 i18n: 档位文案键值化, 模板渲染期 t() 解析
 const CAR_INTERVALS = [
-  { v: 10, t: '10 秒' }, { v: 15, t: '15 秒' }, { v: 30, t: '30 秒' }, { v: 60, t: '60 秒' },
+  { v: 10, t: 'topo.iv10' }, { v: 15, t: 'topo.iv15' }, { v: 30, t: 'topo.iv30' }, { v: 60, t: 'topo.iv60' },
 ]
 const carOn = ref(false)
 const carInterval = ref(15)
@@ -285,10 +285,10 @@ function persistCar() {
   syncCar()
 }
 function toggleCar() {
-  if (store.views.length < 2) { flashSrc('轮播需要至少两套视图'); return }
+  if (store.views.length < 2) { flashSrc(t('topo.carNeed2')); return }
   carOn.value = !carOn.value
   persistCar()
-  flashSrc(carOn.value ? '视图轮播已开启(仅浏览态; 间隔可在下拉选择)' : '视图轮播已关闭')
+  flashSrc(carOn.value ? t('topo.carStarted') : t('topo.carStopped'))
 }
 function setCarInterval(v) {
   carInterval.value = Number(v) || 15
@@ -349,33 +349,33 @@ function switchView(name) {
   // 2026-10-01: 新视图的链路速率/光点状态要等下一轮 15s 拍才补全 → 切完视图
   // "光点消失了、过一会儿才有"。切完立即同步一次(幂等, 与轮询拍同函数)
   syncLinkLive()
-  flashSrc('已切换视图「' + name + '」')
+  flashSrc(t('topo.viewSwitched', { name }))
 }
 function newView() {
-  const name = (window.prompt('新建视图(命名):', '视图 ' + (store.views.length + 1)) || '').trim()
+  const name = (window.prompt(t('topo.newViewPrompt'), t('topo.viewN', { n: store.views.length + 1 })) || '').trim()
   if (!name) return
-  if (store.views.some(v => v.name === name)) { flashSrc('已存在同名视图'); return }
+  if (store.views.some(v => v.name === name)) { flashSrc(t('topo.dupName')); return }
   createView(name)
   requestAnimationFrame(() => { const scn = sceneRef.value; if (scn && scn.fitToView) scn.fitToView() })
-  flashSrc('已新建视图「' + name + '」(空画布: 设备树/画布右键添加设备, 画布右键添加框)')
+  flashSrc(t('topo.viewCreated', { name }))
 }
 function duplicateView() {
   const v = curView.value
   if (!v) return
-  const name = (window.prompt('复制视图(命名):', v.name + '_副本') || '').trim()
+  const name = (window.prompt(t('topo.dupViewPrompt'), v.name + '_' + t('topo.copySuffix')) || '').trim()
   if (!name) return
-  if (store.views.some(x => x.name === name)) { flashSrc('已存在同名视图'); return }
+  if (store.views.some(x => x.name === name)) { flashSrc(t('topo.dupName')); return }
   createView(name, v)
   requestAnimationFrame(() => { const scn = sceneRef.value; if (scn && scn.fitToView) scn.fitToView() })
-  flashSrc('已复制「' + v.name + '」为「' + name + '」(节点/链路/框全部独立)')
+  flashSrc(t('topo.viewDuplicated', { from: v.name, to: name }))
 }
 const deletingView = ref('')
 function deleteViewCur() {
   const name = store.active
-  if (store.views.length <= 1) { flashSrc('至少保留一套视图'); return }
+  if (store.views.length <= 1) { flashSrc(t('topo.keepOne')); return }
   if (deletingView.value !== name) { deletingView.value = name; return }   // 二连击确认防误删
   deletingView.value = ''
-  if (deleteView(name)) flashSrc('已删除视图「' + name + '」')
+  if (deleteView(name)) flashSrc(t('topo.viewDeleted', { name }))
 }
 // ===== 新窗口分显(2026-10-02 用户要求: 多屏各显一套视图) =====
 // 开新窗口带 ?view=<当前视图>: 新窗口加载后 applyViewDeepLink 钉住该视图(见 topoViews.js
@@ -384,10 +384,10 @@ function deleteViewCur() {
 // 先用下拉选好要开的视图再点"新窗口"。
 function openViewInNewWindow() {
   const name = store.active
-  if (!name) { flashSrc('当前没有可打开的视图'); return }
+  if (!name) { flashSrc(t('topo.noViewToOpen')); return }
   const url = location.origin + location.pathname + '#/topology/3d?view=' + encodeURIComponent(name)
   const w = window.open(url, '_blank')
-  flashSrc(w ? '已在新窗口打开视图「' + name + '」(两窗口各显各的视图)' : '浏览器拦截了弹出窗口, 请在地址栏允许后重试')
+  flashSrc(w ? t('topo.viewOpened', { name }) : t('topo.popupBlocked'))
 }
 
 // ===== 框(2026-09-30 用户要求: 取消"框框设置"面板, 改按钮下拉 + 画布右键) =====
@@ -395,29 +395,29 @@ function openViewInNewWindow() {
 // 拖拽移动/拉角缩放/双击改名由场景直接改对象(deep watch 防抖落盘); 添加/删除经场景 emit 回来。
 const boxesOpen = ref(false)
 function addBoxAt(x, y) {
-  const b = { id: uid('box'), name: '框 ' + (boxes.value.length + 1), x: Math.round(x - 140), y: Math.round(y - 80), w: 280, h: 160 }
+  const b = { id: uid('box'), name: t('topo.boxN', { n: boxes.value.length + 1 }), x: Math.round(x - 140), y: Math.round(y - 80), w: 280, h: 160 }
   boxes.value.push(b)
   selKind.value = 'box'; selId.value = b.id; inspToggle.value = true   // 选中新框 → 属性面板打开(与设备同)
   return b
 }
 function onAddBox({ x, y }) {
   addBoxAt(x, y)
-  flashSrc('已添加框(点击选中改名 / 拖拽移动 / 拖角缩放 / 右键删除)')
+  flashSrc(t('topo.boxAdded'))
 }
 function addBoxAtCenter() {
   boxesOpen.value = false
   addBoxAt(600, 360)
-  flashSrc('已添加框(点击选中改名 / 拖拽移动 / 拖角缩放 / 右键删除)')
+  flashSrc(t('topo.boxAdded'))
 }
 function onBoxRename({ id, name }) {
   const b = boxes.value.find(x => x.id === id)
-  if (b && name && name !== b.name) { b.name = name; persist(); flashSrc('框已改名: ' + name) }   // 就地改名不触发浅 watch, 显式落盘
+  if (b && name && name !== b.name) { b.name = name; persist(); flashSrc(t('topo.boxRenamed', { name })) }   // 就地改名不触发浅 watch, 显式落盘
 }
 function onBoxDelete({ id }) {
   const b = boxes.value.find(x => x.id === id)
   boxes.value = boxes.value.filter(x => x.id !== id)
   if (selKind.value === 'box' && selId.value === id) { selKind.value = ''; selId.value = '' }
-  flashSrc('已删除框「' + (b ? b.name : '') + '」')
+  flashSrc(t('topo.boxDeleted', { name: b ? b.name : '' }))
 }
 // 框选批量删除(2026-10-01 用户要求): 框选多台设备/多框后右键 → "删除选中的设备和框"。
 // 先弹确认(不可撤销 + 设备级联删链路), 确认后才动数据; 删框不动框内设备(框只是视觉组织)。
@@ -425,8 +425,8 @@ function onDeleteMulti(items) {
   if (!Array.isArray(items) || !items.length) return
   const nCnt = items.filter(x => x.kind === 'n').length
   const bCnt = items.filter(x => x.kind === 'b').length
-  const what = [nCnt ? nCnt + ' 台设备' : '', bCnt ? bCnt + ' 个框' : ''].filter(Boolean).join('、')
-  if (!confirm('确认删除选中的 ' + what + ' ?\n\n删除设备会级联删除其关联链路, 此操作不可撤销。')) return
+  const what = [nCnt ? t('topo.devCount', { n: nCnt }) : '', bCnt ? t('topo.boxCount', { n: bCnt }) : ''].filter(Boolean).join(', ')
+  if (!confirm(t('topo.multiDelConfirm', { what }))) return
   for (const it of items) {
     if (it.kind === 'n') {
       const n = nodes.value.find(x => x.nodeId === it.id)
@@ -440,7 +440,7 @@ function onDeleteMulti(items) {
   selKind.value = ''; selId.value = ''; multiItems.value = null
   if (sceneRef.value && sceneRef.value.clearSelection) sceneRef.value.clearSelection()
   persist()
-  flashSrc('已删除 ' + what)
+  flashSrc(t('topo.multiDeleted', { what }))
 }
 
 // ===== 悬浮面板(半透明贴边, 不占画布) =====
@@ -530,7 +530,7 @@ function syncCustomCount() {
 // "我监控的网络", 不是资产台账的镜像; 台账资产要进拓扑仍可从设备树手动拖入。
 function importDevices() {
   const list = (S.devices || []).filter(d => d.isMonitor)
-  if (!list.length) { flashSrc('暂无纳管设备(探针/节点监控); 台账资产可从设备树手动添加'); return }
+  if (!list.length) { flashSrc(t('topo.noMonitored')); return }
   let added = 0
   for (const d of list) {
     if (nodes.value.some(n => n.deviceId === d.deviceId)) continue
@@ -539,7 +539,7 @@ function importDevices() {
   }
   // 2026-10-01: 不再自动填充后端按网段猜的链路集 —— 推测边被误读成"两端直连"
   // (用户: "192.168.1.1 和 172.16.199.1 连线为什么也是绿的?"); 链路由用户自己画。
-  flashSrc(added ? `已导入 ${added} 台纳管设备(台账资产需从设备树手动添加)` : '无可导入的新设备')
+  flashSrc(added ? t('topo.imported', { n: added }) : t('topo.noNewDev'))
 }
 // 首次进入: 当前视图已有内容(旧版迁移/用户此前编辑)不动; 否则导入纳管设备。
 // 2026-10-01: 删除示例假节点分支(路由器/核心交换机/防火墙…, 无 IP 无真实数据)——
@@ -580,8 +580,8 @@ onMounted(async () => {
   // 否则空的目标视图会被"默认视图"的自动导入逻辑带偏(bootstrap 只认当前激活视图)
   const qv = String((route.query || {}).view || '')
   if (qv) {
-    if (applyViewDeepLink(qv)) flashSrc('本窗口独立显示视图「' + qv + '」(不跟随其他窗口的视图切换)')
-    else if (store.views.length) flashSrc('视图「' + qv + '」不存在(可能已删除)')
+    if (applyViewDeepLink(qv)) flashSrc(t('topo.winPinned', { name: qv }))
+    else if (store.views.length) flashSrc(t('topo.viewNotFound', { name: qv }))
     // 视图未载入(服务器文档未拉回)时 applyViewDeepLink 挂起, 文档回落时自动补激活
   }
   // 多套视图仓库在 setup 时已由 ensureStore() 载入(含旧版布局一次性迁移)
@@ -695,7 +695,7 @@ function handleCollect(ev) {
     level: lv,
     deviceId: n ? n.deviceId : '',
     name: n ? n.name : (ev.target || '?'),
-    content: ev.msg || ev.type || '异常',
+    content: ev.msg || ev.type || t('topo.alertAbnormal'),
     source: 'sse',
   })
 }
@@ -724,7 +724,7 @@ const lastAlert = computed(() => {
   return RT.alerts.find(a => a.deviceId === n.deviceId) || null
 })
 function onAlertClick(a) {
-  if (a.deviceId) { locate(a.deviceId); flashSrc('已定位告警节点: ' + a.name) }
+  if (a.deviceId) { locate(a.deviceId); flashSrc(t('topo.alertLocated', { name: a.name })) }
 }
 
 // ===== 选中 / 增删改 =====
@@ -753,7 +753,7 @@ function onAddNode({ type, x, y }) {
 function onAddLink({ fromDeviceId, toDeviceId, fromPort }) {
   if (links.value.some(l => (l.fromDeviceId === fromDeviceId && l.toDeviceId === toDeviceId) ||
     (l.fromDeviceId === toDeviceId && l.toDeviceId === fromDeviceId))) {
-    flashSrc('这两台设备之间已存在链路')
+    flashSrc(t('topo.linkExists'))
     return
   }
   const a = nodes.value.find(n => n.deviceId === fromDeviceId)
@@ -764,7 +764,7 @@ function onAddLink({ fromDeviceId, toDeviceId, fromPort }) {
   links.value.push(l)
   selKind.value = 'link'; selId.value = l.linkId
   persist()
-  flashSrc('已创建链路: ' + a.name + ' ↔ ' + b.name)
+  flashSrc(t('topo.linkCreated', { a: a.name, b: b.name }))
 }
 
 // ===== 设备库拖拽生成节点 + 资产绑定(Zabbix 式元素绑定流程, 2026-09-29) =====
@@ -796,7 +796,7 @@ async function onCheckLink(l, silent) {
   const b = nodes.value.find(n => n.deviceId === l.toDeviceId)
   const ips = [a && a.ip, b && b.ip].filter(x => x && /^\d{1,3}(\.\d{1,3}){3}$/.test(x))
   if (ips.length < 2) {
-    if (!silent) flashSrc('两端都需要有真实 IP 才能测试(未绑定资产/未填 IP 的节点不可测)')
+    if (!silent) flashSrc(t('topo.checkNeedIp'))
     return
   }
   l._checking = true            // UI"测试中…"按钮态
@@ -809,10 +809,10 @@ async function onCheckLink(l, silent) {
     l._check = d
     persist()
     if (!silent) flashSrc(d.ok
-      ? '连通性测试通过: ' + (a ? a.name : '?') + ' ↔ ' + (b ? b.name : '?')
-      : '连通性测试: 未连通 (' + (d.results || []).map(r => r.ip + (r.up ? '✓' : '✗')).join(' / ') + ')')
+      ? t('topo.checkPass', { a: a ? a.name : '?', b: b ? b.name : '?' })
+      : t('topo.checkFail', { detail: (d.results || []).map(r => r.ip + (r.up ? '✓' : '✗')).join(' / ') }))
   } catch (e) {
-    if (!silent) flashSrc('连通性测试失败: ' + ((e && e.message) || e))
+    if (!silent) flashSrc(t('topo.checkError', { err: (e && e.message) || e }))
   } finally {
     l._checking = false
     markChecking(l, false)
@@ -826,10 +826,10 @@ async function apiV2(path, { method = 'GET', body } = {}) {
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (r.status === 401) { flashSrc('登录已过期, 请重新登录'); throw new Error('未登录') }
+  if (r.status === 401) { flashSrc(t('topo.loginExpired')); throw new Error(t('topo.notLogged')) }
   if (!r.ok) throw new Error('HTTP ' + r.status)
   const o = await r.json()
-  if (o && o.code != null && o.code !== 0) throw new Error(o.message || '请求失败')
+  if (o && o.code != null && o.code !== 0) throw new Error(o.message || t('topo.reqFail'))
   return (o && o.data != null) ? o.data : o
 }
 // 绑定 = 接管该设备: deviceId 改为设备主键(15s 轮询按 deviceId 同步状态),
@@ -852,12 +852,12 @@ function onBindAsset(d) {
   n.memory = d.memory || 0
   if (d.ips) n.ips = d.ips
   persist()
-  flashSrc('已绑定资产: ' + (d.name || d.ip))
+  flashSrc(t('topo.bindDone', { name: d.name || d.ip }))
 }
 function onSkipBind() {
   const n = bindNode.value
   bindNode.value = null
-  if (n) flashSrc('未绑定节点(灰色未监控), 右键「更换绑定资产」可后补')
+  if (n) flashSrc(t('topo.skipBind'))
 }
 // 删除: 节点删除时级联删关联链路(只剩一端的链路是断线, 留着会误导排障)
 function onDelete(p) {
@@ -940,35 +940,35 @@ function onSearchEnter() {
   if (searchList.value.length) { onPickSearch(searchList.value[0]); return }
   const k = kw.value.trim().toLowerCase()
   const n = nodes.value.find(x => (x.name || '').toLowerCase().includes(k) || (x.ip || '').includes(k))
-  if (n) onPickSearch(n); else flashSrc('未找到匹配设备')
+  if (n) onPickSearch(n); else flashSrc(t('topo.noMatch'))
 }
 function onPickSearch(n) {
   showResults.value = false
   locate(n.deviceId)
-  flashSrc('已定位: ' + n.name)
+  flashSrc(t('topo.located', { name: n.name }))
 }
 // ===== 右键菜单动作(来自 TopoScene) =====
 // 标记核心节点: 本地持久化(布局结构存 localStorage), 核心节点画布金色高亮环 + 导出时加圈
 function onToggleCore(n) {
   n.isCore = !n.isCore
   persist()
-  flashSrc(n.isCore ? '已标记为核心节点' : '已取消核心标记')
+  flashSrc(n.isCore ? t('topo.coreMarked') : t('topo.coreUnmarked'))
 }
 // 更换绑定: 打开右侧面板, 由面板内"绑定资产"下拉完成(名字冗余存, 避免资产删除后显示断链)
 function onRebind(n) {
   selKind.value = 'node'; selId.value = n.nodeId
   inspToggle.value = true
-  flashSrc('请在右侧面板选择要绑定的资产')
+  flashSrc(t('topo.rebindHint'))
 }
 // 设主用/备用链路: 主用=实线, 备用=虚线(本地持久化)
 function onToggleBackup(l) {
   l.kind = l.kind === 'backup' ? 'primary' : 'backup'
   persist()
-  flashSrc(l.kind === 'backup' ? '已设为备用链路(虚线)' : '已设为主用链路(实线)')
+  flashSrc(l.kind === 'backup' ? t('topo.setBackup') : t('topo.setPrimary'))
 }
 // 配置告警: 该节点对应采集任务/推送规则在节点监控页管理 → 跳转告警推送配置
 function onConfigAlert(n) {
-  flashSrc('告警规则在 节点监控 → 告警日志 → 推送配置 管理')
+  flashSrc(t('topo.alertCfgHint'))
   router.push('/nodemonitor?view=alerts&tab=push')
 }
 // 导出图片: 导出 2D 画布快照,
@@ -1008,8 +1008,8 @@ function onExport() {
     a.href = cv.toDataURL('image/png')
     a.download = 'yugsight_topology_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png'
     a.click()
-    flashSrc('已导出拓扑平面快照(PNG)')
-  } catch (e) { flashSrc('导出失败: ' + ((e && e.message) || e)) }
+    flashSrc(t('topo.exported'))
+  } catch (e) { flashSrc(t('topo.exportFail', { err: (e && e.message) || e })) }
 }
 function batchHide(items) {
   const ids = new Set(items.map(n => n.deviceId))
@@ -1054,7 +1054,7 @@ const hbBad = computed(() => {
 })
 
 // 2026-09-29: sparkPoints/hourPos 随 Mock 曲线一起下线(不展示假数据)
-const linkSourceText = computed(() => (shared.linkSource === 'api' ? '后端链路接口' + (shared.errLink ? '(当前请求失败, 显示上一帧)' : '') : 'Mock(后端链路接口未启用)'))
+const linkSourceText = computed(() => (shared.linkSource === 'api' ? t('topo.srcApi') + (shared.errLink ? t('topo.srcApiFail') : '') : t('topo.srcMock')))
 const srcTip = ref('')
 let srcT = null
 function flashSrc(s) {

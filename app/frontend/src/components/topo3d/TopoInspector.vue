@@ -5,16 +5,16 @@
        双模式边界: 浏览=只读(输入/下拉/勾选全部禁用), 告警列表点击定位仍可用。 -->
   <div class="ti" :class="{ ro: mode === 'browse' }">
     <div class="ti-bar">
-      <span class="ti-title">{{ multiItems && multiItems.length >= 2 ? '多选清单(' + multiItems.length + ')' : (selKind === 'link' ? '链路属性' : (selKind === 'box' ? '框属性' : (selObj ? '节点属性' : '未选中对象'))) }}</span>
-      <button type="button" class="ti-close" title="收起面板" @click="emit('close')">›</button>
+      <span class="ti-title">{{ multiItems && multiItems.length >= 2 ? t('topo.multiList', { n: multiItems.length }) : (selKind === 'link' ? t('topo.linkProps') : (selKind === 'box' ? t('topo.boxProps') : (selObj ? t('topo.nodeProps') : t('topo.noObj')))) }}</span>
+      <button type="button" class="ti-close" :title="t('topo.collapse')" @click="emit('close')">›</button>
     </div>
 
     <div class="ti-scroll">
       <!-- ===== 多选清单(2026-09-30 用户要求: 框选多个时显示全部设备/框清单, 而非单个设备属性) ===== -->
       <template v-if="multiItems && multiItems.length >= 2">
         <div class="ti-sec">
-          <div class="ti-h">已选中 <b>{{ multiItems.length }}</b> 项</div>
-          <p class="ti-note">拖任意一项=整体移动 · 拖右下金色手柄=整体缩放<br/>Ctrl+点击增删 · ESC 取消 · 点单项看其属性</p>
+          <div class="ti-h">{{ t('topo.selectedN', { n: multiItems.length }) }}</div>
+          <p class="ti-note">{{ t('topo.multiNote') }}</p>
           <div v-for="it in multiItems" :key="it.kind + it.id" class="ti-mitem">
             <i :class="it.kind === 'box' ? 'mi-box' : 'mi-dot'"
                :style="it.kind === 'box' ? {} : { background: statusColor(it.status) }"></i>
@@ -27,19 +27,19 @@
       <!-- ===== 节点属性 ===== -->
       <template v-else-if="selObj && selKind === 'node'">
         <div class="ti-sec">
-          <div class="ti-h">基础信息</div>
-          <label><span>名称</span><input :value="selObj.name" @input="set('name', $event.target.value)" /></label>
-          <label><span>设备类型</span>
+          <div class="ti-h">{{ t('topo.basic') }}</div>
+          <label><span>{{ t('topo.name') }}</span><input :value="selObj.name" @input="set('name', $event.target.value)" /></label>
+          <label><span>{{ t('topo.devType') }}</span>
             <select :value="selObj.type" @change="set('type', $event.target.value)">
-              <option v-for="t in TYPE_OPTIONS" :key="t.v" :value="t.v">{{ t.t }}</option>
+              <option v-for="ot in TYPE_OPTIONS" :key="ot.v" :value="ot.v">{{ t(ot.t) }}</option>
             </select>
           </label>
-          <label><span>IP 地址<i v-if="selObj.isMonitor">监控同步</i></span>
+          <label><span>{{ t('topo.ipAddr') }}<i v-if="selObj.isMonitor">{{ t('bpro.monitorSync') }}</i></span>
             <input :disabled="selObj.isMonitor" :value="selObj.ip" @input="set('ip', $event.target.value)" /></label>
-          <label><span>所属网段</span><i class="ti-ro-val">{{ subnetOf(selObj.ip) }}</i></label>
-          <label><span>绑定节点</span>
+          <label><span>{{ t('topo.subnet') }}</span><i class="ti-ro-val">{{ subnetOf(selObj.ip) }}</i></label>
+          <label><span>{{ t('topo.bindNode') }}</span>
             <select :value="selObj.boundAssetId || ''" @change="onBindChange($event.target.value)">
-              <option value="">未绑定</option>
+              <option value="">{{ t('topo.unbound') }}</option>
               <!-- 2026-09-30 用户要求: 候选=协议配置监控目标(纳管设备), 非扫描资产 -->
               <option v-for="d in bindDevices" :key="d.deviceId" :value="d.deviceId">{{ d.name }}（{{ d.ip || '—' }}）</option>
             </select>
@@ -47,26 +47,26 @@
         </div>
 
         <div class="ti-sec">
-          <div class="ti-h">状态信息</div>
-          <div class="ti-kv"><span>安全状态</span><i class="ti-st" :class="'st-' + safeStatus(selObj)">{{ safeCn[safeStatus(selObj)] }}</i></div>
-          <div class="ti-kv"><span>在线状态</span><i :class="{ bad: selObj.status === 'down' }">{{ selObj.status === 'down' ? '离线' : '在线' }}</i></div>
-          <div class="ti-kv"><span>存活时长</span><i>{{ uptimeText(selObj) }}</i></div>
-          <div class="ti-kv"><span>风险等级</span><i :class="{ bad: riskLevel(selObj) >= 2 }">{{ riskText(selObj) }}</i></div>
-          <div class="ti-kv"><span>最近告警</span><i class="ti-aval">{{ lastAlert ? lastAlert.content : '无' }}</i></div>
+          <div class="ti-h">{{ t('topo.statusInfo') }}</div>
+          <div class="ti-kv"><span>{{ t('topo.safeStatus') }}</span><i class="ti-st" :class="'st-' + safeStatus(selObj)">{{ t(safeCn[safeStatus(selObj)]) }}</i></div>
+          <div class="ti-kv"><span>{{ t('topo.onlineState') }}</span><i :class="{ bad: selObj.status === 'down' }">{{ selObj.status === 'down' ? t('rp.offline') : t('rp.online') }}</i></div>
+          <div class="ti-kv"><span>{{ t('topo.uptime') }}</span><i>{{ uptimeText(selObj) }}</i></div>
+          <div class="ti-kv"><span>{{ t('topo.riskLevel') }}</span><i :class="{ bad: riskLevel(selObj) >= 2 }">{{ riskText(selObj) }}</i></div>
+          <div class="ti-kv"><span>{{ t('topo.lastAlert') }}</span><i class="ti-aval">{{ lastAlert ? lastAlert.content : t('topo.none') }}</i></div>
         </div>
 
         <div class="ti-sec">
-          <div class="ti-h">操作</div>
-          <label class="ti-toggle"><span>启用监控</span>
+          <div class="ti-h">{{ t('topo.ops') }}</div>
+          <label class="ti-toggle"><span>{{ t('topo.enableMon') }}</span>
             <input type="checkbox" :checked="selObj.isMonitor" @change="set('isMonitor', $event.target.checked)" />
           </label>
-          <button v-if="mode === 'edit'" type="button" class="ti-danger" @click="emit('delete')">删除该节点</button>
+          <button v-if="mode === 'edit'" type="button" class="ti-danger" @click="emit('delete')">{{ t('topo.delNode') }}</button>
         </div>
 
         <!-- 告警设置(仅编辑模式): 告警推送总开关 + 今日推送统计 + 跳完整配置。
              每节点独立阈值在「节点监控 → 通用配置 → 每节点告警阈值」(2026-09-29 阶段 A) -->
         <div v-if="mode === 'edit'" class="ti-sec">
-          <div class="ti-h">告警设置</div>
+          <div class="ti-h">{{ t('topo.alertCfg') }}</div>
           <PushStatusPanel compact :editable="mode === 'edit'" />
         </div>
       </template>
@@ -74,21 +74,21 @@
       <!-- ===== 框属性(2026-09-30 用户要求: 点击框=点击设备, 属性面板改名等) ===== -->
       <template v-else-if="selObj && selKind === 'box'">
         <div class="ti-sec">
-          <div class="ti-h">基础信息</div>
-          <label><span>名称</span><input :value="selObj.name" @input="set('name', $event.target.value)" /></label>
-          <label><span>宽度</span><input type="number" :value="selObj.w" @change="setBoxSize('w', $event.target.value)" /></label>
-          <label><span>高度</span><input type="number" :value="selObj.h" @change="setBoxSize('h', $event.target.value)" /></label>
-          <label><span>位置 X</span><input type="number" :value="selObj.x" @change="set('x', Math.round(Number($event.target.value) || 0))" /></label>
-          <label><span>位置 Y</span><input type="number" :value="selObj.y" @change="set('y', Math.round(Number($event.target.value) || 0))" /></label>
+          <div class="ti-h">{{ t('topo.basic') }}</div>
+          <label><span>{{ t('topo.name') }}</span><input :value="selObj.name" @input="set('name', $event.target.value)" /></label>
+          <label><span>{{ t('topo.w') }}</span><input type="number" :value="selObj.w" @change="setBoxSize('w', $event.target.value)" /></label>
+          <label><span>{{ t('topo.h') }}</span><input type="number" :value="selObj.h" @change="setBoxSize('h', $event.target.value)" /></label>
+          <label><span>{{ t('topo.posX') }}</span><input type="number" :value="selObj.x" @change="set('x', Math.round(Number($event.target.value) || 0))" /></label>
+          <label><span>{{ t('topo.posY') }}</span><input type="number" :value="selObj.y" @change="set('y', Math.round(Number($event.target.value) || 0))" /></label>
         </div>
         <!-- 2026-09-30 用户要求: 标签文字(颜色/大小/加粗/字体, 画布上可拖拽放置) -->
         <div class="ti-sec">
-          <div class="ti-h">标签文字</div>
-          <label><span>文字颜色</span><input type="color" :value="selObj.fontColor || '#9fb0c8'" @input="set('fontColor', $event.target.value)" /></label>
-          <label><span>文字大小</span><input type="number" min="8" max="48" :value="selObj.fontSize || 15" @change="set('fontSize', Math.max(8, Math.min(48, Math.round(Number($event.target.value) || 15))))" /></label>
-          <label><span>字体</span>
+          <div class="ti-h">{{ t('topo.labelText') }}</div>
+          <label><span>{{ t('topo.fontColor') }}</span><input type="color" :value="selObj.fontColor || '#9fb0c8'" @input="set('fontColor', $event.target.value)" /></label>
+          <label><span>{{ t('topo.fontSize') }}</span><input type="number" min="8" max="48" :value="selObj.fontSize || 15" @change="set('fontSize', Math.max(8, Math.min(48, Math.round(Number($event.target.value) || 15))))" /></label>
+          <label><span>{{ t('topo.font') }}</span>
             <select :value="selObj.fontFamily || ''" @change="set('fontFamily', $event.target.value)">
-              <option value="">默认</option>
+              <option value="">{{ t('topo.dft') }}</option>
               <option value="Microsoft YaHei">微软雅黑</option>
               <option value="SimSun">宋体</option>
               <option value="KaiTi">楷体</option>
@@ -96,61 +96,61 @@
               <option value="Consolas, monospace">等宽</option>
             </select>
           </label>
-          <label class="ti-toggle"><span>加粗</span>
+          <label class="ti-toggle"><span>{{ t('topo.bold') }}</span>
             <input type="checkbox" :checked="!!selObj.fontBold" @change="set('fontBold', $event.target.checked)" />
           </label>
-          <p class="ti-note">也可直接在画布上按住标签拖动随意放置。</p>
+          <p class="ti-note">{{ t('topo.labelDragNote') }}</p>
         </div>
         <!-- 2026-09-30 用户要求: 框线(线型/线宽/颜色) -->
         <div class="ti-sec">
-          <div class="ti-h">框线</div>
-          <label><span>线型</span>
+          <div class="ti-h">{{ t('topo.boxLine') }}</div>
+          <label><span>{{ t('topo.lineStyle') }}</span>
             <select :value="selObj.strokeStyle || 'solid'" @change="set('strokeStyle', $event.target.value)">
-              <option value="solid">实线</option>
-              <option value="dash">长虚线</option>
-              <option value="short">短划线</option>
+              <option value="solid">{{ t('topo.solid') }}</option>
+              <option value="dash">{{ t('topo.longDash') }}</option>
+              <option value="short">{{ t('topo.shortDash') }}</option>
             </select>
           </label>
-          <label><span>线宽</span><input type="number" min="0.5" max="8" step="0.5" :value="selObj.strokeWidth != null ? selObj.strokeWidth : 1.2" @change="set('strokeWidth', Math.max(0.5, Math.min(8, Number($event.target.value) || 1.2)))" /></label>
-          <label><span>框线颜色</span><input type="color" :value="selObj.strokeColor || '#3884ff'" @input="set('strokeColor', $event.target.value)" /></label>
+          <label><span>{{ t('topo.lineWidth') }}</span><input type="number" min="0.5" max="8" step="0.5" :value="selObj.strokeWidth != null ? selObj.strokeWidth : 1.2" @change="set('strokeWidth', Math.max(0.5, Math.min(8, Number($event.target.value) || 1.2)))" /></label>
+          <label><span>{{ t('topo.lineColor') }}</span><input type="color" :value="selObj.strokeColor || '#3884ff'" @input="set('strokeColor', $event.target.value)" /></label>
         </div>
         <!-- 2026-09-30 用户要求: 框背景(有无颜色 + 颜色 + 透明度) -->
         <div class="ti-sec">
-          <div class="ti-h">框背景</div>
-          <label class="ti-toggle"><span>无背景</span>
+          <div class="ti-h">{{ t('topo.boxBg') }}</div>
+          <label class="ti-toggle"><span>{{ t('topo.noBg') }}</span>
             <input type="checkbox" :checked="!!selObj.fillNone" @change="set('fillNone', $event.target.checked)" />
           </label>
-          <label v-show="!selObj.fillNone"><span>背景颜色</span><input type="color" :value="selObj.fillColor || '#3884ff'" @input="set('fillColor', $event.target.value)" /></label>
-          <label v-show="!selObj.fillNone"><span>背景透明度</span>
+          <label v-show="!selObj.fillNone"><span>{{ t('topo.bgColor') }}</span><input type="color" :value="selObj.fillColor || '#3884ff'" @input="set('fillColor', $event.target.value)" /></label>
+          <label v-show="!selObj.fillNone"><span>{{ t('topo.bgOpacity') }}</span>
             <input type="range" min="0" max="1" step="0.05" :value="selObj.fillOpacity != null ? selObj.fillOpacity : 0.05" @input="set('fillOpacity', Number($event.target.value))" />
           </label>
         </div>
         <div class="ti-sec">
-          <div class="ti-h">操作</div>
-          <p class="ti-note">画布上拖框身移动、拖右下角手柄缩放、拖标签移动文字、双击标签改名、右键框可删除。</p>
-          <button v-if="mode === 'edit'" type="button" class="ti-danger" @click="emit('delete')">删除该框</button>
+          <div class="ti-h">{{ t('topo.ops') }}</div>
+          <p class="ti-note">{{ t('topo.boxOpsNote') }}</p>
+          <button v-if="mode === 'edit'" type="button" class="ti-danger" @click="emit('delete')">{{ t('topo.delBox') }}</button>
         </div>
       </template>
 
       <!-- ===== 链路属性 ===== -->
       <template v-else-if="selObj && selKind === 'link'">
         <div class="ti-sec">
-          <div class="ti-h">链路属性</div>
-          <label><span>起点</span>
+          <div class="ti-h">{{ t('topo.linkProps') }}</div>
+          <label><span>{{ t('topo.fromNode') }}</span>
             <select :value="selObj.fromDeviceId" @change="onFromEndpoint($event.target.value)">
               <option v-for="n in nodes" :key="n.deviceId" :value="n.deviceId">{{ n.name }}</option>
             </select>
           </label>
-          <label><span>终点</span>
+          <label><span>{{ t('topo.toNode') }}</span>
             <select :value="selObj.toDeviceId" @change="onToEndpoint($event.target.value)">
               <option v-for="n in nodes" :key="n.deviceId" :value="n.deviceId">{{ n.name }}</option>
             </select>
           </label>
           <!-- 端口绑定(2026-10-02 排期需求 2: 链路的物理含义是"本端哪口连对端哪口",
                不是设备间抽象边; 绑定后线上显示该端口真实速率, 端点变化自动清空失效绑定) -->
-          <label><span>起始端口</span>
+          <label><span>{{ t('topo.fromPort') }}</span>
             <select :value="selObj.fromPort || ''" @change="set('fromPort', $event.target.value)">
-              <option value="">未绑定</option>
+              <option value="">{{ t('topo.unbound') }}</option>
               <option v-for="p in fromPorts" :key="p.port" :value="p.port">{{ portOptLabel(p) }}</option>
             </select>
           </label>
@@ -158,71 +158,71 @@
                链路属性里改起始端口(线上标签 ⇄ 左边的接口)的显示名; 留空=回显原口名;
                只换名字部分, 后面的 ↑↓ 实时速率照常 15s 刷新; 随视图文档持久化。
                画布双击标签/右键菜单是同一数据的等价入口 -->
-          <label v-if="selObj.fromPort"><span>起始端口别名</span>
-            <input :value="selObj.fromAlias || ''" placeholder="如: 核心上行(空=原口名)" @change="set('fromAlias', $event.target.value.trim())" />
+          <label v-if="selObj.fromPort"><span>{{ t('topo.fromAlias') }}</span>
+            <input :value="selObj.fromAlias || ''" :placeholder="t('topo.fromAliasPh')" @change="set('fromAlias', $event.target.value.trim())" />
           </label>
-          <label><span>终止端口</span>
+          <label><span>{{ t('topo.toPort') }}</span>
             <select :value="selObj.toPort || ''" @change="set('toPort', $event.target.value)">
-              <option value="">未绑定</option>
+              <option value="">{{ t('topo.unbound') }}</option>
               <option v-for="p in toPorts" :key="p.port" :value="p.port">{{ portOptLabel(p) }}</option>
             </select>
           </label>
           <!-- 终止端口别名(2026-10-02 v258 用户: "终止端口也有别名"): 与起始端口别名
                同机制 —— 只换线上该端标签的名字部分, 留空=回显原口名, 随视图文档持久化;
                画布双击该端标签/右键菜单是同一数据(l.toAlias)的等价入口 -->
-          <label v-if="selObj.toPort"><span>终止端口别名</span>
-            <input :value="selObj.toAlias || ''" placeholder="如: 接入侧(空=原口名)" @change="set('toAlias', $event.target.value.trim())" />
+          <label v-if="selObj.toPort"><span>{{ t('topo.toAlias') }}</span>
+            <input :value="selObj.toAlias || ''" :placeholder="t('topo.toAliasPh')" @change="set('toAlias', $event.target.value.trim())" />
           </label>
           <div v-if="portNote" class="ti-note">{{ portNote }}</div>
-          <div v-if="boundRateText" class="ti-kv"><span>绑定端口速率</span><i>{{ boundRateText }}</i></div>
-          <label><span>链路类型</span>
+          <div v-if="boundRateText" class="ti-kv"><span>{{ t('topo.boundRate') }}</span><i>{{ boundRateText }}</i></div>
+          <label><span>{{ t('topo.linkType') }}</span>
             <select :value="selObj.kind || 'primary'" @change="set('kind', $event.target.value)">
-              <option value="primary">主用（实线）</option>
-              <option value="backup">备用（虚线）</option>
+              <option value="primary">{{ t('topo.primaryLink') }}</option>
+              <option value="backup">{{ t('topo.backupLink') }}</option>
             </select>
           </label>
-          <label><span>带宽阈值</span><input type="number" :value="selObj.bandwidth" @input="set('bandwidth', Number($event.target.value))" /></label>
-          <label><span>状态</span>
+          <label><span>{{ t('topo.bwThreshold') }}</span><input type="number" :value="selObj.bandwidth" @input="set('bandwidth', Number($event.target.value))" /></label>
+          <label><span>{{ t('topo.colStatus') }}</span>
             <select :value="selObj.status" @change="set('status', $event.target.value)">
-              <option value="normal">正常</option><option value="warn">告警/拥塞</option><option value="down">断开/异常</option>
+              <option value="normal">{{ t('topo.stNormal') }}</option><option value="warn">{{ t('topo.stWarnCongest') }}</option><option value="down">{{ t('topo.stDownErr') }}</option>
             </select>
           </label>
           <!-- 连通性(2026-09-29 用户口径: 画了线不算通, 中心端实测两端 IP 才算) -->
-          <div class="ti-kv"><span>连通性</span><i :class="{ bad: selObj.status === 'down' && selObj.tested, pend: !selObj._real && !selObj.tested }">{{ linkTestText(selObj) }}</i></div>
+          <div class="ti-kv"><span>{{ t('topo.connectivity') }}</span><i :class="{ bad: selObj.status === 'down' && selObj.tested, pend: !selObj._real && !selObj.tested }">{{ linkTestText(selObj) }}</i></div>
           <button v-if="!selObj._real" type="button" class="ti-check" :disabled="selObj._checking" @click="emit('check', selObj)">
-            {{ selObj._checking ? '测试中…' : (selObj.tested ? '重新测试连通' : '测试连通') }}
+            {{ selObj._checking ? t('topo.testing') : (selObj.tested ? t('topo.retest') : t('topo.testConn')) }}
           </button>
           <div v-if="selObj._check" class="ti-kv ti-check-detail">
-            <span>测试结果</span>
+            <span>{{ t('topo.testResult') }}</span>
             <i>{{ (selObj._check.results || []).map(r => r.ip + (r.up ? ' ✓ ' + r.rttMs + 'ms' : ' ✗')).join('  ') }}</i>
           </div>
           <!-- 通断重试间隔(2026-10-02 用户要求: 红线30s重试/绿线5min复验可人工自定义,
                存链路对象随视图文档持久化; 两端在线时自动测试按此间隔发起) -->
-          <label><span>红线重试(秒)</span>
+          <label><span>{{ t('topo.retryRed') }}</span>
             <input type="number" min="5" max="3600" :value="selObj.retrySec || 30"
                    @change="setRetry('retrySec', $event.target.value)" />
           </label>
-          <label><span>绿线复验(秒)</span>
+          <label><span>{{ t('topo.recheckGreen') }}</span>
             <input type="number" min="10" max="86400" :value="selObj.recheckSec || 300"
                    @change="setRetry('recheckSec', $event.target.value)" />
           </label>
-          <p class="ti-note">未连通(红线)每「红线重试」秒自动重测; 已连通(绿线)每「绿线复验」秒复验一次, 断开后最长该间隔翻红。仅两端在线时发起。</p>
-          <button v-if="mode === 'edit'" type="button" class="ti-danger" @click="emit('delete')">删除该链路</button>
+          <p class="ti-note">{{ t('topo.retryNote') }}</p>
+          <button v-if="mode === 'edit'" type="button" class="ti-danger" @click="emit('delete')">{{ t('topo.delLink') }}</button>
         </div>
       </template>
 
-      <div v-else class="ti-none">点击画布中的设备或链路查看属性</div>
+      <div v-else class="ti-none">{{ t('topo.clickToShow') }}</div>
 
       <!-- 告警列表(底部, 点击定位到对应节点) -->
       <div class="ti-sec grow">
-        <div class="ti-h">告警列表 <b>{{ alerts.length }}</b></div>
+        <div class="ti-h">{{ t('topo.alertList') }} <b>{{ alerts.length }}</b></div>
         <div class="ti-alerts">
           <div v-for="a in alerts" :key="a.k + a.id" class="ti-alert" @click="emit('locate', a.deviceId)">
             <i :style="{ background: a.color }"></i>
             <span class="ti-a-t">{{ a.text }}</span>
             <span class="ti-a-l">{{ a.lv }}</span>
           </div>
-          <div v-if="!alerts.length" class="ti-none">当前无告警</div>
+          <div v-if="!alerts.length" class="ti-none">{{ t('topo.noAlerts') }}</div>
         </div>
       </div>
     </div>
@@ -232,6 +232,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { TYPE_OPTIONS, TYPES, safeStatus, SAFE_CN } from './topoModel.js'
+import { t } from '../../i18n'
 import { fetchNodePorts, rateShort } from './topoPorts.js'   // 端口清单共享取数(与端口详情抽屉同源)
 import PushStatusPanel from './PushStatusPanel.vue'   // 告警设置(仅编辑模式渲染, 见模板)
 
@@ -266,10 +267,10 @@ function statusColor(st) {
 }
 // 连通性文案(2026-09-29 用户口径): 后端真实链路=API 数据; 手动链路必须测试后才算通
 function linkTestText(l) {
-  if (l._real) return '真实链路(后端 API)'
-  if (!l.tested) return '未测试(不算连通)'
+  if (l._real) return t('topo.realLink')
+  if (!l.tested) return t('topo.untested')
   const t = l.checkedAt ? ' ' + new Date(l.checkedAt).toLocaleTimeString() : ''
-  return (l.status === 'down' ? '未连通' : '已连通') + t
+  return (l.status === 'down' ? t('topo.notConnected') : t('topo.connected')) + t
 }
 // 所属网段: 取前 3 段按 /24 展示(拓扑粒度不到子网, 用 /24 作展示口径; 无 IP 显 —)
 function subnetOf(ip) {
@@ -282,9 +283,9 @@ function subnetOf(ip) {
 function uptimeText(n) {
   if (n.status === 'down' || !n._onlineSince) return '—'
   const sec = Math.max(0, Math.floor((Date.now() - n._onlineSince) / 1000))
-  if (sec < 60) return sec + ' 秒'
-  if (sec < 3600) return Math.floor(sec / 60) + ' 分钟'
-  return Math.floor(sec / 3600) + ' 小时'
+  if (sec < 60) return t('topo.durSec', { n: sec })
+  if (sec < 3600) return t('topo.durMin', { n: Math.floor(sec / 60) })
+  return t('topo.durHour', { n: Math.floor(sec / 3600) })
 }
 function riskLevel(n) {
   const s = safeStatus(n)
@@ -292,7 +293,7 @@ function riskLevel(n) {
 }
 function riskText(n) {
   const s = safeStatus(n)
-  return s === 'gray' ? '未监控' : s === 'green' ? '低' : s === 'yellow' ? '中' : '高'
+  return s === 'gray' ? t('topo.riskNone') : s === 'green' ? t('topo.riskLow') : s === 'yellow' ? t('topo.riskMid') : t('topo.riskHigh')
 }
 // 更换绑定资产: 同步写 boundAssetId + boundAssetName(名字冗余存一份, 避免资产删除后显示断链)
 function onBindChange(id) {
@@ -328,7 +329,7 @@ async function loadEndPorts(deviceId, arr, noteRef, seq) {
   noteRef.value = ''
   if (!deviceId) return
   const n = nodeOf(deviceId)
-  if (!n) { noteRef.value = '端点节点不在当前视图中'; return }
+  if (!n) { noteRef.value = t('topo.endNotInView'); return }
   const d = await fetchNodePorts(n, props.devices)
   if (seq.n !== my) return   // 已换到另一条链路: 丢弃陈旧响应
   arr.value = d.ports || []
@@ -364,8 +365,8 @@ const boundRateText = computed(() => {
   const parts = []
   const fa = fromPorts.value.find(p => p.port === props.selObj.fromPort)
   const ta = toPorts.value.find(p => p.port === props.selObj.toPort)
-  if (fa) parts.push('源 ' + fa.port + ' ↑' + rateShort(fa.txBps) + ' ↓' + rateShort(fa.rxBps))
-  if (ta) parts.push('终 ' + ta.port + ' ↑' + rateShort(ta.txBps) + ' ↓' + rateShort(ta.rxBps))
+  if (fa) parts.push(t('topo.sideSrc', { port: fa.port, tx: rateShort(fa.txBps), rx: rateShort(fa.rxBps) }))
+  if (ta) parts.push(t('topo.sideDst', { port: ta.port, tx: rateShort(ta.txBps), rx: rateShort(ta.rxBps) }))
   return parts.join('   ')
 })
 
@@ -377,7 +378,7 @@ const alerts = computed(() => {
     const s = safeStatus(n)
     out.push({
       k: 'n', id: n.nodeId, deviceId: n.deviceId, text: n.name + ' ' + (n.ip || ''),
-      lv: n.status === 'down' ? '离线' : n.status === 'error' ? '异常' : '告警',
+      lv: n.status === 'down' ? t('topo.alOffline') : n.status === 'error' ? t('topo.alError') : t('topo.alWarn'),
       color: s === 'red' ? '#f87171' : s === 'yellow' ? '#fbbf24' : '#94a3b8',
     })
   }
@@ -385,7 +386,7 @@ const alerts = computed(() => {
     if (l.status === 'normal') continue
     const a = props.nodes.find(x => x.deviceId === l.fromDeviceId)
     const b = props.nodes.find(x => x.deviceId === l.toDeviceId)
-    out.push({ k: 'l', id: l.linkId, deviceId: l.fromDeviceId, text: (a ? a.name : '?') + ' ↔ ' + (b ? b.name : '?'), lv: l.status === 'down' ? '断流' : '拥塞', color: l.status === 'down' ? '#f87171' : '#fbbf24' })
+    out.push({ k: 'l', id: l.linkId, deviceId: l.fromDeviceId, text: (a ? a.name : '?') + ' ↔ ' + (b ? b.name : '?'), lv: l.status === 'down' ? t('topo.alBreak') : t('topo.alCongest'), color: l.status === 'down' ? '#f87171' : '#fbbf24' })
   }
   return out
 })

@@ -19,7 +19,7 @@
           <template v-for="g in libSections" :key="g.key">
             <!-- 组头可折叠(2026-10-02 用户要求: 网络设备/业务服务 都可以折叠显示) -->
             <div class="tt-lib-grp" :class="{ closed: libCollapsed[g.key] }" @click="toggleLib(g.key)">
-              <i class="tt-lib-caret">▸</i><span>{{ g.label }}</span><b>{{ g.items.length }}</b>
+              <i class="tt-lib-caret">▸</i><span>{{ t(g.label) }}</span><b>{{ g.items.length }}</b>
             </div>
             <div v-show="!libCollapsed[g.key]" class="tt-lib-items">
               <div v-for="t in g.items" :key="t.v" class="tt-lib-item" draggable="true"
@@ -56,6 +56,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { typeText, typeGlyph, bizGroup, STATUS_COLOR, TYPE_GROUPS, TYPES, TOPO_TYPE_MIME } from './topoModel.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   nodes: { type: Array, default: () => [] },

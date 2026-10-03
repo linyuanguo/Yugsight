@@ -99,7 +99,7 @@
             <rect :width="SUM_W" :height="SUM_H" :x="-SUM_W / 2" :y="-SUM_H / 2" rx="10" :class="'sum-' + s.status" />
             <text class="sum-ico" text-anchor="middle" y="-9">▤</text>
             <text class="sum-cidr" text-anchor="middle" y="10">{{ s.label }}</text>
-            <text class="sum-count" text-anchor="middle" y="26">{{ s.count }} 台 · {{ s.statusCn }}</text>
+            <text class="sum-count" text-anchor="middle" y="26">{{ t('topo.devUnit', { n: s.count }) }} · {{ s.statusCn }}</text>
           </g>
 
           <!-- 节点(圆 + 类型字形 + 名称) -->
@@ -148,7 +148,7 @@
            startPan → 松手判"点空白" → cancelLink(连线被取消)+blank-click(面板被关)
            —— 2026-10-02 用户实测"一点下拉区域就没有了"即此路径。 -->
       <div v-if="drilled" class="t2d-crumb" @pointerdown.stop>
-        <button type="button" class="t2d-crumb-btn" @click="drillOut">全部</button>
+        <button type="button" class="t2d-crumb-btn" @click="drillOut">{{ t('topo.all') }}</button>
         <span class="t2d-crumb-sep">/</span>
         <span class="t2d-crumb-cur">{{ drilledLabel }}</span>
       </div>
@@ -162,27 +162,27 @@
         <span class="pp-t">{{ (portPick.stage === 'from' ? '本端网口 ' : '对端网口 ') + (portPick.node ? portPick.node.name : '') }}</span>
         <select :value="portPick.stage === 'from' ? linkFromPort : portPickVal"
                 @change="portPick.stage === 'from' ? (linkFromPort = $event.target.value) : (portPickVal = $event.target.value)">
-          <option value="">未绑定(不选)</option>
+          <option value="">{{ t('topo.unbound') }}</option>
           <option v-for="p in portPickList" :key="p.port" :value="p.port">
             {{ p.port }} ({{ p.state ? (p.up ? 'up' : 'down') : '-' }}{{ (p.rxBps || 0) + (p.txBps || 0) > 0 ? ' · ' + rateShort((p.rxBps || 0) + (p.txBps || 0)) + '/s' : '' }})
           </option>
         </select>
-        <button v-if="portPick.stage === 'from'" type="button" @click="portPick = null">知道了</button>
+        <button v-if="portPick.stage === 'from'" type="button" @click="portPick = null">{{ t('topo.gotIt') }}</button>
         <template v-else>
-          <button type="button" class="pp-ok" @click="confirmToPort">确定</button>
-          <button type="button" @click="skipToPort">跳过</button>
+          <button type="button" class="pp-ok" @click="confirmToPort">{{ t('topo.ok') }}</button>
+          <button type="button" @click="skipToPort">{{ t('topo.skip') }}</button>
         </template>
         <div v-if="portPickNote" class="pp-note">{{ portPickNote }}</div>
       </div>
 
       <!-- 悬浮详情卡 -->
       <div v-if="hover" class="t2d-hover" :style="hoverStyle">
-        <div class="th-h"><b>{{ hover.name }}</b><span class="th-st" :class="'st-' + hover.status">{{ STATUS_CN[hover.status] || hover.status }}</span></div>
-        <div class="th-row"><span>类型</span><i>{{ typeText(hover.type) }}</i></div>
+        <div class="th-h"><b>{{ hover.name }}</b><span class="th-st" :class="'st-' + hover.status">{{ t(STATUS_CN[hover.status] || hover.status) }}</span></div>
+        <div class="th-row"><span>{{ t('cfg.kind') }}</span><i>{{ typeText(hover.type) }}</i></div>
         <div class="th-row"><span>IP</span><i class="th-ip">{{ hover.ip || '—' }}</i></div>
-        <div class="th-row"><span>带宽利用率</span><i>{{ hover.utilText }}</i></div>
-        <div class="th-row" v-if="hover.rateText"><span>上下行速率</span><i>{{ hover.rateText }}</i></div>
-        <div class="th-row" v-else-if="hover.rateNote"><span>上下行速率</span><i class="th-note">{{ hover.rateNote }}</i></div>
+        <div class="th-row"><span>{{ t('topo.bandwidthUtil') }}</span><i>{{ hover.utilText }}</i></div>
+        <div class="th-row" v-if="hover.rateText"><span>{{ t('topo.upDownRate') }}</span><i>{{ hover.rateText }}</i></div>
+        <div class="th-row" v-else-if="hover.rateNote"><span>{{ t('topo.upDownRate') }}</span><i class="th-note">{{ hover.rateNote }}</i></div>
       </div>
 
       <!-- 框改名 / 端口别名改名(编辑态双击): 输入框悬浮在标签锚点处, Enter/失焦提交 -->
@@ -233,84 +233,84 @@
     <Teleport to="body">
       <div v-if="menuOpen" class="t2d-menu" :style="menuStyle" @pointerdown.stop @click.stop>
         <template v-if="menuSummary">
-          <div class="t2d-menu-h">子网 · {{ menuSummary.label }}</div>
-          <button type="button" @click="drillIn(menuSummary.key)">钻取进入该子网</button>
+          <div class="t2d-menu-h">{{ t('topo.subnet') }} · {{ menuSummary.label }}</div>
+          <button type="button" @click="drillIn(menuSummary.key)">{{ t('topo.drillIn') }}</button>
           <button type="button" @click="toggleCollapse(menuSummary.key)">{{ isCollapsed(menuSummary.key) ? '展开子网' : '折叠子网' }}</button>
         </template>
         <template v-else-if="menuLink">
-          <div class="t2d-menu-h">链路 · {{ linkMenuTitle }}</div>
-          <button type="button" @click="linkAction('detail')">查看详情</button>
+          <div class="t2d-menu-h">{{ t('topo.link') }} · {{ linkMenuTitle }}</div>
+          <button type="button" @click="linkAction('detail')">{{ t('topo.viewDetails') }}</button>
           <!-- 连通性测试: 中心端真实探测两端 IP(2026-09-29 用户要求: 画了线不算通, 测过才算) -->
           <button type="button" @click="linkAction('check')" :disabled="menuLink._checking">
             {{ menuLink._checking ? '测试中…' : (menuLink.tested ? '重新测试连通' : '测试连通') }}
           </button>
           <template v-if="mode === 'edit'">
-            <div class="t2d-menu-h">编辑</div>
+            <div class="t2d-menu-h">{{ t('rp.edit') }}</div>
             <!-- 端口别名(2026-10-02 v254): 画布标签改名; 标签位置复位从"双击标签"移到这里
                  (双击改成了改别名) -->
-            <button v-if="menuLink.fromPort" type="button" @click="linkAction('renameFrom')">改名起始端口(别名)</button>
-            <button v-if="menuLink.toPort" type="button" @click="linkAction('renameTo')">改名终止端口(别名)</button>
+            <button v-if="menuLink.fromPort" type="button" @click="linkAction('renameFrom')">{{ t('topo.renameFrom') }}</button>
+            <button v-if="menuLink.toPort" type="button" @click="linkAction('renameTo')">{{ t('topo.renameTo') }}</button>
             <!-- v258: 两端标签各自可拖 → 复位也各端独立(只在该端拖过时出现) -->
-            <button v-if="menuLink.fromLblPos" type="button" @click="linkAction('resetLblFrom')">复位起始端口标签位置</button>
-            <button v-if="menuLink.toLblPos" type="button" @click="linkAction('resetLblTo')">复位终止端口标签位置</button>
+            <button v-if="menuLink.fromLblPos" type="button" @click="linkAction('resetLblFrom')">{{ t('topo.resetLblFrom') }}</button>
+            <button v-if="menuLink.toLblPos" type="button" @click="linkAction('resetLblTo')">{{ t('topo.resetLblTo') }}</button>
             <button type="button" @click="linkAction('backup')">{{ menuLink.kind === 'backup' ? '设为主用链路(实线)' : '设为备用链路(虚线)' }}</button>
-            <button type="button" class="danger" @click="linkAction('delete')">删除链路</button>
+            <button type="button" class="danger" @click="linkAction('delete')">{{ t('topo.delLink') }}</button>
           </template>
         </template>
         <template v-else-if="menuBox">
-          <div class="t2d-menu-h">框 · {{ menuBox.name }}</div>
+          <div class="t2d-menu-h">{{ t('topo.box') }} · {{ menuBox.name }}</div>
           <template v-if="mode === 'edit'">
-            <button type="button" @click="boxAction('rename')">重命名框</button>
-            <button type="button" class="danger" @click="boxAction('delete')">删除该框</button>
+            <button type="button" @click="boxAction('rename')">{{ t('topo.renameBox') }}</button>
+            <button type="button" class="danger" @click="boxAction('delete')">{{ t('topo.delBox') }}</button>
             <!-- 2026-10-01 用户要求: 框选多个后右键菜单提供批量删除(页面弹确认) -->
-            <button v-if="selSet.size >= 2" type="button" class="danger" @click="deleteSelected()">删除选中项 ({{ selSet.size }})…</button>
+            <button v-if="selSet.size >= 2" type="button" class="danger" @click="deleteSelected()">{{ t('topo.delSelItems', { n: selSet.size }) }}</button>
           </template>
         </template>
         <template v-else-if="menuNode">
           <div class="t2d-menu-h">{{ menuNode.name }}</div>
-          <button type="button" @click="nodeAction('detail')">查看详情</button>
-          <button type="button" @click="nodeAction('alert')">配置告警</button>
-          <button type="button" @click="nodeAction('nodemon')">跳转节点监控</button>
-          <button type="button" @click="nodeAction('drill')">端口详情</button>
-          <button v-if="menuNode.px != null" type="button" @click="resetPosAction">重置位置(恢复自动排布)</button>
+          <button type="button" @click="nodeAction('detail')">{{ t('topo.viewDetails') }}</button>
+          <button type="button" @click="nodeAction('alert')">{{ t('topo.cfgAlert') }}</button>
+          <button type="button" @click="nodeAction('nodemon')">{{ t('topo.goNodeMon') }}</button>
+          <button type="button" @click="nodeAction('drill')">{{ t('topo.portDetail') }}</button>
+          <button v-if="menuNode.px != null" type="button" @click="resetPosAction">{{ t('topo.resetPos') }}</button>
           <template v-if="mode === 'edit'">
-            <div class="t2d-menu-h">编辑</div>
-            <button type="button" @click="nodeAction('link')">从此节点连线</button>
+            <div class="t2d-menu-h">{{ t('rp.edit') }}</div>
+            <button type="button" @click="nodeAction('link')">{{ t('topo.linkFrom') }}</button>
             <button type="button" @click="nodeAction('core')">{{ menuNode.isCore ? '取消核心标记' : '标记核心节点' }}</button>
-            <button type="button" @click="nodeAction('rebind')">更换绑定资产</button>
-            <button type="button" class="danger" @click="nodeAction('delete')">删除该节点</button>
+            <button type="button" @click="nodeAction('rebind')">{{ t('topo.rebind') }}</button>
+            <button type="button" class="danger" @click="nodeAction('delete')">{{ t('topo.delNode') }}</button>
             <!-- 2026-10-01 用户要求: 框选多个后右键菜单提供批量删除(页面弹确认) -->
-            <button v-if="selSet.size >= 2" type="button" class="danger" @click="deleteSelected()">删除选中项 ({{ selSet.size }})…</button>
+            <button v-if="selSet.size >= 2" type="button" class="danger" @click="deleteSelected()">{{ t('topo.delSelItems', { n: selSet.size }) }}</button>
           </template>
         </template>
         <template v-else>
-          <div class="t2d-menu-h">画布</div>
-          <button type="button" @click="canvasAction('export')">导出图片</button>
-          <button type="button" @click="canvasAction('resetview')">复位视角</button>
+          <div class="t2d-menu-h">{{ t('topo.canvas') }}</div>
+          <button type="button" @click="canvasAction('export')">{{ t('topo.exportImg') }}</button>
+          <button type="button" @click="canvasAction('resetview')">{{ t('topo.resetView') }}</button>
           <template v-if="mode === 'edit'">
             <!-- 2026-10-01 用户要求: 框选多台设备/多框后, 对选中区域右键 → "删除选中的设备和框"(页面弹确认) -->
             <template v-if="selSet.size >= 2">
-              <div class="t2d-menu-h">多选</div>
-              <button type="button" class="danger" @click="deleteSelected()">删除选中的设备和框 ({{ selSet.size }})…</button>
+              <div class="t2d-menu-h">{{ t('topo.multiSel') }}</div>
+              <button type="button" class="danger" @click="deleteSelected()">{{ t('topo.delSelAll', { n: selSet.size }) }}</button>
             </template>
-            <div class="t2d-menu-h">添加</div>
+            <div class="t2d-menu-h">{{ t('topo.add') }}</div>
             <!-- 2026-09-30 用户要求: 画布右键直接添加框/设备库设备(落点=右键处) -->
-            <button type="button" @click="canvasAction('addbox')">＋ 在此添加框</button>
+            <button type="button" @click="canvasAction('addbox')">{{ t('topo.addBoxHere') }}</button>
             <div class="t2d-menu-item sub">
-              <span>＋ 添加设备…</span>
+              <span>{{ t('topo.addDevice') }}</span>
               <div class="t2d-submenu">
                 <template v-for="g in deviceTypes" :key="g.key">
-                  <div class="t2d-sub-h">{{ g.label }}</div>
-                  <button v-for="t in g.items" :key="t.v" type="button" @click="canvasAction('adddevice', t.v)">
-                    {{ t.glyph }} {{ t.t }}
+                  <div class="t2d-sub-h">{{ t(g.label) }}</div>
+                  <button v-for="dt in g.items" :key="dt.v" type="button" @click="canvasAction('adddevice', dt.v)">
+                    {{ dt.glyph }} {{ t(dt.t) }}
                   </button>
                 </template>
               </div>
             </div>
-            <div class="t2d-menu-h">操作</div>
-            <button type="button" @click="collapseAll">折叠所有子网</button>
-            <button type="button" @click="expandAll">展开所有子网</button>
-            <button v-if="hasManualPos" type="button" @click="resetAllPosAction">重置所有节点位置</button>
+            <div class="t2d-menu-h">{{ t('topo.ops') }}</div>
+            <button type="button" @click="collapseAll">{{ t('topo.collapseAll') }}</button>
+            <button type="button" @click="expandAll">{{ t('topo.expandAll') }}</button>
+            <button v-if="hasManualPos" type="button" @click="resetAllPosAction">{{ t('topo.resetAllPos') }}</button>
           </template>
         </template>
       </div>
@@ -326,6 +326,7 @@ import {
   LINK_COLOR, STATUS_CN, SAFE_CN, TYPES, TYPE_GROUPS, TOPO_TYPE_MIME,
   groupBySubnet, subnetKey, subnetStatus,
 } from './topoModel.js'
+import { t } from '../../i18n'
 // 右键"添加设备…"子菜单按分组展开(TYPE_GROUPS 只有 key/label, 这里补 items)
 const deviceTypes = computed(() => TYPE_GROUPS.map(g => ({
   key: g.key,
@@ -569,12 +570,12 @@ function resetNodePos(deviceId) {
 function resetPosAction() {
   const n = menuNode.value
   closeMenu()
-  if (n && resetNodePos(n.deviceId)) { flash('已恢复自动排布'); emitDirty() }
+  if (n && resetNodePos(n.deviceId)) { flash(t('topo.posRestored')); emitDirty() }
 }
 function resetAllPosAction() {
   closeMenu()
   for (const n of props.nodes) { delete n.px; delete n.py }
-  flash('已重置所有节点位置')
+  flash(t('topo.resetAllPos'))
   emitDirty()
 }
 
@@ -603,7 +604,7 @@ let linkKeyHandler = null
 function startLink(deviceId) {
   linkFrom.value = deviceId
   linkFromPort.value = ''
-  flash('点击目标节点完成连线(ESC 取消); 顶部浮层可先选本端网口')
+  flash(t('topo.linkStep2'))
   linkKeyHandler = (ev) => { if (ev.key === 'Escape') cancelLink() }
   window.addEventListener('keydown', linkKeyHandler)
   const n = (props.nodes || []).find(x => x.deviceId === deviceId)
@@ -775,7 +776,7 @@ const summaryNodes = computed(() => {
     const p = ps[g.key]
     out.push({
       key: g.key, label: g.label, count: g.members.length,
-      status: subnetStatus(g.members), statusCn: SAFE_CN[subnetStatus(g.members)],
+      status: subnetStatus(g.members), statusCn: t(SAFE_CN[subnetStatus(g.members)]),
       x: p ? p.cx : W / 2, y: p ? p.cy : H / 2,
     })
   }
@@ -1198,7 +1199,7 @@ function finishMarquee() {
   if (firstN) emit('select', { kind: 'node', id: firstN.nodeId })
   else if (firstB) emit('select', { kind: 'box', id: firstB.id })
   emitMulti()   // 在 select 之后上报, 页面属性面板以"多清单"为准
-  if (ns.size > 1) flash(`已框选 ${ns.size} 项(${nCount} 设备 / ${bCount} 框): 拖任意一项=整体移动 · 拖右下金色手柄=整体缩放 · ESC 取消`)
+  if (ns.size > 1) flash(t('topo.boxSelected', { n: ns.size, d: nCount, b: bCount }))
 }
 // 整体移动: 选集合内的节点/框被拖 = 整组平移
 function startGroupDrag(e, entries, anchor) {
@@ -1262,7 +1263,7 @@ function onGroupScaleStart(e) {
     window.removeEventListener('pointerup', up)
     groupScaling.value = false
     nodeDragging.value = false
-    if (moved) { flash('已整体缩放选区(再次拖手柄可继续调整)'); emitDirty() }
+    if (moved) { flash(t('topo.selectionScaled')); emitDirty() }
   }
   window.addEventListener('pointermove', mv)
   window.addEventListener('pointerup', up)
@@ -1283,7 +1284,7 @@ function drillIn(key) {
   drilled.value = key
   collapsed.value = new Set()
   resetView()
-  flash('已进入子网 ' + labelByKey(key))
+  flash(t('topo.drilledInto', { name: labelByKey(key) }))
 }
 function drillOut() { drilled.value = ''; resetView() }
 // 切视图/节点集大变: 当前钻入的子网在新集合里不存在则回全局, 防画布空白

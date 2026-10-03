@@ -18,26 +18,26 @@
   <div v-if="open" class="tbd-mask" @click.self="emit('close')">
     <div class="tbd">
       <div class="tbd-h">
-        <span>绑定节点 · <b>{{ node.name }}</b></span>
+        <span>{{ t('topo.bindNode') }} · <b>{{ node.name }}</b></span>
         <button type="button" @click="emit('close')">×</button>
       </div>
-      <input v-model="kw" class="tbd-search" placeholder="搜索名称 / IP(留空看全部)" @keyup.esc="emit('close')" />
+      <input v-model="kw" class="tbd-search" :placeholder="t('topo.bindSearchPh')" @keyup.esc="emit('close')" />
       <div class="tbd-list">
         <div v-for="d in list" :key="d.deviceId" class="tbd-item"
              :class="{ off: usedByOther(d) }"
-             :title="usedByOther(d) ? '该设备已在画布(一机一节点)' : (d.ip || '')"
+             :title="usedByOther(d) ? t('topo.alreadyOnCanvas') : (d.ip || '')"
              @click="!usedByOther(d) && emit('bind', d)">
           <i class="tbd-dot" :style="{ background: dotColor(d) }"></i>
           <span class="tbd-name">{{ d.name }}</span>
           <em class="tbd-ip">{{ d.ip || '—' }}</em>
-          <span v-if="usedByOther(d)" class="tbd-tag off-tag">已在画布</span>
-          <span v-else-if="isRecommended(d)" class="tbd-tag rec-tag">推荐</span>
+          <span v-if="usedByOther(d)" class="tbd-tag off-tag">{{ t('topo.onCanvas') }}</span>
+          <span v-else-if="isRecommended(d)" class="tbd-tag rec-tag">{{ t('topo.recommended') }}</span>
         </div>
-        <div v-if="!list.length" class="tbd-none">无匹配的纳管设备。绑定候选=「节点监控 → 协议配置」的监控目标(探针 / 主机侧采集 SSH·WinRM·SNMP / 网络侧采集 / SNMP 网络监控目标), 请先添加对应任务或目标。</div>
+        <div v-if="!list.length" class="tbd-none">{{ t('topo.noBindCand') }}</div>
       </div>
       <div class="tbd-foot">
-        <span class="tbd-hint">绑定后节点随 15s 轮询同步实时状态; 跳过 = 未纳管(灰色, 不参与告警)</span>
-        <button type="button" class="tbd-skip" @click="emit('skip')">跳过(未纳管)</button>
+        <span class="tbd-hint">{{ t('topo.bindHint') }}</span>
+        <button type="button" class="tbd-skip" @click="emit('skip')">{{ t('topo.skipUnmon') }}</button>
       </div>
     </div>
   </div>
@@ -46,6 +46,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { bizGroup } from './topoModel.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   open: { type: Boolean, default: false },

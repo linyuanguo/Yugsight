@@ -16,38 +16,38 @@
 -->
 <template>
   <div v-if="compact" class="ps ps-compact" :class="{ on: enabled === true }"
-       title="点击跳转「节点监控 → 告警日志管理 → 推送配置」"
+       :title="t('push.gotoTitle')"
        @pointerdown.stop @click.stop="gotoFull">
     <i class="ps-dot" :class="enabled === true ? 'ok' : enabled === false ? 'off' : 'wait'"></i>
-    <span class="ps-t">告警推送{{ enabled === true ? '已开启' : enabled === false ? '已关闭' : '…' }}</span>
-    <span class="ps-stat">今日 {{ todayPushed }} 条 · 失败 {{ todayFailed }}</span>
-    <span class="ps-go">完整配置 ›</span>
+    <span class="ps-t">{{ t('push.title') }}{{ enabled === true ? t('push.on') : enabled === false ? t('push.off') : '…' }}</span>
+    <span class="ps-stat">{{ t('push.today', { ok: todayPushed, fail: todayFailed }) }}</span>
+    <span class="ps-go">{{ t('push.fullCfg') }} ›</span>
   </div>
 
   <div v-else class="ps ps-block">
     <div class="ps-row">
-      <span class="ps-l">推送总开关</span>
+      <span class="ps-l">{{ t('push.master') }}</span>
       <button type="button" class="ps-switch" :class="{ on: enabled === true, busy }"
               :disabled="!editable || busy || enabled === null"
-              :title="editable ? (enabled ? '点击关闭' : '点击开启') : '仅编辑模式可操作'"
+              :title="editable ? (enabled ? t('push.clickOff') : t('push.clickOn')) : t('push.editOnly')"
               @click="toggle">
         <i class="ps-knob"></i>
       </button>
       <span class="ps-state" :class="{ busy }">
-        {{ enabled === null ? '加载中…' : enabled ? '已开启' : '已关闭' }}
+        {{ enabled === null ? t('push.loading') : enabled ? t('push.on') : t('push.off') }}
       </span>
     </div>
     <div class="ps-row">
-      <span class="ps-l">今日推送</span>
+      <span class="ps-l">{{ t('push.todayLabel') }}</span>
       <span class="ps-stat2">
-        <b class="ok">{{ todayPushed }}</b> 条
+        <b class="ok">{{ todayPushed }}</b> {{ t('push.unitItem') }}
         <b class="bad" v-if="todayFailed > 0">{{ todayFailed }}</b>
-        <span class="ps-fail-l">条失败</span>
+        <span class="ps-fail-l">{{ t('push.unitFailed') }}</span>
       </span>
     </div>
     <div class="ps-row">
-      <span class="ps-l">完整配置</span>
-      <button type="button" class="ps-btn" @click="gotoFull">节点监控 → 告警推送 ›</button>
+      <span class="ps-l">{{ t('push.fullCfgShort') }}</span>
+      <button type="button" class="ps-btn" @click="gotoFull">{{ t('push.gotoBtn') }} ›</button>
     </div>
     <div v-if="err" class="ps-err">{{ err }}</div>
   </div>
@@ -58,6 +58,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchPushStat, setPushSwitch } from '../../api/nodepush'
 import { toast } from '../../toast'
+import { t } from '../../i18n'
 
 const props = defineProps({
   compact: { type: Boolean, default: false },
@@ -84,7 +85,7 @@ async function load(silent = false) {
     err.value = ''
   } catch (e) {
     // 保留上次快照; 无快照时(首拉失败)给一行降级提示, 不弹 toast(轮询场景会刷)
-    if (enabled.value === null && !silent) err.value = '推送状态获取失败: ' + (e.message || '')
+    if (enabled.value === null && !silent) err.value = t('push.loadFail', { err: e.message || '' })
   }
 }
 
@@ -95,10 +96,10 @@ async function toggle() {
   try {
     await setPushSwitch(next)
     enabled.value = next
-    toast('告警推送总开关已' + (next ? '开启' : '关闭'), 'ok')
+    toast(t('push.toggled', { state: next ? t('push.on') : t('push.off') }), 'ok')
     load(true)   // 回读确认(后端是唯一事实来源)
   } catch (e) {
-    toast('开关切换失败: ' + (e.message || ''), 'err')
+    toast(t('push.switchFail', { err: e.message || '' }), 'err')
   } finally {
     busy.value = false
   }
