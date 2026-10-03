@@ -21,11 +21,12 @@
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../api/http'
 import Modal from './Modal.vue'
+import { t } from '../i18n'
 
 const props = defineProps({
   module: { type: String, required: true },
   reportId: { type: String, default: '' },
-  label: { type: String, default: 'AI 分析' },
+  label: { type: String, default: '' },
   before: { type: Function, default: null }
 })
 
@@ -59,9 +60,9 @@ const usable = computed(() =>
   !!(st.value && st.value.enabled && st.value.modules && st.value.modules[switchKey.value])
 )
 const disabledTip = computed(() => {
-  if (!st.value) return 'AI 状态读取失败'
-  if (!st.value.enabled) return 'AI 未启用(系统配置 → AI 配置 → 保存)'
-  return '该模块的 AI 分析已被管理员关闭(系统配置 → AI 配置 → 模块总开关)'
+  if (!st.value) return t('ai.tipStatusFail')
+  if (!st.value.enabled) return t('ai.tipDisabled')
+  return t('ai.tipModOff')
 })
 
 function stopEvent(e) { e.stopPropagation() }
@@ -81,7 +82,7 @@ async function analyze() {
     d.elapsed = Date.now() - t0
     result.value = d
   } catch (e) {
-    err.value = e.message || 'AI 分析失败'
+    err.value = e.message || t('ai.analyzeFail')
   } finally {
     busy.value = false
     loadStatus() // 分析不改变开关, 但状态缓存无成本, 保持一致
@@ -103,33 +104,33 @@ function fmtAI(d) {
   <span>
     <button class="btn sm" :title="usable ? '' : disabledTip" :disabled="busy || !usable" @click="analyze" @mousedown.stop="stopEvent">
       <span class="spinner" v-if="busy"></span>
-      {{ busy ? 'AI 分析中…' : label }}
+      {{ busy ? t('ai.analyzing') : (label || t('ai.analyze')) }}
     </button>
     <div class="ai-err" v-if="err">{{ err }}</div>
 
-    <Modal :show="!!result" title="AI 分析结果" width="720px" @close="result = null">
+    <Modal :show="!!result" :title="t('ai.resultTitle')" width="720px" @close="result = null">
       <template v-if="result">
         <div class="ai-meta">
-          <span class="chip on">分析完成</span>
+          <span class="chip on">{{ t('ai.done') }}</span>
           <span class="muted small mono">
-            {{ result.template || '' }} · {{ result.model || '' }} · 耗时 {{ Math.round((result.elapsed || 0) / 1000) }}s
+            {{ result.template || '' }} · {{ result.model || '' }} · {{ t('ai.elapsed', { s: Math.round((result.elapsed || 0) / 1000) }) }}
           </span>
-          <span class="muted small" v-if="result.ragHits">RAG 参考 {{ result.ragHits }} 条</span>
-          <span class="muted small" v-if="result.memoryItems">历史记忆 {{ result.memoryItems }} 条</span>
+          <span class="muted small" v-if="result.ragHits">{{ t('ai.ragHits', { n: result.ragHits }) }}</span>
+          <span class="muted small" v-if="result.memoryItems">{{ t('ai.memHits', { n: result.memoryItems }) }}</span>
           <div class="spacer"></div>
-          <span class="muted small mono" v-if="result.reportId">报告: {{ result.reportId }}</span>
+          <span class="muted small mono" v-if="result.reportId">{{ t('ai.reportLbl') }}: {{ result.reportId }}</span>
         </div>
         <pre class="ai-note">{{ result.aiNote }}</pre>
         <details class="ai-data" v-if="result.aiData">
-          <summary class="muted small">分析元数据(模型/模板/RAG/记忆, 存报告中心)</summary>
+          <summary class="muted small">{{ t('ai.metaSummary') }}</summary>
           <pre class="mono small">{{ JSON.stringify(fmtAI(result.aiData), null, 2) }}</pre>
         </details>
-        <div class="muted small" v-if="!isMonitorMod">研判结果已存入报告中心对应报告(原始数据 + AI 研判可同时查看)。</div>
-        <div class="muted small" v-else>节点监控不生成原始报告(仅记日志): 研判结果只在本弹窗展示, 不存入报告中心。</div>
+        <div class="muted small" v-if="!isMonitorMod">{{ t('ai.savedNote') }}</div>
+        <div class="muted small" v-else>{{ t('ai.monitorNote') }}</div>
       </template>
       <template #footer>
-        <button class="btn" @click="result = null">关闭</button>
-        <router-link v-if="!isMonitorMod" class="btn primary" to="/reports?tab=raw">去报告中心查看(原始报告)</router-link>
+        <button class="btn" @click="result = null">{{ t('ai.close') }}</button>
+        <router-link v-if="!isMonitorMod" class="btn primary" to="/reports?tab=raw">{{ t('ai.gotoReport') }}</router-link>
       </template>
     </Modal>
   </span>

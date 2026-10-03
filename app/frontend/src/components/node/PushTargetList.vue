@@ -12,46 +12,46 @@
 <template>
   <div class="card">
     <div class="card-title">
-      推送目标管理
-      <span class="sub">{{ loading ? '加载中…' : pushStore.targets.length + ' 个 · 配置与后端同步' }}</span>
+      {{ t('pt.title') }}
+      <span class="sub">{{ loading ? t('push.loading') : t('pt.cnt', { n: pushStore.targets.length }) }}</span>
       <div class="spacer"></div>
-      <button class="btn primary xs" @click="openAdd">＋ 新增目标</button>
+      <button class="btn primary xs" @click="openAdd">＋ {{ t('pt.add') }}</button>
     </div>
 
     <div v-if="!pushStore.targets.length" class="empty">
       <div class="big">＋</div>
-      尚未配置推送目标。点击右上「新增目标」添加企业微信 / 钉钉 / 飞书 Webhook。
+      {{ t('pt.empty') }}
     </div>
 
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
           <tr>
-            <th style="width:46px">序号</th>
-            <th>名称</th>
-            <th>推送类型</th>
-            <th>Webhook 地址</th>
-            <th>启用状态</th>
-            <th class="a-r" style="width:158px">操作</th>
+            <th style="width:46px">{{ t('pt.cNo') }}</th>
+            <th>{{ t('pt.cName') }}</th>
+            <th>{{ t('pt.cType') }}</th>
+            <th>Webhook</th>
+            <th>{{ t('pt.cEnabled') }}</th>
+            <th class="a-r" style="width:158px">{{ t('pt.cOp') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(t, i) in pushStore.targets" :key="t.id">
+          <tr v-for="(tg, i) in pushStore.targets" :key="tg.id">
             <td class="muted mono">{{ i + 1 }}</td>
             <td>
-              <div>{{ t.name }}</div>
-              <div class="muted small" v-if="t.note">{{ t.note }}</div>
+              <div>{{ tg.name }}</div>
+              <div class="muted small" v-if="tg.note">{{ tg.note }}</div>
             </td>
-            <td><span class="badge">{{ typeLabel(t.type) }}</span></td>
-            <td class="mono small" :title="t.webhook">{{ maskWebhook(t.webhook) }}</td>
-            <td><span class="chip" :class="t.enabled ? 'on' : 'off'">{{ t.enabled ? '已启用' : '已停用' }}</span></td>
+            <td><span class="badge">{{ t(typeLabel(tg.type)) }}</span></td>
+            <td class="mono small" :title="tg.webhook">{{ maskWebhook(tg.webhook) }}</td>
+            <td><span class="chip" :class="tg.enabled ? 'on' : 'off'">{{ tg.enabled ? t('pt.on') : t('pt.off') }}</span></td>
             <td class="a-r">
               <div class="row-actions">
-                <button class="btn xs" @click="openEdit(t)">编辑</button>
-                <button class="btn xs" :disabled="testingId === t.id" @click="testTarget(t)">
-                  {{ testingId === t.id ? '发送中…' : '测试' }}
+                <button class="btn xs" @click="openEdit(tg)">{{ t('common.edit') }}</button>
+                <button class="btn xs" :disabled="testingId === tg.id" @click="testTarget(tg)">
+                  {{ testingId === tg.id ? t('pt.sending') : t('pt.test') }}
                 </button>
-                <button class="btn xs danger" @click="askDelete(t)">删除</button>
+                <button class="btn xs danger" @click="askDelete(tg)">{{ t('common.del') }}</button>
               </div>
             </td>
           </tr>
@@ -60,73 +60,73 @@
     </div>
 
     <!-- 新增/编辑弹窗 -->
-    <Modal v-if="showModal" :title="editingId ? '编辑推送目标' : '新增推送目标'" @close="closeModal">
+    <Modal v-if="showModal" :title="editingId ? t('pt.editTitle') : t('pt.addTitle')" @close="closeModal">
       <div class="field">
-        <label class="label">推送名称 <span class="req">*</span></label>
-        <input class="input" v-model="form.name" maxlength="20" placeholder="安全运营群 Webhook" />
+        <label class="label">{{ t('pt.name') }} <span class="req">*</span></label>
+        <input class="input" v-model="form.name" maxlength="20" :placeholder="t('pt.namePh')" />
         <div class="form-err" v-if="err.name">{{ err.name }}</div>
         <div class="muted small form-meta">{{ form.name.length }}/20</div>
       </div>
       <div class="field">
-        <label class="label">推送类型</label>
+        <label class="label">{{ t('pt.type') }}</label>
         <select class="input" v-model="form.type">
-          <option v-for="t in PUSH_TYPES" :key="t.key" :value="t.key">{{ t.label }}</option>
+          <option v-for="tp in PUSH_TYPES" :key="tp.key" :value="tp.key">{{ t(tp.label) }}</option>
         </select>
-        <div class="muted small">当前仅企业微信可用, 钉钉 / 飞书为预留(协议差异待后端接入)。</div>
+        <div class="muted small">{{ t('pt.typeNote') }}</div>
       </div>
       <div class="field">
-        <label class="label">Webhook 地址 <span class="req">*</span></label>
+        <label class="label">Webhook <span class="req">*</span></label>
         <input class="input mono" v-model="form.webhook"
                placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
         <div class="form-err" v-if="err.webhook">{{ err.webhook }}</div>
       </div>
       <div class="field">
-        <label class="label">备注(选填)</label>
-        <input class="input" v-model="form.note" placeholder="群用途等说明" />
+        <label class="label">{{ t('pt.note') }}</label>
+        <input class="input" v-model="form.note" :placeholder="t('pt.notePh')" />
       </div>
       <div class="field">
-        <label class="label">启用开关</label>
+        <label class="label">{{ t('pt.enable') }}</label>
         <label class="checkbox">
           <input type="checkbox" v-model="form.enabled" />
-          启用(新增目标默认开启; 停用的目标不参与推送)
+          {{ t('pt.enableHint') }}
         </label>
       </div>
       <div class="form-actions">
-        <button class="btn" @click="closeModal">取消</button>
-        <button class="btn primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
+        <button class="btn" @click="closeModal">{{ t('common.cancel') }}</button>
+        <button class="btn primary" :disabled="saving" @click="save">{{ saving ? t('pt.saving') : t('common.save') }}</button>
       </div>
     </Modal>
 
     <!-- 删除二次确认弹窗 -->
-    <Modal v-if="delTarget" title="确认删除" width="420px" @close="delTarget = null">
-      <p style="font-size:13.5px">确认删除推送目标 <b>「{{ delTarget.name }}」</b>?</p>
-      <p class="muted small" style="margin-top:8px">删除后推送规则中对该目标的关联将一并清除, 此操作不可恢复。</p>
+    <Modal v-if="delTarget" :title="t('pt.delTitle')" width="420px" @close="delTarget = null">
+      <p style="font-size:13.5px">{{ t('pt.delConfirm', { name: delTarget.name }) }}</p>
+      <p class="muted small" style="margin-top:8px">{{ t('pt.delNote') }}</p>
       <div class="form-actions">
-        <button class="btn" :disabled="deling" @click="delTarget = null">取消</button>
-        <button class="btn primary" :disabled="deling" @click="doDelete">{{ deling ? '删除中…' : '确认删除' }}</button>
+        <button class="btn" :disabled="deling" @click="delTarget = null">{{ t('common.cancel') }}</button>
+        <button class="btn primary" :disabled="deling" @click="doDelete">{{ deling ? t('pt.deleting') : t('pt.doDel') }}</button>
       </div>
     </Modal>
 
     <!-- 测试推送结果弹窗: 成功绿色 / 失败红色+原因(后端真实发送回执) -->
-    <Modal v-if="testResult" title="测试推送结果" width="440px" @close="testResult = null">
+    <Modal v-if="testResult" :title="t('pt.testTitle')" width="440px" @close="testResult = null">
       <div v-if="testResult.success" class="test-res ok">
         <div class="test-icon">✓</div>
         <div>
-          <div class="test-title">测试消息发送成功</div>
-          <div class="muted small">请到「{{ testResult.name }}」对应的群查看测试告警消息。</div>
+          <div class="test-title">{{ t('pt.testOk') }}</div>
+          <div class="muted small">{{ t('pt.testOkHint', { name: testResult.name }) }}</div>
           <div class="muted small" v-if="testResult.message">{{ testResult.message }}</div>
         </div>
       </div>
       <div v-else class="test-res fail">
         <div class="test-icon">✕</div>
         <div>
-          <div class="test-title">测试消息发送失败</div>
-          <div class="test-reason">{{ testResult.message || '未知错误(请查看后端日志)' }}</div>
+          <div class="test-title">{{ t('pt.testFail') }}</div>
+          <div class="test-reason">{{ testResult.message || t('pt.testUnknown') }}</div>
         </div>
       </div>
       <div class="form-actions">
         <div class="spacer"></div>
-        <button class="btn primary" @click="testResult = null">确定</button>
+        <button class="btn primary" @click="testResult = null">{{ t('common.ok') }}</button>
       </div>
     </Modal>
   </div>
@@ -145,6 +145,7 @@ import {
   fetchTargets, createTarget, updateTarget, deleteTarget,
   fetchRules, saveRules, testPush
 } from '../../api/nodepush'
+import { t } from '../../i18n'
 
 const emit = defineEmits(['change'])
 
@@ -155,7 +156,7 @@ async function load() {
   try {
     pushStore.targets = await fetchTargets()   // GET /api/node/push/targets
   } catch (e) {
-    toast('加载推送目标失败(保留上次配置): ' + e.message, 'err')
+    toast(t('pt.loadFail', { err: e.message }), 'err')
   } finally {
     loading.value = false
   }
@@ -190,9 +191,9 @@ function save() {
   // 必填 + 格式校验(名称必填 ≤20 字符, Webhook 必须合法 http/https URL)
   const e = {}
   const name = form.name.trim()
-  if (!name) e.name = '推送名称必填'
-  else if (name.length > 20) e.name = '推送名称不能超过 20 个字符'
-  if (!isWebhookURL(form.webhook.trim())) e.webhook = '请填写合法的 http/https Webhook 地址'
+  if (!name) e.name = t('pt.nameReq')
+  else if (name.length > 20) e.name = t('pt.nameLen')
+  if (!isWebhookURL(form.webhook.trim())) e.webhook = t('pt.webhookReq')
   err.name = e.name || ''; err.webhook = e.webhook || ''
   if (e.name || e.webhook) return
 
@@ -207,7 +208,7 @@ function save() {
   }
   const fail = (e) => {
     saving.value = false
-    toast('保存失败: ' + e.message, 'err')
+    toast(t('pt.saveFail', { err: e.message }), 'err')
   }
   if (editingId.value) {
     // PUT /api/node/push/target/{id}
@@ -221,17 +222,17 @@ function save() {
 // ===== 测试推送(前端触发, 后端真实发送并回执) =====
 const testingId = ref('')
 const testResult = ref(null)   // { name, success, message }
-async function testTarget(t) {
-  if (!t.enabled) {
-    toast('目标「' + t.name + '」已停用, 请先启用再测试', 'info')
+async function testTarget(tg) {
+  if (!tg.enabled) {
+    toast(t('pt.disabledHint', { name: tg.name }), 'info')
     return
   }
-  testingId.value = t.id
+  testingId.value = tg.id
   try {
     // POST /api/node/push/test {targetId}; 10s 超时在 testPush 内处理,
     // 恒返回 {success, message}, 失败原因统一在结果弹窗红色展示
-    const r = await testPush(t.id)
-    testResult.value = { name: t.name, success: r.success, message: r.message }
+    const r = await testPush(tg.id)
+    testResult.value = { name: tg.name, success: r.success, message: r.message }
   } finally {
     testingId.value = ''
   }
@@ -240,31 +241,31 @@ async function testTarget(t) {
 // ===== 删除(二次确认 + 级联清理规则关联) =====
 const delTarget = ref(null)
 const deling = ref(false)
-function askDelete(t) { delTarget.value = t }
+function askDelete(tg) { delTarget.value = tg }
 async function doDelete() {
-  const t = delTarget.value
-  if (!t || deling.value) return
+  const tg = delTarget.value
+  if (!tg || deling.value) return
   deling.value = true
   try {
     // DELETE /api/node/push/target/{id}
-    await deleteTarget(t.id)
+    await deleteTarget(tg.id)
     delTarget.value = null
     emit('change')
-    toast('推送目标已删除', 'info')
+    toast(t('pt.deleted'), 'info')
     load()
     // 级联清理: 推送规则里对该目标的关联一并清除(删除弹窗已承诺此行为)。
     // 尽力而为: 失败只提示不阻断 —— 残留 id 无害(规则页按实际目标过滤展示,
     // 下次保存规则时 payload 只含有效 id, 自然清除)。
     try {
       const r = await fetchRules()
-      if ((r.targetIds || []).includes(t.id)) {
-        await saveRules({ ...r, targetIds: r.targetIds.filter(id => id !== t.id) })
+      if ((r.targetIds || []).includes(tg.id)) {
+        await saveRules({ ...r, targetIds: r.targetIds.filter(id => id !== tg.id) })
       }
     } catch (e) {
-      toast('目标已删除, 但规则关联清理失败(下次保存规则时自动清除)', 'info')
+      toast(t('pt.delCleanFail'), 'info')
     }
   } catch (e) {
-    toast('删除失败: ' + e.message, 'err')
+    toast(t('pt.delFail', { err: e.message }), 'err')
   } finally {
     deling.value = false
   }

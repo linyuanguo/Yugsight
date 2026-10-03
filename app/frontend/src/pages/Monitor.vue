@@ -5,44 +5,44 @@
 -->
 <template>
   <div class="page">
-    <PageHeader title="网络监控 (SNMP)" desc="只读 GET/GETBULK 周期采集交换机/路由器/服务器指标, 对设备零影响">
+    <PageHeader :title="t('nm.monTitle')" :desc="t('nm.monDesc')">
       <button class="btn sm" @click="collectNow" :disabled="collecting">
-        {{ collecting ? '采集中…' : '立即采集一轮' }}
+        {{ collecting ? t('nm.collecting') : t('nm.collectNow') }}
       </button>
-      <button class="btn primary sm" @click="openAdd">＋ 添加目标</button>
+      <button class="btn primary sm" @click="openAdd">＋ {{ t('nm.addTarget') }}</button>
     </PageHeader>
 
     <!-- 轮询配置 -->
     <div class="card">
-      <div class="card-title">轮询配置</div>
+      <div class="card-title">{{ t('nm.pollCfg') }}</div>
       <div class="form-row cfg-row">
         <div class="field cfg-field">
-          <label class="lbl">启用监控</label>
+          <label class="lbl">{{ t('nm.enableMon') }}</label>
           <div class="cfg-toggle">
-            <span class="chip" :class="status.enabled ? 'on' : 'off'">{{ status.enabled ? '已启用' : '已停用' }}</span>
-            <button class="btn xs" @click="toggleEnabled">{{ status.enabled ? '停用' : '启用' }}</button>
+            <span class="chip" :class="status.enabled ? 'on' : 'off'">{{ status.enabled ? t('nm.enabled') : t('nm.disabled') }}</span>
+            <button class="btn xs" @click="toggleEnabled">{{ status.enabled ? t('nm.stop') : t('nm.enable') }}</button>
           </div>
         </div>
         <div class="field cfg-field">
-          <label class="lbl">轮询间隔(秒, 最小 5)</label>
+          <label class="lbl">{{ t('nm.pollInterval') }}</label>
           <input class="input cfg-input" type="number" min="5" v-model.number="cfgInterval" />
         </div>
         <div class="field cfg-field" style="justify-content:flex-end">
-          <button class="btn primary sm" @click="saveConfig" :disabled="savingConfig">保存配置</button>
+          <button class="btn primary sm" @click="saveConfig" :disabled="savingConfig">{{ t('nm.saveCfg') }}</button>
         </div>
       </div>
       <div class="muted small" v-if="status.lastRound">
-        最近一轮 {{ fmtDT(status.lastRound.at) }} · {{ status.lastRound.ok }}/{{ status.lastRound.total }} 成功 · {{ status.lastRound.durationMs }}ms
-        <span v-if="status.lastRound.errors && status.lastRound.errors.length" style="color:var(--orange)">（有错误）</span>
+        {{ t('nm.lastRound', { at: fmtDT(status.lastRound.at), ok: status.lastRound.ok, total: status.lastRound.total, ms: status.lastRound.durationMs }) }}
+        <span v-if="status.lastRound.errors && status.lastRound.errors.length" style="color:var(--orange)">{{ t('nm.hasErr') }}</span>
       </div>
     </div>
 
     <!-- 目标列表 -->
     <div class="card">
-      <div class="card-title">监控目标 <span class="sub">{{ onlineCount }} 在线 / {{ targets.length }} 个</span></div>
+      <div class="card-title">{{ t('nm.monTargets') }} <span class="sub">{{ t('nm.onlineCnt', { n: onlineCount, m: targets.length }) }}</span></div>
       <div v-if="!targets.length" class="empty-box">
-        <span class="ph-tag">无目标</span>
-        尚未配置 SNMP 监控目标。点击右上「添加目标」, 填入设备 IP / 社区串后开始采集。
+        <span class="ph-tag">{{ t('nm.noTargets') }}</span>
+        {{ t('nm.noTargetsHint') }}
       </div>
       <div v-else class="table-wrap">
         <table class="table">
@@ -51,32 +51,32 @@
               <!-- 2026-09-27: 新增 IP 地址/MAC 地址列(与设备名称/状态并列);
                    同时修正原"地址"列表头错位(该列实际内容是 SNMP 版本, 改名为"版本",
                    表头与单元格一一对齐) -->
-              <th>状态</th><th>名称</th><th>IP 地址</th><th>MAC 地址</th><th>版本</th>
-              <th>CPU</th><th>内存</th><th>流量(每周期)</th><th>接口 up/总</th><th>最近采集</th><th class="a-r">操作</th>
+              <th>{{ t('nm.colStatus') }}</th><th>{{ t('nm.colName') }}</th><th>{{ t('nm.colIp') }}</th><th>MAC</th><th>{{ t('nm.colVer') }}</th>
+              <th>CPU</th><th>{{ t('nm.colMem') }}</th><th>{{ t('nm.colTraffic') }}</th><th>{{ t('nm.colIfs') }}</th><th>{{ t('nm.colLastCollected') }}</th><th class="a-r">{{ t('nm.colOp') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="t in targets" :key="t.id">
-              <td><span class="dot" :class="t.online ? 'on' : 'off'"></span></td>
-              <td><div>{{ t.name || t.addr }}</div><div class="muted small mono" v-if="t.lastErr">{{ t.lastErr }}</div></td>
-              <td class="mono small">{{ t.addr || '-' }}</td>
+            <tr v-for="tg in targets" :key="tg.id">
+              <td><span class="dot" :class="tg.online ? 'on' : 'off'"></span></td>
+              <td><div>{{ tg.name || tg.addr }}</div><div class="muted small mono" v-if="tg.lastErr">{{ tg.lastErr }}</div></td>
+              <td class="mono small">{{ tg.addr || '-' }}</td>
               <!-- MAC 来自 SNMP ifPhysAddress(首个 up 接口); 设备不支持时显示 '-' -->
-              <td class="mono small">{{ t.mac || '-' }}</td>
+              <td class="mono small">{{ tg.mac || '-' }}</td>
               <!-- 2026-10-01: 内置"中心端(本机)"(source=center)不是 SNMP 目标, 版本列显示"本机" -->
-              <td class="mono muted"><span v-if="t.source === 'center'">本机</span><span v-else>{{ t.version }}<span v-if="t.v3User"> · {{ t.v3User }}</span></span></td>
-              <td class="mono">{{ t.cpuLoad ? t.cpuLoad + '%' : '-' }}</td>
-              <td class="mono">{{ memUsedPct(t) }}</td>
-              <td class="mono small">{{ fmtSpeed(t.inRateBps) }}↓ / {{ fmtSpeed(t.outRateBps) }}↑</td>
+              <td class="mono muted"><span v-if="tg.source === 'center'">{{ t('nm.local') }}</span><span v-else>{{ tg.version }}<span v-if="tg.v3User"> · {{ tg.v3User }}</span></span></td>
+              <td class="mono">{{ tg.cpuLoad ? tg.cpuLoad + '%' : '-' }}</td>
+              <td class="mono">{{ memUsedPct(tg) }}</td>
+              <td class="mono small">{{ fmtSpeed(tg.inRateBps) }}↓ / {{ fmtSpeed(tg.outRateBps) }}↑</td>
               <!-- 内置中心端没有 SNMP 接口表(接口数指标不适用于主机) -->
-              <td class="mono"><span v-if="t.source === 'center'">—</span><span v-else>{{ t.ifUp }}/{{ t.ifaceCount }}</span></td>
-              <td class="mono small muted">{{ fmtDT(t.lastAt) }}</td>
+              <td class="mono"><span v-if="tg.source === 'center'">—</span><span v-else>{{ tg.ifUp }}/{{ tg.ifaceCount }}</span></td>
+              <td class="mono small muted">{{ fmtDT(tg.lastAt) }}</td>
               <td class="a-r">
                 <!-- 内置中心端: 不落配置, 编辑/删除在后端无对应目标(会报"目标不存在"), 故不给出入口 -->
                 <div class="row-actions">
-                  <span v-if="t.source === 'center'" class="muted small">内置</span>
+                  <span v-if="tg.source === 'center'" class="muted small">{{ t('nm.builtin') }}</span>
                   <template v-else>
-                    <button class="btn xs" @click="openEdit(t)">编辑</button>
-                    <button class="btn xs danger" @click="del(t)">删除</button>
+                    <button class="btn xs" @click="openEdit(tg)">{{ t('common.edit') }}</button>
+                    <button class="btn xs danger" @click="del(tg)">{{ t('common.del') }}</button>
                   </template>
                 </div>
               </td>
@@ -89,74 +89,74 @@
     <!-- 添加/编辑目标 -->
     <Modal v-if="showModal" :title="modalTitle" @close="closeModal">
       <div class="field">
-        <label class="lbl">名称 <span class="req">*</span></label>
-        <input class="input" v-model="form.name" placeholder="核心交换机-A" />
+        <label class="lbl">{{ t('nm.name') }} <span class="req">*</span></label>
+        <input class="input" v-model="form.name" :placeholder="t('nm.namePh')" />
       </div>
       <div class="field">
-        <label class="lbl">地址 (IP 或 IP:端口) <span class="req">*</span></label>
+        <label class="lbl">{{ t('nm.addr') }} <span class="req">*</span></label>
         <input class="input" v-model="form.addr" placeholder="192.168.1.1 或 192.168.1.1:161" />
       </div>
       <div class="field">
-        <label class="lbl">SNMP 版本</label>
+        <label class="lbl">{{ t('nm.snmpVer') }}</label>
         <select class="input" v-model="form.version">
-          <option value="v2c">v2c(社区串)</option>
-          <option value="v3">v3(USM 鉴权/加密)</option>
+          <option value="v2c">{{ t('nm.v2c') }}</option>
+          <option value="v3">{{ t('nm.v3') }}</option>
         </select>
       </div>
       <div class="form-row" v-if="form.version === 'v2c'">
         <div class="field">
-          <label class="lbl">社区串 (只读) <span class="req">*</span></label>
+          <label class="lbl">{{ t('nm.community') }} <span class="req">*</span></label>
           <input class="input" v-model="form.community" placeholder="public" />
         </div>
         <div class="field">
-          <label class="lbl">超时 (ms)</label>
+          <label class="lbl">{{ t('nm.timeout') }}</label>
           <input class="input" type="number" min="0" v-model.number="form.timeoutMs" />
         </div>
       </div>
       <template v-else>
         <div class="form-row">
           <div class="field">
-            <label class="lbl">用户名 <span class="req">*</span></label>
+            <label class="lbl">{{ t('nm.username') }} <span class="req">*</span></label>
             <input class="input" v-model="form.user" placeholder="monitor" />
           </div>
           <div class="field">
-            <label class="lbl">超时 (ms)</label>
+            <label class="lbl">{{ t('nm.timeout') }}</label>
             <input class="input" type="number" min="0" v-model.number="form.timeoutMs" />
           </div>
         </div>
         <div class="form-row">
           <div class="field">
-            <label class="lbl">鉴权协议</label>
+            <label class="lbl">{{ t('nm.authProto') }}</label>
             <select class="input" v-model="form.authProto">
-              <option value="">不鉴权</option>
+              <option value="">{{ t('nm.noAuth') }}</option>
               <option value="md5">MD5</option>
               <option value="sha">SHA1</option>
             </select>
           </div>
           <div class="field">
-            <label class="lbl">鉴权口令</label>
-            <input class="input" type="password" v-model="form.authPass" :placeholder="editingId ? '留空=不修改' : ''" />
+            <label class="lbl">{{ t('nm.authPass') }}</label>
+            <input class="input" type="password" v-model="form.authPass" :placeholder="editingId ? t('nm.keepEmpty') : ''" />
           </div>
         </div>
         <div class="form-row">
           <div class="field">
-            <label class="lbl">加密协议</label>
+            <label class="lbl">{{ t('nm.privProto') }}</label>
             <select class="input" v-model="form.privProto">
-              <option value="">不加密</option>
+              <option value="">{{ t('nm.noPriv') }}</option>
               <option value="des">DES</option>
               <option value="aes">AES-128</option>
             </select>
           </div>
           <div class="field">
-            <label class="lbl">加密口令</label>
-            <input class="input" type="password" v-model="form.privPass" :placeholder="editingId ? '留空=不修改' : ''" />
+            <label class="lbl">{{ t('nm.privPass') }}</label>
+            <input class="input" type="password" v-model="form.privPass" :placeholder="editingId ? t('nm.keepEmpty') : ''" />
           </div>
         </div>
-        <p class="muted small">口令加密存储(密钥取自环境变量 YUGSIGHT_MONITOR_KEY), 列表接口不回传口令。</p>
+        <p class="muted small">{{ t('nm.passNote') }}</p>
       </template>
       <div class="form-actions">
-        <button class="btn" @click="closeModal">取消</button>
-        <button class="btn primary" @click="saveTarget" :disabled="saving">{{ saving ? '保存中…' : '保存' }}</button>
+        <button class="btn" @click="closeModal">{{ t('common.cancel') }}</button>
+        <button class="btn primary" @click="saveTarget" :disabled="saving">{{ saving ? t('nm.saving') : t('common.save') }}</button>
       </div>
     </Modal>
   </div>
@@ -164,6 +164,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { t } from '../i18n'
 import PageHeader from '../components/PageHeader.vue'
 import Modal from '../components/Modal.vue'
 import { v2 } from '../api/http'
@@ -198,7 +199,7 @@ const form = reactive({
   // v3(USM): version 只用于表单显隐, 后端以 user 是否非空判定 v2c/v3
   version: 'v2c', user: '', authProto: 'md5', authPass: '', privProto: '', privPass: '', context: ''
 })
-const modalTitle = computed(() => (editingId.value ? '编辑目标' : '添加目标'))
+const modalTitle = computed(() => (editingId.value ? t('nm.editTarget') : t('nm.addTarget')))
 
 const onlineCount = computed(() => targets.value.filter(t => t.online).length)
 
@@ -232,7 +233,7 @@ async function saveConfig(forceEnabled) {
     await v2('/monitor/config', { method: 'POST', body })
     await load()
   } catch (e) {
-    alert('保存失败: ' + (e && e.message || e))
+    alert(t('nm.saveFail', { err: (e && e.message || e) }))
   } finally {
     savingConfig.value = false
   }
@@ -244,7 +245,7 @@ async function collectNow() {
     await v2('/monitor/collect', { method: 'POST', body: {} })
     await load()
   } catch (e) {
-    alert('采集失败: ' + (e && e.message || e))
+    alert(t('nm.collectFail', { err: (e && e.message || e) }))
   } finally {
     collecting.value = false
   }
@@ -274,16 +275,16 @@ function closeModal() { showModal.value = false }
 
 async function saveTarget() {
   if (!form.name.trim() || !form.addr.trim()) {
-    alert('名称 / 地址 必填')
+    alert(t('nm.nameAddrRequired'))
     return
   }
   if (form.version === 'v2c' && !form.community.trim()) {
-    alert('v2c 目标必须填社区串')
+    alert(t('nm.v2cNeedCommunity'))
     return
   }
   if (form.version === 'v3') {
-    if (!form.user.trim()) { alert('v3 目标必须填用户名'); return }
-    if (form.authProto && !editingId.value && !form.authPass) { alert('v3 指定鉴权协议时必须填鉴权口令'); return }
+    if (!form.user.trim()) { alert(t('nm.v3NeedUser')); return }
+    if (form.authProto && !editingId.value && !form.authPass) { alert(t('nm.v3NeedAuthPass')); return }
   }
   saving.value = true
   try {
@@ -301,19 +302,19 @@ async function saveTarget() {
     closeModal()
     await load()
   } catch (e) {
-    alert('保存失败: ' + (e && e.message || e))
+    alert(t('nm.saveFail', { err: (e && e.message || e) }))
   } finally {
     saving.value = false
   }
 }
 
-async function del(t) {
-  if (!confirm(`确认删除目标「${t.name || t.addr}」?`)) return
+async function del(task) {
+  if (!confirm(t('nm.delTargetConfirm', { name: task.name || task.addr }))) return
   try {
-    await v2('/monitor/targets/' + t.id, { method: 'DELETE' })
+    await v2('/monitor/targets/' + task.id, { method: 'DELETE' })
     await load()
   } catch (e) {
-    alert('删除失败: ' + (e && e.message || e))
+    alert(t('nm.delFail', { err: (e && e.message || e) }))
   }
 }
 

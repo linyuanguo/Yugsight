@@ -16,40 +16,41 @@ export function uid(prefix = 'id') {
 
 // ===== 告警级别(与漏洞五级口径区分: 节点告警是三级) =====
 // key 与后端 node_alerts 表 level 字段一一对应(critical/warning/info)。
+// label 存 i18n 词条键, 渲染处经 t() 解析(2026-10-04 i18n 批次 7)。
 export const LEVELS = [
-  { key: 'critical', label: '紧急', color: 'var(--red)', cls: 'sev-critical' },
-  { key: 'warning', label: '重要', color: 'var(--amber)', cls: 'sev-medium' },
-  { key: 'info', label: '提示', color: 'var(--blue)', cls: 'sev-info' }
+  { key: 'critical', label: 'push.lvlCritical', color: 'var(--red)', cls: 'sev-critical' },
+  { key: 'warning', label: 'push.lvlWarning', color: 'var(--amber)', cls: 'sev-medium' },
+  { key: 'info', label: 'push.lvlInfo', color: 'var(--blue)', cls: 'sev-info' }
 ]
 export const LEVEL_LABEL = Object.fromEntries(LEVELS.map(l => [l.key, l.label]))
 
 // 告警来源(与后端 node_alerts.source 一一对应: device/link/probe)
 export const SOURCE_LABEL = {
-  device: '设备',
-  link: '链路',
-  probe: '探针'
+  device: 'push.srcDevice',
+  link: 'push.srcLink',
+  probe: 'push.srcProbe'
 }
 
 // 推送状态(与后端 node_alerts.pushStatus 一一对应)
 export const PUSH_STATUS = [
-  { key: 'unpushed', label: '未推送' },
-  { key: 'pushed', label: '推送成功' },
-  { key: 'failed', label: '推送失败' }
+  { key: 'unpushed', label: 'push.stUnpushed' },
+  { key: 'pushed', label: 'push.stPushed' },
+  { key: 'failed', label: 'push.stFailed' }
 ]
 export const PUSH_STATUS_LABEL = Object.fromEntries(PUSH_STATUS.map(s => [s.key, s.label]))
 
 // ===== 推送目标类型(与企业微信/钉钉/飞书 Webhook 平台对应) =====
 export const TARGET_TYPES = [
-  { key: 'wecom', label: '企业微信', icon: '💬' },
-  { key: 'dingtalk', label: '钉钉', icon: '🔔' },
-  { key: 'feishu', label: '飞书', icon: '🪁' }
+  { key: 'wecom', label: 'push.ttWecom', icon: '💬' },
+  { key: 'dingtalk', label: 'push.ttDingtalk', icon: '🔔' },
+  { key: 'feishu', label: 'push.ttFeishu', icon: '🪁' }
 ]
 export const TARGET_TYPE_LABEL = Object.fromEntries(TARGET_TYPES.map(t => [t.key, t.label]))
 // PUSH_TYPES: PushTargetList 的模板按此名引用(兼容别名, 与 TARGET_TYPES 同一来源)
 export const PUSH_TYPES = TARGET_TYPES
-// typeLabel: 类型 key → 中文名(未知 key 原样返回, 不丢信息)
+// typeLabel: 类型 key → i18n 词条键(未知 key 原样返回, 不丢信息; 渲染处再套 t())
 export function typeLabel(key) {
-  return TARGET_TYPE_LABEL[key] || key || '未知'
+  return TARGET_TYPE_LABEL[key] || key || 'push.ttUnknown'
 }
 // isWebhookURL: 与后端 validPushTarget 同口径(必须 http/https 且带 host)
 export function isWebhookURL(u) {

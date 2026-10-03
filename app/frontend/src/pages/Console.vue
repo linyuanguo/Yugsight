@@ -1575,10 +1575,10 @@ function short(s, n = 46) {
   const v = String(s || '-')
   return v.length > n ? v.slice(0, n) + '…' : v
 }
-function costText(t) {
-  const q = t.queuedMs ? (t.queuedMs / 1000).toFixed(1) + 's' : '-'
-  const r = t.runMs ? (t.runMs / 1000).toFixed(1) + 's' : '-'
-  return '排队 ' + q + ' / 执行 ' + r
+function costText(task) {
+  const q = task.queuedMs ? (task.queuedMs / 1000).toFixed(1) + 's' : '-'
+  const r = task.runMs ? (task.runMs / 1000).toFixed(1) + 's' : '-'
+  return t('console.cost', { q, r })
 }
 // 令牌桶占用率: 桶容量 = 速率(1 秒的令牌), 故 tokens/rate 即剩余可用比例。
 // 速率为 0(不限速)时无"占用"概念, 返回 0 宽度而不是 NaN。

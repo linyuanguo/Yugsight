@@ -32,6 +32,7 @@ import { v2 } from '../../api/http'
 import { LEVELS, LEVEL_LABEL, SOURCE_LABEL, PUSH_STATUS_LABEL, pushStore } from '../../utils/nodepush'
 import { fetchAlerts, retryPush, setAlertHandled, fetchLogs } from '../../api/nodepush'
 import AiAnalyzeButton from '../../components/AiAnalyzeButton.vue'
+import { t } from '../../i18n'
 
 const props = defineProps({
   // 父页(NodeMonitor)注入的离开守卫注册口: 传 fn(返回 false 拦截) 或 null 注销
@@ -55,7 +56,7 @@ const pushDirty = ref(false)
 function onPushDirty(d) { pushDirty.value = !!d }
 function leaveGuard() {
   if (!pushDirty.value) return true
-  return window.confirm('推送配置有未保存的修改, 离开将丢失。确定离开吗?')
+  return window.confirm(t('al.leaveConfirm'))
 }
 onMounted(() => { if (props.setGuard) props.setGuard(leaveGuard) })
 onBeforeUnmount(() => {
@@ -129,7 +130,7 @@ async function setHandled(a, v) {
     await setAlertHandled(a.id, next)
   } catch (e) {
     a.handled = prev
-    toast('操作失败: ' + e.message, 'err')
+    toast(t('al.opFail', { err: e.message }), 'err')
   }
 }
 
@@ -141,11 +142,11 @@ async function doRetry(a) {
   try {
     const d = await retryPush(a.id)
     const ok = d && d.status === 'pushed'
-    toast(ok ? '重推成功' : '重推失败, 失败原因见推送日志', ok ? 'ok' : 'err')
+    toast(ok ? t('al.retryOk') : t('al.retryFail'), ok ? 'ok' : 'err')
     await loadAlerts(true) // 刷新推送状态
     loadLogs(true)         // 刷新推送日志(新产生的日志立即可见)
   } catch (e) {
-    toast('重推失败: ' + e.message, 'err')
+    toast(t('al.retryErr', { err: e.message }), 'err')
   } finally {
     retryingId.value = ''
   }
@@ -166,7 +167,7 @@ watch(() => route.query.alertId, (id) => {
       // 列表已就绪但行不在: 可能被级别/时间筛选挡掉 → 清筛选再试
       fLevel.value = ''; fFrom.value = ''; fTo.value = ''
     } else if (tries >= 15) {
-      toast('未在最近告警中找到该记录(可能已被裁剪)', 'info')
+      toast(t('al.notFound'), 'info')
     }
     tries++
     if (tries < 15) setTimeout(attempt, 300) // 等 5s 轮询的首次拉取
@@ -249,10 +250,11 @@ function stopEvtPoll() { if (evtTimer) { clearInterval(evtTimer); evtTimer = nul
 // 改为全局 15s 轮询, 徽章计数进页即准确(每次拉最近 200 条, 开销 ≈1 请求/15s, 可接受)。
 onMounted(startEvtPoll)
 onBeforeUnmount(stopEvtPoll)
-// 事件类型中文(原 NodeCommonCards 口径)
-function evtLabel(t) {
-  const map = { offline: '离线', recover: '恢复', high_cpu: 'CPU 越限', high_mem: '内存越限', high_rtt: '时延越限', high_loss: '丢包越限' }
-  return map[t] || t
+// 事件类型词条键(原 NodeCommonCards 口径; 未知类型原样返回)
+function evtLabel(tp) {
+  const map = { offline: 'al.evOffline', recover: 'al.evRecover', high_cpu: 'al.evCpu', high_mem: 'al.evMem', high_rtt: 'al.evRtt', high_loss: 'al.evLoss' }
+  const k = map[tp]
+  return k ? t(k) : tp
 }
 function evtLvlClass(l) {
   return l === 'critical' ? 'off' : (l === 'warn' ? 'warn' : 'on')
@@ -268,13 +270,13 @@ function gotoAlert(alertId) {
 <template>
   <div class="page">
     <PageHeader
-      title="告警"
-      sub="节点采集异常自动生成告警, 推送状态与后端实时同步(5s 轮询)"
+      :title="t('al.title')"
+      :sub="t('al.sub')"
       :count="alertsTotal"
-      :span="'推送配置 / 测试 / 推送日志 / 告警记录 均由后端持久化'"
+      :span="t('al.span')"
     >
       <template #actions>
-        <button class="btn" :disabled="alertsErr !== ''" @click="loadAlerts(false)">刷新告警</button>
+        <button class="btn" :disabled="alertsErr !== ''" @click="loadAlerts(false)">{{ t('al.refresh') }}</button>
       </template>
     </PageHeader>
 
@@ -282,16 +284,16 @@ function gotoAlert(alertId) {
     <div class="toolbar">
       <div class="tabs">
         <button class="tab" :class="{ active: tab === 'records' }" @click="switchTab('records')">
-          告警记录<span class="cnt">{{ alertsTotal }}</span>
+          {{ t('al.tabRecords') }}<span class="cnt">{{ alertsTotal }}</span>
         </button>
         <button class="tab" :class="{ active: tab === 'plog' }" @click="switchTab('plog')">
-          推送日志<span class="cnt">{{ logTotal }}</span>
+          {{ t('al.tabPlog') }}<span class="cnt">{{ logTotal }}</span>
         </button>
         <!-- 推送配置: 推送目标 + 规则(深链 ?tab=push, 大屏拓扑卡「完整配置」跳到这里) -->
-        <button class="tab" :class="{ active: tab === 'push' }" @click="switchTab('push')">推送配置</button>
+        <button class="tab" :class="{ active: tab === 'push' }" @click="switchTab('push')">{{ t('al.tabPush') }}</button>
         <!-- 异常事件: 2026-09-30 用户要求从协议配置并入(与告警记录同源, 不再两处显示) -->
         <button class="tab" :class="{ active: tab === 'events' }" @click="switchTab('events')">
-          异常事件<span class="cnt">{{ eventsTotal }}</span>
+          {{ t('al.tabEvents') }}<span class="cnt">{{ eventsTotal }}</span>
         </button>
       </div>
 
@@ -301,29 +303,29 @@ function gotoAlert(alertId) {
            只列日志里真实出现过的目标) -->
       <div class="fgroup" v-if="tab === 'records'">
         <select class="select" v-model="fLevel">
-          <option value="">全部级别</option>
-          <option v-for="l in levelOpts" :key="l.key" :value="l.key">{{ l.label }}</option>
+          <option value="">{{ t('al.allLevels') }}</option>
+          <option v-for="l in levelOpts" :key="l.key" :value="l.key">{{ t(l.label) }}</option>
         </select>
-        <input type="date" class="input" v-model="fFrom" title="起始日期">
+        <input type="date" class="input" v-model="fFrom" :title="t('al.dFrom')">
         <span class="dash">—</span>
-        <input type="date" class="input" v-model="fTo" title="结束日期">
+        <input type="date" class="input" v-model="fTo" :title="t('al.dTo')">
       </div>
 
       <div class="fgroup" v-if="tab === 'plog'">
-        <input type="date" class="input" v-model="logFrom" title="起始日期">
+        <input type="date" class="input" v-model="logFrom" :title="t('al.dFrom')">
         <span class="dash">—</span>
-        <input type="date" class="input" v-model="logTo" title="结束日期">
+        <input type="date" class="input" v-model="logTo" :title="t('al.dTo')">
         <select class="select" v-model="logStatus">
-          <option value="">全部状态</option>
-          <option v-for="s in logStatusOpts" :key="s.id" :value="s.id">{{ PUSH_STATUS_LABEL[s.id] || s.id }} ({{ s.count }})</option>
+          <option value="">{{ t('al.allStatus') }}</option>
+          <option v-for="s in logStatusOpts" :key="s.id" :value="s.id">{{ t(PUSH_STATUS_LABEL[s.id] || s.id) }} ({{ s.count }})</option>
         </select>
         <select class="select" v-model="logLevel">
-          <option value="">全部级别</option>
-          <option v-for="l in logLevelOpts" :key="l.id" :value="l.id">{{ LEVEL_LABEL[l.id] || l.id }} ({{ l.count }})</option>
+          <option value="">{{ t('al.allLevels') }}</option>
+          <option v-for="l in logLevelOpts" :key="l.id" :value="l.id">{{ t(LEVEL_LABEL[l.id] || l.id) }} ({{ l.count }})</option>
         </select>
         <select class="select" v-model="logTarget">
-          <option value="">全部目标</option>
-          <option v-for="t in logTargetOpts" :key="t" :value="t">{{ t }}</option>
+          <option value="">{{ t('al.allTargets') }}</option>
+          <option v-for="tg in logTargetOpts" :key="tg" :value="tg">{{ tg }}</option>
         </select>
       </div>
     </div>
@@ -333,49 +335,49 @@ function gotoAlert(alertId) {
       <table class="tbl">
         <thead>
           <tr>
-            <th>级别</th>
-            <th>告警内容</th>
-            <th style="width:170px">时间</th>
-            <th style="width:104px">推送状态</th>
-            <th style="width:104px">处理</th>
-            <th style="width:168px">操作</th>
+            <th>{{ t('al.cLevel') }}</th>
+            <th>{{ t('al.cContent') }}</th>
+            <th style="width:170px">{{ t('al.cTime') }}</th>
+            <th style="width:104px">{{ t('al.cPush') }}</th>
+            <th style="width:104px">{{ t('al.cHandled') }}</th>
+            <th style="width:168px">{{ t('al.cOp') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="a in filtered" :key="a.id" :data-alert-id="a.id"
               :class="{ 'row-push-failed': a.pushStatus === 'failed' }">
-            <td><span class="sev" :class="LEVELS.find(l => l.key === a.level)?.cls || 'sev-info'">{{ LEVELS.find(l => l.key === a.level)?.label || a.level }}</span></td>
+            <td><span class="sev" :class="LEVELS.find(l => l.key === a.level)?.cls || 'sev-info'">{{ t(LEVELS.find(l => l.key === a.level)?.label || a.level) }}</span></td>
             <td>
               <div class="alert-main">
                 <span class="mono ip">{{ a.device || a.ip || '-' }}</span>
                 <span class="muted small" v-if="a.ip && a.device && a.ip !== a.device">{{ a.ip }}</span>
-                <span class="muted small" v-if="a.source">· {{ SOURCE_LABEL[a.source] || a.source }}</span>
+                <span class="muted small" v-if="a.source">· {{ t(SOURCE_LABEL[a.source] || a.source) }}</span>
               </div>
               <div class="alert-msg">{{ a.content }}</div>
             </td>
             <td class="muted small">{{ fmtDT(a.at) }}</td>
             <td>
               <span class="chip" :class="a.pushStatus === 'pushed' ? 'on' : a.pushStatus === 'failed' ? 'off' : 'idle'">
-                {{ PUSH_STATUS_LABEL[a.pushStatus] || a.pushStatus }}
+                {{ t(PUSH_STATUS_LABEL[a.pushStatus] || a.pushStatus) }}
               </span>
             </td>
             <td>
-              <span class="chip" v-if="a.handled === 'confirmed'" style="border-color:var(--green);color:var(--green)">已确认</span>
-              <span class="chip" v-else-if="a.handled === 'ignored'" style="border-color:var(--dim);color:var(--dim)">已忽略</span>
-              <span class="muted small" v-else>未处理</span>
+              <span class="chip" v-if="a.handled === 'confirmed'" style="border-color:var(--green);color:var(--green)">{{ t('al.confirmed') }}</span>
+              <span class="chip" v-else-if="a.handled === 'ignored'" style="border-color:var(--dim);color:var(--dim)">{{ t('al.ignored') }}</span>
+              <span class="muted small" v-else>{{ t('al.pending') }}</span>
             </td>
             <td class="ops">
               <button class="btn xs danger" v-if="a.pushStatus === 'failed'"
                       :disabled="retryingId !== ''" @click="doRetry(a)">
-                {{ retryingId === a.id ? '重推中…' : '重推' }}
+                {{ retryingId === a.id ? t('al.retrying') : t('al.retry') }}
               </button>
-              <button class="btn xs" :class="{ active: a.handled === 'confirmed' }" @click="setHandled(a, 'confirmed')">确认</button>
-              <button class="btn xs" :class="{ active: a.handled === 'ignored' }" @click="setHandled(a, 'ignored')">忽略</button>
+              <button class="btn xs" :class="{ active: a.handled === 'confirmed' }" @click="setHandled(a, 'confirmed')">{{ t('al.confirm') }}</button>
+              <button class="btn xs" :class="{ active: a.handled === 'ignored' }" @click="setHandled(a, 'ignored')">{{ t('al.ignore') }}</button>
             </td>
           </tr>
           <tr v-if="!filtered.length">
             <td colspan="6" class="empty">
-              {{ alertsErr ? '加载失败: ' + alertsErr : '暂无告警记录(节点采集未产生异常事件)' }}
+              {{ alertsErr ? t('al.loadFail', { err: alertsErr }) : t('al.noAlerts') }}
             </td>
           </tr>
         </tbody>
@@ -387,13 +389,13 @@ function gotoAlert(alertId) {
       <table class="tbl">
         <thead>
           <tr>
-            <th style="width:170px">时间</th>
-            <th style="width:150px">关联告警</th>
-            <th style="width:80px">告警级别</th>
-            <th>告警内容</th>
-            <th style="width:130px">推送目标</th>
-            <th style="width:104px">状态</th>
-            <th style="width:180px">失败原因</th>
+            <th style="width:170px">{{ t('al.cTime') }}</th>
+            <th style="width:150px">{{ t('al.lAlert') }}</th>
+            <th style="width:80px">{{ t('al.lLevel') }}</th>
+            <th>{{ t('al.cContent') }}</th>
+            <th style="width:130px">{{ t('al.lTarget') }}</th>
+            <th style="width:104px">{{ t('al.lStatus') }}</th>
+            <th style="width:180px">{{ t('al.lReason') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -401,30 +403,30 @@ function gotoAlert(alertId) {
             <td class="muted small">{{ fmtDT(p.at) }}</td>
             <td>
               <a class="mono small link" v-if="p.alertId" href="javascript:void(0)" @click="gotoAlert(p.alertId)"
-                 title="点击定位到对应告警记录">{{ p.alertId }}</a>
+                 :title="t('al.clickLocate')">{{ p.alertId }}</a>
               <span class="muted small" v-else>—</span>
             </td>
-            <td><span class="sev" :class="LEVELS.find(l => l.key === p.level)?.cls || 'sev-info'">{{ LEVELS.find(l => l.key === p.level)?.label || (p.level || '-') }}</span></td>
+            <td><span class="sev" :class="LEVELS.find(l => l.key === p.level)?.cls || 'sev-info'">{{ t(LEVELS.find(l => l.key === p.level)?.label || (p.level || '-')) }}</span></td>
             <td class="log-content" :title="p.content">{{ p.content || '-' }}</td>
             <td class="muted small">{{ p.target || '—' }}</td>
             <td>
               <span class="chip" :class="p.status === 'success' ? 'on' : p.status === 'failed' ? 'off' : 'idle'">
-                {{ p.status === 'success' ? '推送成功' : p.status === 'failed' ? '推送失败' : p.status === 'skipped' ? '已跳过' : p.status }}
+                {{ p.status === 'success' ? t('push.stPushed') : p.status === 'failed' ? t('push.stFailed') : p.status === 'skipped' ? t('al.skipped') : p.status }}
               </span>
             </td>
             <td class="reason" :class="{ fail: p.status === 'failed' }" :title="p.status === 'failed' ? p.reason : ''">
-              {{ p.status === 'failed' ? (p.reason || '未知原因') : '—' }}
+              {{ p.status === 'failed' ? (p.reason || t('al.unknownReason')) : '—' }}
             </td>
           </tr>
           <tr v-if="!logs.length">
-            <td colspan="7" class="empty">{{ logErr ? '加载失败: ' + logErr : '暂无推送日志' }}</td>
+            <td colspan="7" class="empty">{{ logErr ? t('al.loadFail', { err: logErr }) : t('al.noLogs') }}</td>
           </tr>
         </tbody>
       </table>
       <div class="pager" v-if="logTotal > 0">
-        <button class="btn xs" :disabled="logPage <= 1" @click="logPage--; loadLogs()">上一页</button>
-        <span class="muted small">第 {{ logPage }} 页 / 共 {{ Math.ceil(logTotal / 20) }} 页 ({{ logTotal }} 条)</span>
-        <button class="btn xs" :disabled="logPage >= Math.ceil(logTotal / 20)" @click="logPage++; loadLogs()">下一页</button>
+        <button class="btn xs" :disabled="logPage <= 1" @click="logPage--; loadLogs()">{{ t('al.prev') }}</button>
+        <span class="muted small">{{ t('al.pageInfo', { p: logPage, m: Math.ceil(logTotal / 20), n: logTotal }) }}</span>
+        <button class="btn xs" :disabled="logPage >= Math.ceil(logTotal / 20)" @click="logPage++; loadLogs()">{{ t('al.next') }}</button>
       </div>
     </div>
 
@@ -437,21 +439,21 @@ function gotoAlert(alertId) {
     <!-- tab 4: 异常事件(原「协议配置 → 采集配置 → 异常事件」卡整体迁移, 口径不变) -->
     <div v-if="tab === 'events'" class="card">
       <div class="evt-head">
-        <span class="muted small">采集底座异常事件(离线/恢复/指标越限) · 保留 30 天 · 15s 刷新</span>
+        <span class="muted small">{{ t('al.eventsDesc') }}</span>
         <div class="spacer"></div>
-        <button class="btn xs" :disabled="eventsErr !== ''" @click="loadEvents(false)">刷新</button>
+        <button class="btn xs" :disabled="eventsErr !== ''" @click="loadEvents(false)">{{ t('al.refresh') }}</button>
         <!-- AI 分析随卡从协议配置迁入: 后端按 module=collect 现场生成采集快照并
              内存分析(2026-10-02 用户口径: 节点监控不生成原始报告, 不存 raw_reports) -->
-        <AiAnalyzeButton module="collect" label="AI 分析(告警)" />
+        <AiAnalyzeButton module="collect" :label="t('al.aiAnalyze')" />
       </div>
       <table class="tbl">
         <thead>
           <tr>
-            <th style="width:80px">级别</th>
-            <th style="width:110px">类型</th>
-            <th style="width:170px">目标</th>
-            <th>说明</th>
-            <th style="width:170px">时间</th>
+            <th style="width:80px">{{ t('al.cLevel') }}</th>
+            <th style="width:110px">{{ t('al.cType') }}</th>
+            <th style="width:170px">{{ t('al.cTarget') }}</th>
+            <th>{{ t('al.cDesc') }}</th>
+            <th style="width:170px">{{ t('al.cTime') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -464,7 +466,7 @@ function gotoAlert(alertId) {
           </tr>
           <tr v-if="!events.length">
             <td colspan="5" class="empty">
-              {{ eventsErr ? '加载失败: ' + eventsErr : '暂无异常事件。连续失败达阈值会报离线, 恢复报上线, 指标越限报告警。' }}
+              {{ eventsErr ? t('al.loadFail', { err: eventsErr }) : t('al.noEvents') }}
             </td>
           </tr>
         </tbody>

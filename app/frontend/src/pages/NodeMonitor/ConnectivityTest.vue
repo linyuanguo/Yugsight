@@ -9,21 +9,21 @@
 -->
 <template>
   <div>
-    <PageHeader title="连通性测试" desc="探测节点设备可达性(TCP / ICMP / HTTP)">
-      <span class="muted small">服务端真实发包 · ICMP 需服务以管理员运行(与存活探测同口径)</span>
+    <PageHeader :title="t('ct.title')" :desc="t('ct.desc')">
+      <span class="muted small">{{ t('ct.note') }}</span>
     </PageHeader>
 
     <div class="grid cols-2">
       <div class="card">
-        <div class="card-title">单目标测试</div>
+        <div class="card-title">{{ t('ct.singleTitle') }}</div>
         <div class="field">
-          <label class="label">目标地址 (IP / 主机名) <span class="req">*</span></label>
+          <label class="label">{{ t('ct.target') }} <span class="req">*</span></label>
           <input class="input mono" v-model="single.target" placeholder="172.16.199.1" />
           <div class="form-err" v-if="singleErr">{{ singleErr }}</div>
         </div>
         <div class="form-row">
           <div class="field" style="margin-bottom:0">
-            <label class="label">协议</label>
+            <label class="label">{{ t('ct.proto') }}</label>
             <select class="input" v-model="single.proto">
               <option value="tcp">TCP</option>
               <option value="icmp">ICMP</option>
@@ -31,24 +31,24 @@
             </select>
           </div>
           <div class="field" v-if="single.proto !== 'icmp'" style="margin-bottom:0">
-            <label class="label">端口</label>
+            <label class="label">{{ t('ct.port') }}</label>
             <input class="input mono" type="number" min="1" max="65535" v-model.number="single.port" />
           </div>
           <div class="field" style="margin-bottom:0">
-            <label class="label">超时 (ms)</label>
+            <label class="label">{{ t('ct.timeout') }}</label>
             <input class="input mono" type="number" min="100" max="10000" step="100" v-model.number="single.timeout" />
           </div>
         </div>
         <div class="form-actions" style="justify-content:flex-start">
           <button class="btn primary" :disabled="single.running" @click="runSingle">
             <span class="spinner" v-if="single.running"></span>
-            {{ single.running ? '测试中…' : '开始测试' }}
+            {{ single.running ? t('ct.testing') : t('ct.start') }}
           </button>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">批量测试 <span class="sub">每行一个地址, 可带 :port</span></div>
+        <div class="card-title">{{ t('ct.batchTitle') }} <span class="sub">{{ t('ct.batchHint') }}</span></div>
         <div class="field">
           <textarea class="textarea" v-model="batchText"
             placeholder="172.16.199.1:161&#10;172.16.101.222:3389&#10;core-sw.example.com"></textarea>
@@ -56,7 +56,7 @@
         <div class="form-actions" style="justify-content:flex-start">
           <button class="btn" :disabled="batchRunning" @click="runBatch">
             <span class="spinner" v-if="batchRunning"></span>
-            {{ batchRunning ? '测试中…' : '批量测试' }}
+            {{ batchRunning ? t('ct.testing') : t('ct.batch') }}
           </button>
           <span class="muted small" v-if="batchRunning">{{ batchDone }} / {{ batchTotal }}</span>
         </div>
@@ -66,38 +66,38 @@
     <!-- 路由跟踪(2026-09-30: tracert/端口跟踪, 服务端真实逐跳; ping 与端口两种) -->
     <div class="card">
       <div class="card-title">
-        路由跟踪 (tracert)
-        <span class="sub">Ping 模式 = 逐跳跟踪; 端口模式 = 逐跳(ICMP) + 目标端口最小跳数(TCP 探测)</span>
+        {{ t('ct.traceTitle') }}
+        <span class="sub">{{ t('ct.traceHint') }}</span>
       </div>
       <div class="field">
-        <label class="label">目标地址 (IP / 主机名) <span class="req">*</span></label>
+        <label class="label">{{ t('ct.target') }} <span class="req">*</span></label>
         <input class="input mono" v-model="trace.target" placeholder="172.16.199.1" />
       </div>
       <div class="form-row">
         <div class="field" style="margin-bottom:0">
-          <label class="label">模式</label>
+          <label class="label">{{ t('ct.mode') }}</label>
           <select class="input" v-model="trace.mode">
-            <option value="icmp">Ping (ICMP)</option>
-            <option value="port">端口 (TCP)</option>
+            <option value="icmp">{{ t('ct.modeIcmp') }}</option>
+            <option value="port">{{ t('ct.modePort') }}</option>
           </select>
         </div>
         <div class="field" v-if="trace.mode === 'port'" style="margin-bottom:0">
-          <label class="label">端口</label>
+          <label class="label">{{ t('ct.port') }}</label>
           <input class="input mono" type="number" min="1" max="65535" v-model.number="trace.port" />
         </div>
         <div class="field" style="margin-bottom:0">
-          <label class="label">最大跳数</label>
+          <label class="label">{{ t('ct.maxHops') }}</label>
           <input class="input mono" type="number" min="1" max="30" v-model.number="trace.maxHops" />
         </div>
         <div class="field" style="margin-bottom:0">
-          <label class="label">每跳超时 (ms)</label>
+          <label class="label">{{ t('ct.perHop') }}</label>
           <input class="input mono" type="number" min="200" max="3000" step="100" v-model.number="trace.perHopMs" />
         </div>
       </div>
       <div class="form-actions" style="justify-content:flex-start">
         <button class="btn primary" :disabled="trace.running" @click="runTrace">
           <span class="spinner" v-if="trace.running"></span>
-          {{ trace.running ? '跟踪中…' : '开始跟踪' }}
+          {{ trace.running ? t('ct.tracing') : t('ct.startTrace') }}
         </button>
         <span class="form-err" v-if="traceErr">{{ traceErr }}</span>
       </div>
@@ -105,25 +105,25 @@
       <div v-if="trace.result" class="trace-result">
         <div class="trace-summary">
           <span class="mono">{{ trace.result.target }} → {{ trace.result.resolved }}</span>
-          <span class="chip" :class="trace.result.reached ? 'on' : 'off'">{{ trace.result.reached ? '可达' : '不可达' }}</span>
+          <span class="chip" :class="trace.result.reached ? 'on' : 'off'">{{ trace.result.reached ? t('ct.reachable') : t('ct.unreachable') }}</span>
           <span class="chip" v-if="trace.result.port"
                 :class="trace.result.portState === 'open' ? 'on' : trace.result.portState === 'closed' ? 'warn' : 'off'">
-            端口 {{ trace.result.port }}: {{ portStateLabel(trace.result.portState) }}
+            {{ t('ct.portWord') }} {{ trace.result.port }}: {{ portStateLabel(trace.result.portState) }}
           </span>
-          <span class="chip" v-if="trace.result.port && trace.result.hopsNeeded">{{ trace.result.hopsNeeded }} 跳</span>
+          <span class="chip" v-if="trace.result.port && trace.result.hopsNeeded">{{ t('ct.hops', { n: trace.result.hopsNeeded }) }}</span>
           <span class="muted small">{{ trace.result.elapsedMs }}ms</span>
         </div>
         <div class="muted small" v-if="trace.result.note">{{ trace.result.note }}</div>
         <table class="table">
           <thead>
-            <tr><th style="width:64px">跳数</th><th>IP</th><th style="width:100px">延迟</th></tr>
+            <tr><th style="width:64px">{{ t('ct.cHop') }}</th><th>IP</th><th style="width:100px">{{ t('ct.cRtt') }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="h in displayHops" :key="h.hop">
               <td class="mono">{{ h.hop }}</td>
               <td class="mono" :class="{ muted: h.kind !== 'icmp' }">
-                <template v-if="h.kind === 'gap'">(未回应)</template>
-                <template v-else-if="h.kind === 'probe'">目标端口响应 (TCP 探测)</template>
+                <template v-if="h.kind === 'gap'">{{ t('ct.noReply') }}</template>
+                <template v-else-if="h.kind === 'probe'">{{ t('ct.probeReply') }}</template>
                 <template v-else>{{ h.ip || '*' }}</template>
               </td>
               <td class="mono">{{ h.rttMs >= 0 ? h.rttMs + 'ms' : '*' }}</td>
@@ -132,28 +132,26 @@
         </table>
       </div>
       <div class="muted small" v-else-if="!trace.running && !traceErr">
-        提示: Windows 内核不支持逐跳走端口(tcptraceroute 方式, 原始 TCP 套接字被系统禁止),
-        端口模式的逐跳列表按同一路径用 ICMP 实测, "N 跳"由 TCP 端口探测确定; Ping 模式为完整逐跳跟踪。
-        ICMP 跟踪需服务以管理员运行(与存活探测同口径)。
+        {{ t('ct.traceNote') }}
       </div>
     </div>
 
     <div class="card">
       <div class="card-title">
-        测试结果
-        <span class="sub">{{ results.length }} 条(本次会话)</span>
+        {{ t('ct.resultsTitle') }}
+        <span class="sub">{{ t('ct.resultCnt', { n: results.length }) }}</span>
         <div class="spacer"></div>
-        <button class="btn xs" :disabled="!results.length" @click="results = []">清空</button>
+        <button class="btn xs" :disabled="!results.length" @click="results = []">{{ t('ct.clear') }}</button>
       </div>
       <div v-if="!results.length" class="empty">
-        暂无测试记录。在上方填入目标后开始测试。
+        {{ t('ct.noResults') }}
       </div>
       <div v-else class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>目标</th><th>协议</th><th>端口</th><th>状态</th>
-              <th>延迟</th><th>详情</th><th>测试时间</th>
+              <th>{{ t('ct.cTarget') }}</th><th>{{ t('ct.cProto') }}</th><th>{{ t('ct.cPort') }}</th><th>{{ t('ct.cStatus') }}</th>
+              <th>{{ t('ct.cRtt') }}</th><th>{{ t('ct.cDetail') }}</th><th>{{ t('ct.cTime') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -163,7 +161,7 @@
               <td class="mono">{{ r.port || '-' }}</td>
               <td>
                 <span class="chip" :class="r.status === 'ok' ? 'on' : r.status === 'timeout' ? 'warn' : 'off'">
-                  {{ r.status === 'ok' ? '可达' : r.status === 'timeout' ? '超时' : '不可达' }}
+                  {{ r.status === 'ok' ? t('ct.reachable') : r.status === 'timeout' ? t('ct.timeoutWord') : t('ct.unreachable') }}
                 </span>
               </td>
               <td class="mono">{{ r.status === 'ok' ? r.latency + 'ms' : '-' }}</td>
@@ -183,6 +181,7 @@ import PageHeader from '../../components/PageHeader.vue'
 import { fmtDT } from '../../utils'
 import { uid } from '../../utils/nodepush'
 import { v2 } from '../../api/http'
+import { t } from '../../i18n'
 
 // ===== 单目标 =====
 const single = reactive({
@@ -191,26 +190,26 @@ const single = reactive({
 const singleErr = ref('')
 
 function validateSingle() {
-  const t = single.target.trim()
-  if (!t) { singleErr.value = '目标地址必填'; return null }
+  const target = single.target.trim()
+  if (!target) { singleErr.value = t('ct.targetReq'); return null }
   if (single.proto !== 'icmp' && (!Number.isFinite(single.port) || single.port < 1 || single.port > 65535)) {
-    singleErr.value = '端口需在 1 - 65535 之间'
+    singleErr.value = t('ct.portRange')
     return null
   }
   if (!Number.isFinite(single.timeout) || single.timeout < 100 || single.timeout > 10000) {
-    singleErr.value = '超时需在 100 - 10000 ms 之间'
+    singleErr.value = t('ct.timeoutRange')
     return null
   }
   singleErr.value = ''
-  return t
+  return target
 }
 
 async function runSingle() {
-  const t = validateSingle()
-  if (!t) return
+  const target = validateSingle()
+  if (!target) return
   single.running = true
-  const r = await runProbe(t, single.proto, single.port, single.timeout)
-  pushResult({ ...r, target: t, proto: single.proto, port: single.proto === 'icmp' ? '' : single.port })
+  const r = await runProbe(target, single.proto, single.port, single.timeout)
+  pushResult({ ...r, target, proto: single.proto, port: single.proto === 'icmp' ? '' : single.port })
   single.running = false
 }
 
@@ -283,7 +282,7 @@ async function runProbe(target, proto, port, timeout) {
   try {
     return await probe(target, proto, port, timeout)
   } catch (e) {
-    return { status: 'fail', latency: 0, detail: '探测请求失败: ' + e.message }
+    return { status: 'fail', latency: 0, detail: t('ct.probeFail', { err: e.message }) }
   }
 }
 
@@ -295,14 +294,14 @@ const trace = reactive({
 const traceErr = ref('')
 
 async function runTrace() {
-  const t = trace.target.trim()
-  if (!t) { traceErr.value = '目标地址必填'; return }
+  const target = trace.target.trim()
+  if (!target) { traceErr.value = t('ct.targetReq'); return }
   if (trace.mode === 'port' && (!Number.isFinite(trace.port) || trace.port < 1 || trace.port > 65535)) {
-    traceErr.value = '端口需在 1 - 65535 之间'
+    traceErr.value = t('ct.portRange')
     return
   }
   if (!Number.isFinite(trace.maxHops) || trace.maxHops < 1 || trace.maxHops > 30) {
-    traceErr.value = '最大跳数需在 1 - 30 之间'
+    traceErr.value = t('ct.maxHopsRange')
     return
   }
   traceErr.value = ''
@@ -311,7 +310,7 @@ async function runTrace() {
     trace.result = await v2('/node/trace', {
       method: 'POST',
       body: {
-        target: t,
+        target,
         mode: trace.mode,
         port: trace.mode === 'port' ? trace.port : 0,
         maxHops: trace.maxHops,
@@ -343,7 +342,7 @@ const displayHops = computed(() => {
 })
 
 function portStateLabel(s) {
-  return s === 'open' ? '开放' : s === 'closed' ? '关闭' : s === 'timeout' ? '超时' : (s || '-')
+  return s === 'open' ? t('ct.open') : s === 'closed' ? t('ct.closed') : s === 'timeout' ? t('ct.timeoutWord') : (s || '-')
 }
 </script>
 

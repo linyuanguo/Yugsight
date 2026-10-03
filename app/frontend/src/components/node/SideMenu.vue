@@ -24,12 +24,12 @@
         class="sm-row"
         :class="{ parent: hasChildren(node), open: isOpen(node), active: modelValue === node.key }"
         :style="{ paddingLeft: (12 + depth * 14) + 'px' }"
-        :title="node.label"
+        :title="t(node.label)"
         @click="onClick(node)"
       >
         <span v-if="hasChildren(node)" class="sm-arrow" :class="{ open: isOpen(node) }"></span>
         <span v-else class="sm-arrow-ph"></span>
-        <span class="sm-label">{{ node.label }}</span>
+        <span class="sm-label">{{ t(node.label) }}</span>
       </div>
       <div v-if="hasChildren(node)" class="sm-kids" :class="{ open: isOpen(node) }">
         <div class="sm-clip">
@@ -43,6 +43,7 @@
 
 <script setup>
 import { ref, watch, provide, inject } from 'vue'
+import { t } from '../../i18n'
 
 const props = defineProps({
   items: { type: Array, required: true },

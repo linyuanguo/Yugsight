@@ -12,39 +12,39 @@
 <template>
   <div class="card">
     <div class="card-title">
-      {{ title }}
-      <span class="sub">{{ tasks.length }} 个采集任务</span>
+      {{ title || t('cs.dftTitle') }}
+      <span class="sub">{{ t('cs.taskCnt', { n: tasks.length }) }}</span>
       <div class="spacer"></div>
-      <button class="btn xs" @click="collectAll" :disabled="busy || !enabled">全部立即采集</button>
-      <button class="btn primary xs" @click="openAdd">＋ 添加任务</button>
+      <button class="btn xs" @click="collectAll" :disabled="busy || !enabled">{{ t('cs.collectAll') }}</button>
+      <button class="btn primary xs" @click="openAdd">＋ {{ t('cs.addTask') }}</button>
     </div>
 
     <div v-if="!tasks.length" class="empty-box">
-      <span class="ph-tag">无任务</span>
-      尚未配置采集任务。点击「添加任务」选择协议并填入目标地址。
+      <span class="ph-tag">{{ t('cs.noTasks') }}</span>
+      {{ t('cs.noTasksHint') }}
     </div>
 
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
           <tr>
-            <th>状态</th><th>名称</th><th>协议</th><th>目标</th>
-            <th>最新指标</th><th>最近采集</th><th class="a-r">操作</th>
+            <th>{{ t('nm.colStatus') }}</th><th>{{ t('nm.colName') }}</th><th>{{ t('cs.colProto') }}</th><th>{{ t('cs.colTarget') }}</th>
+            <th>{{ t('cs.lastMetrics') }}</th><th>{{ t('nm.colLastCollected') }}</th><th class="a-r">{{ t('nm.colOp') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="t in tasks" :key="t.id">
-            <td><span class="dot" :class="t.online ? 'on' : (t.collected ? 'off' : 'idle')"></span></td>
+          <tr v-for="tk in tasks" :key="tk.id">
+            <td><span class="dot" :class="tk.online ? 'on' : (tk.collected ? 'off' : 'idle')"></span></td>
             <td>
-              <div>{{ t.name || t.target }}</div>
-              <div class="muted small mono" v-if="t.lastErr">{{ t.lastErr }}</div>
+              <div>{{ tk.name || tk.target }}</div>
+              <div class="muted small mono" v-if="tk.lastErr">{{ tk.lastErr }}</div>
             </td>
-            <td><span class="chip proto">{{ protoLabel(t.protocol) }}</span></td>
-            <td class="mono muted small">{{ t.target }}</td>
+            <td><span class="chip proto">{{ protoLabel(tk.protocol) }}</span></td>
+            <td class="mono muted small">{{ tk.target }}</td>
             <td>
-              <div class="muted small" v-if="!t.metrics || !t.metrics.length">—</div>
+              <div class="muted small" v-if="!tk.metrics || !tk.metrics.length">—</div>
               <div v-else class="kv-mini">
-                <span v-for="m in topMetrics(t)" :key="m.name" class="kv-mini-item" :title="metricTitle(m)">
+                <span v-for="m in topMetrics(tk)" :key="m.name" class="kv-mini-item" :title="metricTitle(m)">
                   {{ m.name }} <b>{{ fmtVal(m) }}</b>
                 </span>
               </div>
@@ -52,10 +52,10 @@
             <td class="mono small muted">{{ fmtDT(t.lastAt) }}<span v-if="t.elapsedMs"> · {{ t.elapsedMs }}ms</span></td>
             <td class="a-r">
               <div class="row-actions">
-                <button class="btn xs" @click="collectOne(t)" :disabled="busy || !enabled">采集</button>
-                <button class="btn xs" @click="openHistory(t)">历史</button>
-                <button class="btn xs" @click="openEdit(t)">编辑</button>
-                <button class="btn xs danger" @click="del(t)">删除</button>
+                <button class="btn xs" @click="collectOne(tk)" :disabled="busy || !enabled">{{ t('cs.collect') }}</button>
+                <button class="btn xs" @click="openHistory(tk)">{{ t('cs.history') }}</button>
+                <button class="btn xs" @click="openEdit(tk)">{{ t('common.edit') }}</button>
+                <button class="btn xs danger" @click="del(tk)">{{ t('common.del') }}</button>
               </div>
             </td>
           </tr>
@@ -68,53 +68,53 @@
       <!-- 快捷模板(2026-09-29 阶段 C, 仅新建): 选模板自动带入协议/参数,
            保存时传 templateId → 后端继承模板默认阈值到该任务(可后改) -->
       <div class="field" v-if="!form.id && sideTemplates.length">
-        <label class="lbl">快捷模板 <span class="muted small">(选后自动带入协议与参数; 默认阈值一并继承)</span></label>
+        <label class="lbl">{{ t('cs.quickTpl') }} <span class="muted small">{{ t('cs.quickTplHint') }}</span></label>
         <select class="input" v-model="form.templateId" @change="onTplChange">
-          <option value="">不使用模板</option>
+          <option value="">{{ t('cs.noTpl') }}</option>
           <option v-for="tp in sideTemplates" :key="tp.id" :value="tp.id">
             {{ tp.name }}（{{ protoLabel(tp.protocol) }}）
           </option>
         </select>
       </div>
       <div class="field">
-        <label class="lbl">协议 <span class="req">*</span></label>
+        <label class="lbl">{{ t('cs.protocol') }} <span class="req">*</span></label>
         <select class="input" v-model="form.protocol" :disabled="!!form.id" @change="onProtoChange">
           <option v-for="p in sideProtocols" :key="p.name" :value="p.name">{{ p.label }}</option>
         </select>
         <div class="muted small" v-if="curProto">{{ curProto.desc }}</div>
       </div>
       <div class="field">
-        <label class="lbl">目标 <span class="req">*</span> <span class="muted small" v-if="form.protocol==='netflow'">(监听地址)</span></label>
+        <label class="lbl">{{ t('cs.target') }} <span class="req">*</span> <span class="muted small" v-if="form.protocol==='netflow'">{{ t('cs.listenAddr') }}</span></label>
         <input class="input" v-model="form.target" :placeholder="targetPlaceholder" />
       </div>
       <div class="field">
-        <label class="lbl">名称</label>
-        <input class="input" v-model="form.name" placeholder="可选, 便于识别" />
+        <label class="lbl">{{ t('nm.name') }}</label>
+        <input class="input" v-model="form.name" :placeholder="t('cs.namePh')" />
       </div>
       <div class="form-row">
         <div class="field">
-          <label class="lbl">间隔(秒, 0=用全局)</label>
+          <label class="lbl">{{ t('cs.interval') }}</label>
           <input class="input" type="number" min="0" v-model.number="form.intervalSec" />
         </div>
         <div class="field">
-          <label class="lbl">超时(ms, 0=默认)</label>
+          <label class="lbl">{{ t('cs.timeout') }}</label>
           <input class="input" type="number" min="0" v-model.number="form.timeoutMs" />
         </div>
       </div>
       <template v-if="needCommunity">
         <div class="field">
-          <label class="lbl">SNMP 社区串(v2c)</label>
+          <label class="lbl">{{ t('cs.snmpCommunity') }}</label>
           <input class="input" v-model="form.community" placeholder="public" />
         </div>
       </template>
       <template v-if="needUser">
         <div class="form-row">
           <div class="field">
-            <label class="lbl">用户名</label>
+            <label class="lbl">{{ t('nm.username') }}</label>
             <input class="input" v-model="form.user" />
           </div>
           <div class="field">
-            <label class="lbl">口令 <span class="muted small" v-if="form.hasAuthPass">(已配置, 留空不改)</span></label>
+            <label class="lbl">{{ t('cs.password') }} <span class="muted small" v-if="form.hasAuthPass">{{ t('cs.passSet') }}</span></label>
             <input class="input" type="password" v-model="form.authPass" autocomplete="off" />
           </div>
         </div>
@@ -122,7 +122,7 @@
       <template v-if="form.protocol==='snmp'">
         <div class="form-row">
           <div class="field">
-            <label class="lbl">v3 认证协议</label>
+            <label class="lbl">{{ t('cs.v3Auth') }}</label>
             <select class="input" v-model="form.authProto">
               <option value="">(v2c)</option>
               <option value="md5">MD5</option>
@@ -130,9 +130,9 @@
             </select>
           </div>
           <div class="field">
-            <label class="lbl">v3 加密协议</label>
+            <label class="lbl">{{ t('cs.v3Priv') }}</label>
             <select class="input" v-model="form.privProto">
-              <option value="">无</option>
+              <option value="">{{ t('cs.none') }}</option>
               <option value="des">DES</option>
               <option value="aes">AES</option>
             </select>
@@ -141,39 +141,39 @@
       </template>
       <template v-if="form.protocol==='icmp'">
         <div class="field">
-          <label class="lbl">探测次数(1-20)</label>
+          <label class="lbl">{{ t('cs.probeCount') }}</label>
           <input class="input" type="number" min="1" max="20" v-model.number="form.count" />
         </div>
       </template>
       <template v-if="form.protocol==='restconf'">
         <div class="field">
-          <label class="lbl">数据路径(默认 if:interfaces)</label>
+          <label class="lbl">{{ t('cs.dataPath') }}</label>
           <input class="input" v-model="form.path" placeholder="if:interfaces" />
         </div>
       </template>
       <div class="muted small" v-if="form.protocol==='ssh'">
-        仅支持密钥登录(BatchMode); 需在中心端配置好到目标的 SSH 密钥。
+        {{ t('cs.sshNote') }}
       </div>
       <div class="muted small" v-if="form.protocol==='netconf'">
-        走 NETCONF over TLS(RFC 8012); 目标需支持 TLS 通道, 仅 SSH 通道的设备暂不支持。
+        {{ t('cs.netconfNote') }}
       </div>
       <div class="form-actions">
-        <button class="btn" @click="closeForm">取消</button>
-        <button class="btn primary" @click="save" :disabled="saving">保存</button>
+        <button class="btn" @click="closeForm">{{ t('common.cancel') }}</button>
+        <button class="btn primary" @click="save" :disabled="saving">{{ t('common.save') }}</button>
       </div>
     </Modal>
 
     <!-- 历史时序 -->
-    <Modal v-if="showHistory" :title="'采集历史 · ' + (histTask ? (histTask.name || histTask.target) : '')" @close="showHistory=false" style="max-width:720px">
-      <div v-if="histLoading" class="muted">加载中…</div>
-      <div v-else-if="!histPoints.length" class="empty-box">暂无历史数据</div>
+    <Modal v-if="showHistory" :title="t('cs.histTitle', { name: histTask ? (histTask.name || histTask.target) : '' })" @close="showHistory=false" style="max-width:720px">
+      <div v-if="histLoading" class="muted">{{ t('push.loading') }}</div>
+      <div v-else-if="!histPoints.length" class="empty-box">{{ t('cs.noHist') }}</div>
       <div v-else class="table-wrap">
         <table class="table">
-          <thead><tr><th>时间</th><th>结果</th><th>指标</th></tr></thead>
+          <thead><tr><th>{{ t('cs.colTime') }}</th><th>{{ t('cs.colResult') }}</th><th>{{ t('cs.colMetrics') }}</th></tr></thead>
           <tbody>
             <tr v-for="(p, i) in histPoints" :key="i">
               <td class="mono small">{{ fmtDT(p.at) }}</td>
-              <td><span class="chip" :class="p.ok ? 'on' : 'off'">{{ p.ok ? '成功' : '失败' }}</span>
+              <td><span class="chip" :class="p.ok ? 'on' : 'off'">{{ p.ok ? t('cs.ok') : t('cs.fail') }}</span>
                 <div class="muted small" v-if="p.err">{{ p.err }}</div></td>
               <td class="small">
                 <div v-for="m in p.metrics" :key="m.name + JSON.stringify(m.labels||{})" class="mono">
@@ -194,10 +194,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import Modal from './Modal.vue'
 import { v2 } from '../api/http'
+import { t } from '../i18n'
 
 const props = defineProps({
   side: { type: String, required: true }, // host | net
-  title: { type: String, default: '采集任务' },
+  title: { type: String, default: '' },
 })
 
 const tasks = ref([])
@@ -214,7 +215,7 @@ const histTask = ref(null)
 const histPoints = ref([])
 const histLoading = ref(false)
 
-const formTitle = computed(() => (form.value.id ? '编辑任务' : '添加任务'))
+const formTitle = computed(() => (form.value.id ? t('cs.editTask') : t('cs.addTask')))
 
 function emptyForm() {
   return {
@@ -262,7 +263,7 @@ const targetPlaceholder = computed(() => {
     case 'snmp': return '192.168.1.12:161'
     case 'restconf': return '192.168.1.13:443'
     case 'netconf': return '192.168.1.14:8300'
-    default: return '目标地址'
+    default: return t('cs.targetAddr')
   }
 })
 
@@ -272,9 +273,9 @@ function protoLabel(name) {
 }
 
 // 展示用的"关键指标": 只挑最常用的 4 个, 全量进"历史"
-function topMetrics(t) {
+function topMetrics(task) {
   const keys = ['cpu', 'mem_used_pct', 'rtt_avg_ms', 'loss_pct', 'in_rate_bps', 'if_up']
-  return (t.metrics || []).filter(m => keys.includes(m.name)).slice(0, 4)
+  return (task.metrics || []).filter(m => keys.includes(m.name)).slice(0, 4)
 }
 function fmtVal(m) {
   const v = m.value
@@ -334,15 +335,15 @@ function openAdd() {
   form.value.protocol = first ? first.name : ''
   showForm.value = true
 }
-function openEdit(t) {
+function openEdit(task) {
   form.value = {
-    id: t.id, name: t.name || '', protocol: t.protocol, target: t.target,
-    intervalSec: t.intervalSec || 0, timeoutMs: t.timeoutMs || 0,
-    community: t.community || '', user: t.user || '', authPass: '',
-    authProto: t.authProto || '', privProto: t.privProto || '',
-    count: (t.params && t.params.count) || 4,
-    path: (t.params && t.params.path) || 'if:interfaces',
-    hasAuthPass: !!t.hasAuthPass, params: t.params || {},
+    id: task.id, name: task.name || '', protocol: task.protocol, target: task.target,
+    intervalSec: task.intervalSec || 0, timeoutMs: task.timeoutMs || 0,
+    community: task.community || '', user: task.user || '', authPass: '',
+    authProto: task.authProto || '', privProto: task.privProto || '',
+    count: (task.params && task.params.count) || 4,
+    path: (task.params && task.params.path) || 'if:interfaces',
+    hasAuthPass: !!task.hasAuthPass, params: task.params || {},
   }
   showForm.value = true
 }
@@ -383,29 +384,29 @@ async function save() {
     showForm.value = false
     await load()
   } catch (e) {
-    alert('保存失败: ' + e.message)
+    alert(t('cs.saveFail', { err: e.message }))
   } finally {
     saving.value = false
   }
 }
 
-async function del(t) {
-  if (!confirm(`删除采集任务「${t.name || t.target}」?`)) return
+async function del(task) {
+  if (!confirm(t('cs.delTaskConfirm', { name: task.name || task.target }))) return
   try {
-    await v2('/node/tasks/' + encodeURIComponent(t.id), { method: 'DELETE' })
+    await v2('/node/tasks/' + encodeURIComponent(task.id), { method: 'DELETE' })
     await load()
   } catch (e) {
-    alert('删除失败: ' + e.message)
+    alert(t('cs.delFail', { err: e.message }))
   }
 }
 
-async function collectOne(t) {
+async function collectOne(task) {
   busy.value = true
   try {
-    await v2('/node/collect', { method: 'POST', body: { taskID: t.id } })
+    await v2('/node/collect', { method: 'POST', body: { taskID: task.id } })
     await load()
   } catch (e) {
-    alert('采集失败: ' + e.message)
+    alert(t('cs.collectFail', { err: e.message }))
   } finally {
     busy.value = false
   }
@@ -416,19 +417,19 @@ async function collectAll() {
     await v2('/node/collect', { method: 'POST', body: {} })
     await load()
   } catch (e) {
-    alert('采集失败: ' + e.message)
+    alert(t('cs.collectFail', { err: e.message }))
   } finally {
     busy.value = false
   }
 }
 
-async function openHistory(t) {
-  histTask.value = t
+async function openHistory(task) {
+  histTask.value = task
   showHistory.value = true
   histLoading.value = true
   histPoints.value = []
   try {
-    const d = await v2('/node/metrics?task=' + encodeURIComponent(t.id) + '&limit=30')
+    const d = await v2('/node/metrics?task=' + encodeURIComponent(task.id) + '&limit=30')
     histPoints.value = (d.points || []).slice().reverse() // 新在前
   } catch (e) {
     console.warn(e)

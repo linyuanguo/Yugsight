@@ -13,112 +13,112 @@
 <template>
   <div class="card">
     <div class="card-title">
-      推送规则配置
+      {{ t('pr.title') }}
       <span class="chip" v-if="dirty" style="color:var(--yellow);border-color:rgba(250,204,21,.5);background:rgba(250,204,21,.08)">
-        ● 有未保存修改
+        ● {{ t('pr.dirty') }}
       </span>
       <div class="spacer"></div>
-      <button class="btn xs" @click="restoreSaved">恢复已保存</button>
+      <button class="btn xs" @click="restoreSaved">{{ t('pr.restore') }}</button>
     </div>
 
     <div class="rule-grid">
       <!-- 告警级别过滤 -->
       <div class="field rule-f">
-        <label class="label">告警级别过滤</label>
+        <label class="label">{{ t('pr.lvlFilter') }}</label>
         <div class="rule-checks">
           <label class="checkbox" v-for="l in LEVELS" :key="l.key">
             <input type="checkbox" v-model="form.levels" :value="l.key" />
-            <span class="badge" :class="l.cls">{{ l.label }}</span>
+            <span class="badge" :class="l.cls">{{ t(l.label) }}</span>
           </label>
         </div>
-        <div class="muted small">只推送勾选级别的告警; 全部取消 = 不推送任何告警。</div>
+        <div class="muted small">{{ t('pr.lvlHint') }}</div>
       </div>
 
       <!-- 告警延迟 -->
       <div class="field rule-f">
-        <label class="label">告警延迟(秒, 默认 30)</label>
+        <label class="label">{{ t('pr.delay') }}</label>
         <div class="form-row" style="margin-bottom:0">
           <input class="input rule-num" type="number" min="0" max="3600" v-model.number="form.delaySec" />
-          <span class="muted small" style="align-self:center">触发后等待 N 秒再推送, 用于聚合同类告警</span>
+          <span class="muted small" style="align-self:center">{{ t('pr.delayHint') }}</span>
         </div>
         <div class="form-err" v-if="err.delaySec">{{ err.delaySec }}</div>
       </div>
 
       <!-- 推送时段 -->
       <div class="field rule-f">
-        <label class="label">推送时段</label>
+        <label class="label">{{ t('pr.window') }}</label>
         <div class="rule-radios">
           <label class="checkbox">
-            <input type="radio" value="all" v-model="form.window" /> 全天推送
+            <input type="radio" value="all" v-model="form.window" /> {{ t('pr.allDay') }}
           </label>
           <label class="checkbox">
-            <input type="radio" value="work" v-model="form.window" /> 工作时段({{ form.workStart }}-{{ form.workEnd }})
+            <input type="radio" value="work" v-model="form.window" /> {{ t('pr.workWindow', { a: form.workStart, b: form.workEnd }) }}
           </label>
           <label class="checkbox">
-            <input type="radio" value="custom" v-model="form.window" /> 自定义时段
+            <input type="radio" value="custom" v-model="form.window" /> {{ t('pr.custom') }}
           </label>
         </div>
         <div class="form-row" v-if="form.window === 'custom'">
           <div class="field" style="margin:0">
-            <label class="label">开始</label>
+            <label class="label">{{ t('pr.start') }}</label>
             <input class="input" type="time" v-model="form.customStart" />
           </div>
           <div class="field" style="margin:0">
-            <label class="label">结束</label>
+            <label class="label">{{ t('pr.end') }}</label>
             <input class="input" type="time" v-model="form.customEnd" />
           </div>
         </div>
-        <div class="muted small" v-if="form.window === 'custom'">支持跨天(如 22:00-08:00 表示 22 点起至次日 8 点)。</div>
+        <div class="muted small" v-if="form.window === 'custom'">{{ t('pr.crossDay') }}</div>
         <div class="form-err" v-if="err.window">{{ err.window }}</div>
       </div>
 
       <!-- 免打扰时段 -->
       <div class="field rule-f">
-        <label class="label">免打扰时段</label>
+        <label class="label">{{ t('pr.dnd') }}</label>
         <label class="checkbox" style="margin-bottom:8px">
-          <input type="checkbox" v-model="form.dnd" /> 开启免打扰
+          <input type="checkbox" v-model="form.dnd" /> {{ t('pr.dndOn') }}
         </label>
         <div class="form-row" v-if="form.dnd">
           <div class="field" style="margin:0">
-            <label class="label">开始</label>
+            <label class="label">{{ t('pr.start') }}</label>
             <input class="input" type="time" v-model="form.dndStart" />
           </div>
           <div class="field" style="margin:0">
-            <label class="label">结束</label>
+            <label class="label">{{ t('pr.end') }}</label>
             <input class="input" type="time" v-model="form.dndEnd" />
           </div>
         </div>
-        <div class="muted small" v-if="form.dnd">时段内不推送, 到时段外后补发(支持跨天)。</div>
+        <div class="muted small" v-if="form.dnd">{{ t('pr.dndHint') }}</div>
         <div class="form-err" v-if="err.dnd">{{ err.dnd }}</div>
       </div>
 
       <!-- 推送目标关联 -->
       <div class="field rule-f" style="margin-bottom:0">
         <label class="label">
-          推送目标关联
-          <span class="muted" style="font-weight:400">已选 {{ form.targetIds.length }} / {{ pushStore.targets.length }}</span>
+          {{ t('pr.targets') }}
+          <span class="muted" style="font-weight:400">{{ t('pr.selected', { a: form.targetIds.length, b: pushStore.targets.length }) }}</span>
         </label>
         <div class="rule-target-head" v-if="pushStore.targets.length">
-          <button class="btn xs" @click="selectAll">全选</button>
-          <button class="btn xs" @click="invertSelection">反选</button>
+          <button class="btn xs" @click="selectAll">{{ t('pr.selectAll') }}</button>
+          <button class="btn xs" @click="invertSelection">{{ t('pr.invert') }}</button>
         </div>
         <div class="rule-targets" v-if="pushStore.targets.length">
-          <label class="checkbox t-item" v-for="t in pushStore.targets" :key="t.id">
-            <input type="checkbox" v-model="form.targetIds" :value="t.id" />
-            <span>{{ t.name }}</span>
-            <span class="muted small">({{ typeLabel(t.type) }})</span>
-            <span class="chip t-chip" :class="t.enabled ? 'on' : 'off'">{{ t.enabled ? '启用' : '停用' }}</span>
+          <label class="checkbox t-item" v-for="tg in pushStore.targets" :key="tg.id">
+            <input type="checkbox" v-model="form.targetIds" :value="tg.id" />
+            <span>{{ tg.name }}</span>
+            <span class="muted small">({{ t(typeLabel(tg.type)) }})</span>
+            <span class="chip t-chip" :class="tg.enabled ? 'on' : 'off'">{{ tg.enabled ? t('pr.on') : t('pr.off') }}</span>
           </label>
         </div>
-        <div class="muted small" v-else>暂无推送目标, 请先在上方「推送目标管理」中添加(未关联目标将不推送)。</div>
+        <div class="muted small" v-else>{{ t('pr.noTargets') }}</div>
       </div>
     </div>
 
     <div class="form-actions rule-foot">
-      <span class="muted small" v-if="dirty">有未保存修改, 请记得点击「保存配置」</span>
+      <span class="muted small" v-if="dirty">{{ t('pr.dirtyHint') }}</span>
       <div class="spacer"></div>
-      <button class="btn" @click="restoreSaved">恢复已保存</button>
-      <button class="btn primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存配置' }}</button>
+      <button class="btn" @click="restoreSaved">{{ t('pr.restore') }}</button>
+      <button class="btn primary" :disabled="saving" @click="save">{{ saving ? t('pr.saving') : t('pr.saveCfg') }}</button>
     </div>
   </div>
 </template>
@@ -133,6 +133,7 @@ import {
 } from '../../utils/nodepush'
 // 接口层: 规则 GET/PUT(字段映射见 api/nodepush.js 头部)
 import { fetchRules, saveRules } from '../../api/nodepush'
+import { t } from '../../i18n'
 
 const emit = defineEmits(['dirty', 'saved', 'change'])
 
@@ -150,7 +151,7 @@ async function load() {
     Object.assign(form, r)
     savedSnapshot.value = JSON.stringify(r)
   } catch (e) {
-    toast('加载推送规则失败(保留当前配置): ' + e.message, 'err')
+    toast(t('pr.loadFail', { err: e.message }), 'err')
   }
 }
 onMounted(load)
@@ -174,8 +175,8 @@ function invertSelection() {
 const err = reactive({ delaySec: '', window: '', dnd: '' })
 
 function validRange(start, end) {
-  if (!start || !end) return '请完整填写时段的开始与结束时间'
-  if (start === end) return '开始与结束时间不能相同'
+  if (!start || !end) return t('pr.rangeReq')
+  if (start === end) return t('pr.rangeSame')
   return ''
 }
 
@@ -183,7 +184,7 @@ function validate() {
   err.delaySec = ''; err.window = ''; err.dnd = ''
   let ok = true
   if (!Number.isFinite(form.delaySec) || form.delaySec < 0 || form.delaySec > 3600) {
-    err.delaySec = '延迟需在 0 - 3600 秒之间'
+    err.delaySec = t('pr.delayRange')
     ok = false
   }
   if (form.window === 'custom') {
@@ -213,11 +214,11 @@ async function save() {
     saving.value = false
     emit('change')
     emit('saved')
-    const note = !payload.levels.length ? '(当前未勾选任何级别, 实际不会推送)' : ''
-    toast('推送规则已保存到后端' + note, note ? 'info' : 'ok')
+    const note = !payload.levels.length ? t('pr.noLevelNote') : ''
+    toast(t('pr.saved') + note, note ? 'info' : 'ok')
   } catch (e) {
     saving.value = false
-    toast('保存失败(修改仍保留在表单中): ' + e.message, 'err')
+    toast(t('pr.saveFail', { err: e.message }), 'err')
   }
 }
 
@@ -227,9 +228,9 @@ async function restoreSaved() {
     const r = normalizeRules(await fetchRules())
     Object.assign(form, r)
     savedSnapshot.value = JSON.stringify(r)
-    toast('已恢复为后端当前保存的配置', 'info')
+    toast(t('pr.restored'), 'info')
   } catch (e) {
-    toast('恢复失败: ' + e.message, 'err')
+    toast(t('pr.restoreFail', { err: e.message }), 'err')
   }
 }
 

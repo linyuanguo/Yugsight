@@ -12,41 +12,41 @@
   <div>
     <!-- 采集配置 -->
     <div class="card">
-      <div class="card-title">采集配置 <span class="sub">全局 · 写入 settings.json 的 collect 节</span></div>
+      <div class="card-title">{{ t('nc.cfgTitle') }} <span class="sub">{{ t('nc.cfgSub') }}</span></div>
       <div class="form-row cfg-row">
         <div class="field cfg-field">
-          <label class="lbl">启用采集</label>
+          <label class="lbl">{{ t('nc.enable') }}</label>
           <div class="cfg-toggle">
-            <span class="chip" :class="cfg.enabled ? 'on' : 'off'">{{ cfg.enabled ? '已启用' : '已停用' }}</span>
-            <button class="btn xs" @click="toggleEnabled">{{ cfg.enabled ? '停用' : '启用' }}</button>
+            <span class="chip" :class="cfg.enabled ? 'on' : 'off'">{{ cfg.enabled ? t('nc.onText') : t('nc.offText') }}</span>
+            <button class="btn xs" @click="toggleEnabled">{{ cfg.enabled ? t('nc.btnOff') : t('nc.btnOn') }}</button>
           </div>
         </div>
         <div class="field cfg-field">
-          <label class="lbl">默认间隔(秒)</label>
+          <label class="lbl">{{ t('nc.interval') }}</label>
           <input class="input cfg-input" type="number" min="5" v-model.number="cfg.intervalSec" />
         </div>
         <div class="field cfg-field">
-          <label class="lbl">并发任务数</label>
+          <label class="lbl">{{ t('nc.concurrent') }}</label>
           <input class="input cfg-input" type="number" min="1" v-model.number="cfg.concurrent" />
         </div>
         <div class="field cfg-field">
-          <label class="lbl">全局限速(次/秒)</label>
+          <label class="lbl">{{ t('nc.rate') }}</label>
           <input class="input cfg-input" type="number" min="1" v-model.number="cfg.globalRate" />
         </div>
         <div class="field cfg-field">
-          <label class="lbl">保留(小时)</label>
+          <label class="lbl">{{ t('nc.retention') }}</label>
           <input class="input cfg-input" type="number" min="1" v-model.number="cfg.retentionHours" />
         </div>
         <div class="field cfg-field" style="justify-content:flex-end">
-          <button class="btn primary sm" @click="saveConfig" :disabled="saving">保存配置</button>
+          <button class="btn primary sm" @click="saveConfig" :disabled="saving">{{ t('nc.saveCfg') }}</button>
         </div>
       </div>
 
       <div class="muted small" v-if="status.netflowActive && status.netflowActive.length">
-        NetFlow/IPFIX 监听中: {{ status.netflowActive.join(', ') }}
+        {{ t('nc.netflowActive') }}: {{ status.netflowActive.join(', ') }}
       </div>
       <div class="muted small" v-if="!status.secretKeySet">
-        提示: 未设置加密密钥(环境变量 YUGSIGHT_MONITOR_KEY), 任务口令将以明文存储于 settings.json。
+        {{ t('nc.noKey') }}
       </div>
     </div>
 
@@ -57,47 +57,47 @@
     <!-- 告警阈值 + NetFlow + 白名单(折叠区, 避免首屏过长) -->
     <div class="card">
       <div class="card-title" style="cursor:pointer" @click="advOpen = !advOpen">
-        高级配置(告警阈值 / NetFlow / IP 白名单)
-        <span class="sub">{{ advOpen ? '收起 ▲' : '展开 ▼' }}</span>
+        {{ t('nc.advTitle') }}
+        <span class="sub">{{ advOpen ? t('nc.collapse') : t('nc.expand') }}</span>
       </div>
       <template v-if="advOpen">
         <div class="form-row cfg-row">
           <div class="field cfg-field">
-            <label class="lbl">CPU 告警(%)</label>
+            <label class="lbl">{{ t('nc.cpuAlert') }}</label>
             <input class="input cfg-input" type="number" min="0" v-model.number="cfg.alerts.cpuPct" />
           </div>
           <div class="field cfg-field">
-            <label class="lbl">内存告警(%)</label>
+            <label class="lbl">{{ t('nc.memAlert') }}</label>
             <input class="input cfg-input" type="number" min="0" v-model.number="cfg.alerts.memPct" />
           </div>
           <div class="field cfg-field">
-            <label class="lbl">时延告警(ms)</label>
+            <label class="lbl">{{ t('nc.rttAlert') }}</label>
             <input class="input cfg-input" type="number" min="0" v-model.number="cfg.alerts.rttMs" />
           </div>
           <div class="field cfg-field">
-            <label class="lbl">丢包告警(%)</label>
+            <label class="lbl">{{ t('nc.lossAlert') }}</label>
             <input class="input cfg-input" type="number" min="0" v-model.number="cfg.alerts.lossPct" />
           </div>
           <div class="field cfg-field">
-            <label class="lbl">连续失败 N 轮判离线</label>
+            <label class="lbl">{{ t('nc.failStreak') }}</label>
             <input class="input cfg-input" type="number" min="1" v-model.number="cfg.alerts.failStreak" />
           </div>
         </div>
         <div class="form-row cfg-row">
           <div class="field cfg-field">
-            <label class="lbl">NetFlow 接收</label>
+            <label class="lbl">{{ t('nc.netflow') }}</label>
             <div class="cfg-toggle">
-              <span class="chip" :class="cfg.netflow.enabled ? 'on' : 'off'">{{ cfg.netflow.enabled ? '已启用' : '已停用' }}</span>
-              <button class="btn xs" @click="cfg.netflow.enabled = !cfg.netflow.enabled">{{ cfg.netflow.enabled ? '停用' : '启用' }}</button>
+              <span class="chip" :class="cfg.netflow.enabled ? 'on' : 'off'">{{ cfg.netflow.enabled ? t('nc.onText') : t('nc.offText') }}</span>
+              <button class="btn xs" @click="cfg.netflow.enabled = !cfg.netflow.enabled">{{ cfg.netflow.enabled ? t('nc.btnOff') : t('nc.btnOn') }}</button>
             </div>
           </div>
           <div class="field cfg-field">
-            <label class="lbl">NetFlow 监听地址</label>
+            <label class="lbl">{{ t('nc.netflowListen') }}</label>
             <input class="input cfg-input" v-model="cfg.netflow.listen" placeholder="0.0.0.0:2000" />
           </div>
         </div>
         <div class="field">
-          <label class="lbl">IP 白名单 <span class="muted small">(IP 或 CIDR, 逗号/换行分隔; 留空 = 不限制)</span></label>
+          <label class="lbl">{{ t('nc.whitelist') }} <span class="muted small">{{ t('nc.whitelistHint') }}</span></label>
           <textarea class="input" rows="3" v-model="whitelistText" placeholder="192.168.1.0/24, 10.0.0.0/8"></textarea>
         </div>
       </template>
@@ -105,37 +105,37 @@
 
     <!-- 每节点告警阈值(Zabbix 式"全局默认 + 节点覆盖": 留空=跟全局, 填了=该节点独立阈值) -->
     <div class="card">
-      <div class="card-title">每节点告警阈值
-        <span class="sub">覆盖全局默认 · 留空项跟随全局 · 下一轮采集生效</span>
+      <div class="card-title">{{ t('nc.perNodeTitle') }}
+        <span class="sub">{{ t('nc.perNodeSub') }}</span>
       </div>
       <div v-if="!status.tasks || !status.tasks.length" class="empty-box">
-        <span class="ph-tag">无任务</span> 先添加采集任务, 再为单个节点设置独立阈值。
+        <span class="ph-tag">{{ t('nc.noTasks') }}</span> {{ t('nc.noTasksHint') }}
       </div>
       <div v-else class="table-wrap">
         <table class="table">
-          <thead><tr><th>节点(任务)</th><th>CPU(%)</th><th>内存(%)</th><th>时延(ms)</th><th>丢包(%)</th><th>连续失败N轮</th><th></th></tr></thead>
+          <thead><tr><th>{{ t('nc.cNode') }}</th><th>{{ t('nc.cCpu') }}</th><th>{{ t('nc.cMem') }}</th><th>{{ t('nc.cRtt') }}</th><th>{{ t('nc.cLoss') }}</th><th>{{ t('nc.cStreak') }}</th><th></th></tr></thead>
           <tbody>
-            <tr v-for="t in status.tasks" :key="t.id">
+            <tr v-for="tk in status.tasks" :key="tk.id">
               <td>
-                <div class="small">{{ t.name || t.target }}</div>
-                <div class="mono small muted">{{ t.protocol }} · {{ t.target }}</div>
+                <div class="small">{{ tk.name || tk.target }}</div>
+                <div class="mono small muted">{{ tk.protocol }} · {{ tk.target }}</div>
               </td>
-              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[t.id].cpuPct" placeholder="全局" @input="onPerNodeInput" /></td>
-              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[t.id].memPct" placeholder="全局" @input="onPerNodeInput" /></td>
-              <td><input class="input cfg-input" type="number" min="0" v-model="perNode[t.id].rttMs" placeholder="全局" @input="onPerNodeInput" /></td>
-              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[t.id].lossPct" placeholder="全局" @input="onPerNodeInput" /></td>
-              <td><input class="input cfg-input" type="number" min="1" v-model="perNode[t.id].failStreak" placeholder="全局" @input="onPerNodeInput" /></td>
-              <td><button class="btn xs" @click="resetPerNode(t.id)" :disabled="!hasPerNode(t.id)">重置</button></td>
+              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[tk.id].cpuPct" :placeholder="t('nc.globalPh')" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[tk.id].memPct" :placeholder="t('nc.globalPh')" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="0" v-model="perNode[tk.id].rttMs" :placeholder="t('nc.globalPh')" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[tk.id].lossPct" :placeholder="t('nc.globalPh')" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="1" v-model="perNode[tk.id].failStreak" :placeholder="t('nc.globalPh')" @input="onPerNodeInput" /></td>
+              <td><button class="btn xs" @click="resetPerNode(tk.id)" :disabled="!hasPerNode(tk.id)">{{ t('nc.reset') }}</button></td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="form-row cfg-row" v-if="status.tasks && status.tasks.length">
         <div class="field" style="flex:1; align-self:center">
-          <span class="muted small">placeholder「全局」= 跟随全局阈值(当前 CPU {{ cfg.alerts.cpuPct }}% / 内存 {{ cfg.alerts.memPct }}% / 时延 {{ cfg.alerts.rttMs || '关' }}ms / 丢包 {{ cfg.alerts.lossPct }}% / 失败 {{ cfg.alerts.failStreak }} 轮)。</span>
+          <span class="muted small">{{ t('nc.globalNote', { cpu: cfg.alerts.cpuPct, mem: cfg.alerts.memPct, rtt: cfg.alerts.rttMs || t('nc.offWord'), loss: cfg.alerts.lossPct, n: cfg.alerts.failStreak }) }}</span>
         </div>
         <div class="field cfg-field" style="justify-content:flex-end">
-          <button class="btn primary sm" @click="savePerNode" :disabled="perNodeSaving">保存节点阈值</button>
+          <button class="btn primary sm" @click="savePerNode" :disabled="perNodeSaving">{{ t('nc.savePerNode') }}</button>
         </div>
       </div>
     </div>
@@ -143,45 +143,45 @@
     <!-- 采集模板(2026-09-29 阶段 C, 借鉴 Zabbix 监控模板: 命名预设=协议+参数+默认阈值。
          建任务时选模板自动继承; 继承是一次性起点, 之后改模板不影响已建任务) -->
     <div class="card">
-      <div class="card-title">采集模板
-        <span class="sub">建任务时的快捷预设 · 选中模板自动带入协议/参数/默认阈值</span>
+      <div class="card-title">{{ t('nc.tplTitle') }}
+        <span class="sub">{{ t('nc.tplSub') }}</span>
       </div>
       <div v-if="!tplList.length" class="empty-box">
-        <span class="ph-tag">无模板</span> 暂无采集模板。常用节点(如"Linux 服务器 SSH"、"交换机 SNMP")可存为模板, 建任务时一键带入。
+        <span class="ph-tag">{{ t('nc.noTpl') }}</span> {{ t('nc.noTplHint') }}
       </div>
       <div v-else class="table-wrap">
         <table class="table">
-          <thead><tr><th>名称</th><th>协议</th><th>默认阈值</th><th>说明</th><th class="a-r">操作</th></tr></thead>
+          <thead><tr><th>{{ t('nc.cName') }}</th><th>{{ t('nc.cProto') }}</th><th>{{ t('nc.cAlerts') }}</th><th>{{ t('nc.cNote') }}</th><th class="a-r">{{ t('nc.cOp') }}</th></tr></thead>
           <tbody>
             <tr v-for="tp in tplList" :key="tp.id">
               <td class="small">{{ tp.name }}</td>
               <td><span class="chip proto">{{ protoLabel(tp.protocol) }}</span></td>
               <td class="mono small">{{ tplAlertsText(tp) }}</td>
               <td class="small muted">{{ tp.note || '—' }}</td>
-              <td class="a-r"><button class="btn xs danger" @click="delTpl(tp)">删除</button></td>
+              <td class="a-r"><button class="btn xs danger" @click="delTpl(tp)">{{ t('rp.del') }}</button></td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="form-row cfg-row">
-        <div class="field cfg-field"><label class="lbl">名称</label>
-          <input class="input cfg-input" v-model="tplForm.name" placeholder="如: Linux 服务器" /></div>
-        <div class="field cfg-field"><label class="lbl">协议</label>
+        <div class="field cfg-field"><label class="lbl">{{ t('nc.tName') }}</label>
+          <input class="input cfg-input" v-model="tplForm.name" :placeholder="t('nc.tplNamePh')" /></div>
+        <div class="field cfg-field"><label class="lbl">{{ t('nc.tProto') }}</label>
           <select class="input cfg-input" v-model="tplForm.protocol">
             <option v-for="p in tplProtocols" :key="p.name" :value="p.name">{{ p.label }}</option>
           </select></div>
-        <div class="field cfg-field"><label class="lbl">CPU(%)</label>
-          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.cpuPct" placeholder="全局" /></div>
-        <div class="field cfg-field"><label class="lbl">内存(%)</label>
-          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.memPct" placeholder="全局" /></div>
-        <div class="field cfg-field"><label class="lbl">时延(ms)</label>
-          <input class="input cfg-input" type="number" min="0" v-model="tplForm.rttMs" placeholder="全局" /></div>
-        <div class="field cfg-field"><label class="lbl">丢包(%)</label>
-          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.lossPct" placeholder="全局" /></div>
-        <div class="field cfg-field"><label class="lbl">说明</label>
-          <input class="input cfg-input" v-model="tplForm.note" placeholder="可选, 如: 需预置 SSH 密钥" /></div>
+        <div class="field cfg-field"><label class="lbl">{{ t('nc.cCpu') }}</label>
+          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.cpuPct" :placeholder="t('nc.globalPh')" /></div>
+        <div class="field cfg-field"><label class="lbl">{{ t('nc.cMem') }}</label>
+          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.memPct" :placeholder="t('nc.globalPh')" /></div>
+        <div class="field cfg-field"><label class="lbl">{{ t('nc.cRtt') }}</label>
+          <input class="input cfg-input" type="number" min="0" v-model="tplForm.rttMs" :placeholder="t('nc.globalPh')" /></div>
+        <div class="field cfg-field"><label class="lbl">{{ t('nc.cLoss') }}</label>
+          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.lossPct" :placeholder="t('nc.globalPh')" /></div>
+        <div class="field cfg-field"><label class="lbl">{{ t('nc.tNote') }}</label>
+          <input class="input cfg-input" v-model="tplForm.note" :placeholder="t('nc.tplNotePh')" /></div>
         <div class="field" style="align-self:flex-end; justify-content:flex-end">
-          <button class="btn primary sm" @click="saveTpl" :disabled="tplSaving">保存模板</button>
+          <button class="btn primary sm" @click="saveTpl" :disabled="tplSaving">{{ t('nc.saveTpl') }}</button>
         </div>
       </div>
     </div>
@@ -193,6 +193,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { v2 } from '../api/http'
+import { t } from '../i18n'
 
 const status = ref({})
 const cfg = reactive({
@@ -250,19 +251,19 @@ function protoLabel(name) {
 function tplAlertsText(tp) {
   const a = (tp && tp.alerts) || {}
   const parts = []
-  if (a.cpuPct) parts.push('CPU' + a.cpuPct + '%')
-  if (a.memPct) parts.push('内存' + a.memPct + '%')
-  if (a.rttMs) parts.push('时延' + a.rttMs + 'ms')
-  if (a.lossPct) parts.push('丢包' + a.lossPct + '%')
-  return parts.length ? parts.join(' · ') : '跟随全局'
+  if (a.cpuPct) parts.push(t('nc.tplCpu', { v: a.cpuPct }))
+  if (a.memPct) parts.push(t('nc.tplMem', { v: a.memPct }))
+  if (a.rttMs) parts.push(t('nc.tplRtt', { v: a.rttMs }))
+  if (a.lossPct) parts.push(t('nc.tplLoss', { v: a.lossPct }))
+  return parts.length ? parts.join(' · ') : t('nc.followGlobal')
 }
 function syncTpl(list) {
   tplList.value = (list || []).map(t => ({ ...t }))
 }
 function addTpl() {
   const name = (tplForm.value.name || '').trim()
-  if (!name) { alert('请填写模板名称'); return }
-  if (!tplForm.value.protocol) { alert('请选择协议'); return }
+  if (!name) { alert(t('nc.tplNameReq')); return }
+  if (!tplForm.value.protocol) { alert(t('nc.tplProtoReq')); return }
   const alerts = {}
   if (tplForm.value.cpuPct) alerts.cpuPct = Number(tplForm.value.cpuPct)
   if (tplForm.value.memPct) alerts.memPct = Number(tplForm.value.memPct)
@@ -277,7 +278,7 @@ function addTpl() {
   saveTplList([...tplList.value, tpl])
 }
 function delTpl(tp) {
-  if (!confirm(`删除模板「${tp.name}」? 已建任务不受影响。`)) return
+  if (!confirm(t('nc.tplDelConfirm', { name: tp.name }))) return
   saveTplList(tplList.value.filter(x => x.id !== tp.id))
 }
 async function saveTplList(list) {
@@ -287,7 +288,7 @@ async function saveTplList(list) {
     syncTpl(list)
     tplForm.value = emptyTpl()
   } catch (e) {
-    alert('模板保存失败: ' + e.message)
+    alert(t('nc.tplSaveFail', { err: e.message }))
   } finally {
     tplSaving.value = false
   }
@@ -344,7 +345,7 @@ async function savePerNode() {
     await v2('/node/alert/thresholds', { method: 'PUT', body: { perNode: out } })
     await loadStatus()
   } catch (e) {
-    alert('保存失败: ' + e.message)
+    alert(t('nc.saveFail', { err: e.message }))
   } finally {
     perNodeSaving.value = false
     perNodeEditing = false
@@ -370,7 +371,7 @@ async function saveConfig() {
     })
     await loadStatus()
   } catch (e) {
-    alert('保存失败: ' + e.message)
+    alert(t('nc.saveFail', { err: e.message }))
   } finally {
     saving.value = false
   }
@@ -383,7 +384,7 @@ async function toggleEnabled() {
     await v2('/node/config', { method: 'POST', body: { enabled: cfg.enabled } })
     await loadStatus()
   } catch (e) {
-    alert('切换失败: ' + e.message)
+    alert(t('nc.toggleFail', { err: e.message }))
   } finally {
     saving.value = false
   }

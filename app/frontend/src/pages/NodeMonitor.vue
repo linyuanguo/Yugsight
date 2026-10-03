@@ -22,7 +22,7 @@
 -->
 <template>
   <div class="page nm">
-    <PageHeader title="节点监控" desc="主机侧(探针/WinRM/SSH/SNMP)与网络侧(SNMP/ICMP/NetFlow/NETCONF/RESTCONF)统一运维 —— 左侧菜单切换视图">
+    <PageHeader :title="t('nm.title')" :desc="t('nm.desc')">
     </PageHeader>
 
     <div class="nm-body">
@@ -42,9 +42,9 @@
         <template v-else-if="view === 'protocol'">
           <Monitor />
           <div class="section-gap"></div>
-          <CollectSection side="host" title="主机侧扩展采集(无代理)" />
+          <CollectSection side="host" :title="t('nm.hostCollect')" />
           <div class="section-gap"></div>
-          <CollectSection side="net" title="网络侧扩展采集(SNMP 之外)" />
+          <CollectSection side="net" :title="t('nm.netCollect')" />
           <div class="section-gap"></div>
           <NodeCommonCards />
         </template>
@@ -59,6 +59,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { t } from '../i18n'
 import PageHeader from '../components/PageHeader.vue'
 import SideMenu from '../components/node/SideMenu.vue'
 import Probes from './Probes.vue'
@@ -78,13 +79,13 @@ const VIEWS = ['overview', 'alerts', 'protocol', 'connectivity']
 // 左侧菜单树: 一级「节点监控」根, 二级 4 项, 节点配置下三级 2 项
 const menu = [{
   key: 'root',
-  label: '节点监控',
+  label: 'nm.mRoot',
   children: [
-    { key: 'overview', label: '设备总览' },
-    { key: 'alerts', label: '告警日志管理' },
-    { key: 'settings', label: '节点配置', children: [
-      { key: 'protocol', label: '协议配置' },
-      { key: 'connectivity', label: '连通性测试' }
+    { key: 'overview', label: 'nm.mOverview' },
+    { key: 'alerts', label: 'nm.mAlerts' },
+    { key: 'settings', label: 'nm.mSettings', children: [
+      { key: 'protocol', label: 'nm.mProtocol' },
+      { key: 'connectivity', label: 'nm.mConn' }
     ] }
   ]
 }]
