@@ -1,75 +1,74 @@
 <template>
   <div>
-    <PageHeader title="规则库管理" desc="漏洞规则, 按适用范围(Web / 主机)归位">
-      <span class="chip" :class="count ? 'on' : 'off'">共 {{ count }} 条规则</span>
-      <button class="btn sm" @click="load" :disabled="loading"><span class="spinner" v-if="loading"></span> 刷新</button>
+    <PageHeader :title="t('rl.title')" :desc="t('rl.desc')">
+      <span class="chip" :class="count ? 'on' : 'off'">{{ t('rl.total', { n: count }) }}</span>
+      <button class="btn sm" @click="load" :disabled="loading"><span class="spinner" v-if="loading"></span> {{ t('common.refresh') }}</button>
     </PageHeader>
 
     <!-- 统计: 总数 / 内置 / 外部导入 / 适用范围拆分 -->
     <div class="card">
       <div class="toolbar" style="flex-wrap:wrap; gap:10px">
-        <span class="chip blue">规则总数 {{ count }}</span>
-        <span class="chip">内置 {{ builtinCount }}</span>
-        <span class="chip">外部导入 {{ externalCount }}</span>
-        <span class="chip" :class="scopeCount('web') ? 'on' : 'off'">Web 范围 {{ scopeCount('web') }}</span>
-        <span class="chip" :class="scopeCount('host') ? 'warn' : 'off'">主机范围 {{ scopeCount('host') }}</span>
+        <span class="chip blue">{{ t('rl.totalChip', { n: count }) }}</span>
+        <span class="chip">{{ t('rl.builtinChip', { n: builtinCount }) }}</span>
+        <span class="chip">{{ t('rl.externalChip', { n: externalCount }) }}</span>
+        <span class="chip" :class="scopeCount('web') ? 'on' : 'off'">{{ t('rl.webScope', { n: scopeCount('web') }) }}</span>
+        <span class="chip" :class="scopeCount('host') ? 'warn' : 'off'">{{ t('rl.hostScope', { n: scopeCount('host') }) }}</span>
       </div>
       <!-- 第二行: 严重级别分布 + 验证状态(导入规则默认已验证; 显式暂存的待验证规则不参与扫描, 需"标记已验证"后生效) -->
       <div class="toolbar" style="flex-wrap:wrap; gap:10px; margin-top:10px">
-        <span class="chip" :class="'sev-' + s" v-for="s in SEVS" :key="s" :title="SEV_NAME[s]">
-          {{ SEV_NAME[s] }} {{ sevCount(s) }}
+        <span class="chip" :class="'sev-' + s" v-for="s in SEVS" :key="s" :title="t(SEV_NAME[s])">
+          {{ t(SEV_NAME[s]) }} {{ sevCount(s) }}
         </span>
-        <span class="chip on">已验证 {{ statusCount.verified }}</span>
+        <span class="chip on">{{ t('rl.verifiedChip', { n: statusCount.verified }) }}</span>
         <span class="chip warn" v-if="statusCount.pending">
-          <span class="spinner" v-if="verifying"></span> 待验证 {{ statusCount.pending }}
+          <span class="spinner" v-if="verifying"></span> {{ t('rl.pendingChip', { n: statusCount.pending }) }}
         </span>
-        <span class="muted small" v-if="lastSync">上次 NVD 同步: <span class="mono">{{ lastSync }}</span></span>
+        <span class="muted small" v-if="lastSync">{{ t('rl.lastSync') }}: <span class="mono">{{ lastSync }}</span></span>
       </div>
       <div class="muted small" style="margin-top:8px">
-        外部规则目录: <span class="mono">{{ dir || 'vuln/' }}</span> (*.json, 导入即热加载, 无需重启)
+        {{ t('rl.extDir') }}: <span class="mono">{{ dir || 'vuln/' }}</span> ({{ t('rl.extDirNote') }})
       </div>
       <!-- 主机漏洞 CPE 库: 与上面的 Web 正则规则是两套独立体系(版本->CVE 匹配 + EOL 停补判定),
            用户曾反馈"规则库才 10 条还是 Web 的" —— 把主机侧的规模显式展示出来 -->
       <div class="muted small" style="margin-top:6px" v-if="cpeProducts">
-        主机漏洞 CPE 库(服务版本 → CVE 匹配 + 停止支持判定, 主机扫描自动生效):
-        <b>{{ cpeProducts }}</b> 个产品 / <b>{{ cpeCves }}</b> 条 CVE。
-        内置于 exe; 一键同步可从 NVD 拉取最新 CVE 扩充规则(产物热生效, 无需重启)。
+        {{ t('rl.cpeTitle') }}:
+        <b>{{ cpeProducts }}</b> {{ t('rl.cpeProducts') }} / <b>{{ cpeCves }}</b> {{ t('rl.cpeCves') }}。
+        {{ t('rl.cpeNote') }}
       </div>
       <!-- 一键同步 NVD: 后台拉取 + 进度轮询, 与官方模板更新共用进度条样式。
            2026-09 起 NVD 旧 2.0 端点退役(403), 后端已迁移 2.1 API; 可选 API Key
            把限速档从 5次/30秒 提到 50次/30秒(填一次自动保存到 settings.json) -->
       <div style="margin-top:10px" v-if="cpeProducts">
         <button class="btn sm" :disabled="sync.running || syncBusy" @click="startSync"
-                title="从 NVD 2.1 API 拉取最新 CVE 数据扩充主机 CPE 规则库(需网络可达 services.nvd.nist.gov, 国内可能需要代理)。
-默认增量: 有上次同步记录时只拉之后修改过的 CVE(秒级~分钟级); 勾选全量重同步则拉全部 ~40 万条(带 Key 约 3-5 分钟, 匿名约 20 分钟)。">
-          <span class="spinner" v-if="sync.running"></span> 一键同步 NVD
+                :title="t('rl.syncTip') + '\n' + t('rl.syncTipDefault')">
+          <span class="spinner" v-if="sync.running"></span> {{ t('rl.syncBtn') }}
         </button>
         <label style="margin-left:10px; cursor:pointer; user-select:none"
-               title="默认增量: 只拉上次同步之后 NVD 修改过的 CVE, 秒级~分钟级。勾选后拉全部 ~40 万条(带 Key 约 3-5 分钟, 匿名约 20 分钟)。">
-          <input type="checkbox" :disabled="sync.running || syncBusy" v-model="syncFull"> 全量重同步
+               :title="t('rl.syncFullTip')">
+          <input type="checkbox" :disabled="sync.running || syncBusy" v-model="syncFull"> {{ t('rl.syncFull') }}
         </label>
         <input class="input mono" style="width:280px; margin-left:10px" v-model.trim="syncKey"
                :disabled="sync.running || syncBusy" @keyup.enter="startSync"
-               :placeholder="sync.apiKeyConfigured ? 'NVD API Key 已保存, 留空即用' : '可选: NVD API Key(留空=匿名档 5次/30秒)'"
-               title="NVD 免费 API Key(nist.gov 申请)。带 Key 限速 50 次/30 秒, 全量同步约 3-5 分钟; 匿名约 20 分钟。填写后保存到 settings.json 的 nvd 节。">
+               :placeholder="sync.apiKeyConfigured ? t('rl.keySaved') : t('rl.keyPh')"
+               :title="t('rl.keyTip')">
         <span class="muted small" v-if="sync.running" style="margin-left:12px">
           {{ syncModeText }} ·
           <!-- 全量分批(2026-09-25): 按页分批, 每批 n 页, 跑完一批落一次盘, 中断可续 -->
           <template v-if="sync.batchTotal > 0">
-            第 {{ (sync.batchIndex || 0) + 1 }}/{{ sync.batchTotal }} 批<template v-if="sync.batchFromPage"> (第 {{ sync.batchFromPage }}-{{ sync.batchToPage }} 页)</template> ·
+            {{ t('rl.batch', { i: (sync.batchIndex || 0) + 1, n: sync.batchTotal }) }}<template v-if="sync.batchFromPage"> {{ t('rl.pagesRange', { a: sync.batchFromPage, b: sync.batchToPage }) }}</template> ·
           </template>
-          {{ sync.currentPage }}/{{ sync.totalPages || '?' }} 页
-          · 本次拉取 {{ sync.totalCves }} 条, 库内共 {{ sync.keptCves }}
+          {{ t('rl.pageOf', { a: sync.currentPage, b: sync.totalPages || '?' }) }}
+          · {{ t('rl.fetched', { a: sync.totalCves, b: sync.keptCves }) }}
         </span>
         <span class="muted small" v-else-if="sync.finished" style="margin-left:12px">
-          完成: {{ sync.products }} 个产品 / {{ sync.keptCves }} 条 CVE
-          <template v-if="sync.error"> (失败: {{ sync.error }})</template>
+          {{ t('rl.syncDone', { a: sync.products, b: sync.keptCves }) }}
+          <template v-if="sync.error"> {{ t('rl.syncFail', { err: sync.error }) }}</template>
         </span>
         <!-- 中断过的分批同步: 必须说清"再点一次是续跑, 不是从头再来", 否则用户
              不敢点(怕 20 分钟白等)或误勾全量重跑(把已完成的批又跑一遍) -->
         <div class="muted small" v-if="sync.resumable && !sync.running" style="margin-left:12px; margin-top:4px">
-          上次同步在第 {{ (sync.batchIndex || 0) + 1 }}/{{ sync.batchTotal }} 批中断, 已完成批次的数据已落盘 ——
-          再点「一键同步」从第 {{ (sync.batchIndex || 0) + 1 }} 批继续; 勾选"全量重同步"则从头重跑。
+          {{ t('rl.resumeNote1', { i: (sync.batchIndex || 0) + 1, n: sync.batchTotal }) }}
+          {{ t('rl.resumeNote2', { i: (sync.batchIndex || 0) + 1 }) }}
         </div>
       </div>
       <div class="muted small err-line">{{ err }}</div>
@@ -78,8 +77,8 @@
     <!-- ===== 官方规则模板更新 ===== -->
     <div class="card">
       <div class="card-title">
-        官方规则模板更新
-        <span class="sub">从官方模板仓库(Nuclei Templates)拉取可被内置引擎执行的 HTTP 模板, 应用前自动备份旧版本</span>
+        {{ t('rl.updTitle') }}
+        <span class="sub">{{ t('rl.updSub') }}</span>
       </div>
 
       <!-- 版本状态: 本地版本 / 远端版本 / 直连通道可用性 -->
@@ -89,77 +88,74 @@
              自相矛盾, 用户会以为官方模板也没更新(实际是根本没去查)。 -->
         <span class="chip" :class="upd.running ? 'warn' : (upd.available ? 'blue' : (upd.configured ? 'on' : 'off'))">
           <span class="spinner" v-if="upd.running"></span>
-          {{ upd.running ? '更新进行中' : (upd.available ? '有新版本可更新' : (upd.configured ? '已是最新' : '自建源未配置')) }}
+          {{ upd.running ? t('rl.updRunning') : (upd.available ? t('rl.updNew') : (upd.configured ? t('rl.updLatest') : t('rl.updNoSrc'))) }}
         </span>
-        <span class="chip">本地版本 <span class="mono">{{ shortRev(upd.localCommit) }}</span></span>
-        <span class="chip" v-if="upd.remoteCommit">远端版本 <span class="mono">{{ shortRev(upd.remoteCommit) }}</span></span>
-        <span class="chip" v-if="upd.directRemoteRev">官方修订 <span class="mono">{{ shortRev(upd.directRemoteRev) }}</span></span>
+        <span class="chip">{{ t('rl.localVer') }} <span class="mono">{{ shortRev(upd.localCommit) }}</span></span>
+        <span class="chip" v-if="upd.remoteCommit">{{ t('rl.remoteVer') }} <span class="mono">{{ shortRev(upd.remoteCommit) }}</span></span>
+        <span class="chip" v-if="upd.directRemoteRev">{{ t('rl.directRev') }} <span class="mono">{{ shortRev(upd.directRemoteRev) }}</span></span>
         <span class="chip" :class="directEnabled ? 'on' : 'off'">
-          官方源直连{{ directEnabled ? '已启用' : '未启用' }}
+          {{ t('rl.directConn') }}{{ directEnabled ? t('common.enabled') : t('common.disabled') }}
         </span>
         <div class="spacer"></div>
-        <button class="btn sm" :disabled="updBusy || upd.running" @click="loadUpdStatus">检查更新</button>
-        <button class="btn sm" :disabled="updBusy || upd.running" @click="openUpdLog">更新日志</button>
+        <button class="btn sm" :disabled="updBusy || upd.running" @click="loadUpdStatus">{{ t('rl.checkUpd') }}</button>
+        <button class="btn sm" :disabled="updBusy || upd.running" @click="openUpdLog">{{ t('rl.updLog') }}</button>
         <button class="btn sm" :disabled="updBusy || upd.running || !directEnabled" @click="startUpdate('direct')">
-          <span class="spinner" v-if="upd.running && upd.channel === 'direct'"></span> 一键更新官方模板
+          <span class="spinner" v-if="upd.running && upd.channel === 'direct'"></span> {{ t('rl.updDirect') }}
         </button>
         <!-- 自建源通道(经典页迁移 P1-3): 走 settings.json updater.sources, 与官方直连是两个独立端点。
              〔2026-09-24〕未配置源时直接禁用: 点了必然报"未配置下载源", 而页面同时显示
              "官方源已启用 + 有新修订", 用户会误判成官方模板更新坏了(实测踩过)。 -->
         <button class="btn sm" :disabled="updBusy || upd.running || !upd.configured" @click="startUpdate('rules')"
-                :title="upd.configured
-                  ? '从 updater.sources 配置的自建下载源更新(源端需带 rules-manifest.json)'
-                  : '未配置自建下载源: 需在 settings.json 的 updater.sources 填源地址。只想更新官方模板请用左侧「一键更新官方模板」(无需任何配置)'">
-          <span class="spinner" v-if="upd.running && upd.channel === 'rules'"></span> 一键更新(自建源)
+                :title="upd.configured ? t('rl.srcTipOn') : t('rl.srcTipOff')">
+          <span class="spinner" v-if="upd.running && upd.channel === 'rules'"></span> {{ t('rl.updSrc') }}
         </button>
       </div>
 
       <div class="muted small" style="margin-top:8px">
         <template v-if="!directEnabled">
-          官方源直连未启用 —— 在 exe 同目录 settings.json 的 updater 节增加
-          <span class="mono">"direct": { "enabled": true }</span> 即可(无需自建下载源)。
+          {{ t('rl.directOff1') }}
+          <span class="mono">"direct": { "enabled": true }</span> {{ t('rl.directOff2') }}
         </template>
         <template v-else-if="upd.directCheckError">
-          官方源直连({{ upd.directRepo }}): {{ upd.directCheckError }}
+          {{ t('rl.directErr', { repo: upd.directRepo, err: upd.directCheckError }) }}
         </template>
         <template v-else>
-          官方源直连(<span class="mono">{{ upd.directRepo || '-' }}</span>): 本地
+          {{ t('rl.directLocal', { repo: upd.directRepo || '-' }) }}
           <span class="mono">{{ shortRev(upd.directLocalRev) }}</span> ·
-          {{ upd.directAvailable ? '远端有新修订, 可一键更新' : '本地已是最新, 无需更新' }}
+          {{ upd.directAvailable ? t('rl.remoteNew') : t('rl.localOk') }}
         </template>
       </div>
       <!-- 网络优化指引折叠一行(审计 §7): 平时只占 summary 一行, 点开才展开三个方案。
            原来是 620px 弹窗 —— 指引是低频参考, 弹窗太重, 折叠行更符合"提示 ≤1 句"的规范 -->
       <details class="net-help" v-if="directEnabled && !upd.running && upd.directAvailable">
-        <summary>直连 GitHub 可能较慢 —— 网络优化指引(代理 / 自建镜像 / 手动导入)</summary>
+        <summary>{{ t('rl.netHelpSum') }}</summary>
         <div class="net-help-body">
           <div class="net-plan">
-            <div class="net-plan-head"><b style="color:var(--accent)">方案一 · 配代理环境变量</b>（推荐, 代理关了自动回退直连)
+            <div class="net-plan-head"><b style="color:var(--accent)">{{ t('rl.plan1') }}</b>{{ t('rl.plan1Note') }}
               <div style="flex:1"></div>
-              <button class="btn xs" @click="copyText(netHelpProxy)">{{ copied === netHelpProxy ? '已复制' : '一键复制' }}</button>
+              <button class="btn xs" @click="copyText(netHelpProxy)">{{ copied === netHelpProxy ? t('rl.copied') : t('rl.copyBtn') }}</button>
             </div>
-            <div class="small muted">程序只认环境变量, 不读 Windows「Internet 选项」。PowerShell 设一次(用户级), 重启生效:</div>
+            <div class="small muted">{{ t('rl.plan1Desc') }}</div>
             <pre class="code-block">{{ netHelpProxy }}</pre>
-            <div class="small muted">也可写死在 settings.json 的 updater.proxy, 但代理一关更新会直接失败, 不推荐。</div>
+            <div class="small muted">{{ t('rl.plan1Desc2') }}</div>
           </div>
           <div class="net-plan">
-            <div class="net-plan-head"><b style="color:var(--accent)">方案二 · 自建内网镜像</b>(企业最优, 无变化零下载)
+            <div class="net-plan-head"><b style="color:var(--accent)">{{ t('rl.plan2') }}</b>{{ t('rl.plan2Note') }}
               <div style="flex:1"></div>
-              <button class="btn xs" @click="copyText(netHelpSources)">{{ copied === netHelpSources ? '已复制' : '一键复制' }}</button>
+              <button class="btn xs" @click="copyText(netHelpSources)">{{ copied === netHelpSources ? t('rl.copied') : t('rl.copyBtn') }}</button>
             </div>
-            <div class="small muted">镜像源需自带 rules-manifest.json(官方仓库不提供), 否则请用方案三:</div>
+            <div class="small muted">{{ t('rl.plan2Desc') }}</div>
             <pre class="code-block">{{ netHelpSources }}</pre>
           </div>
           <div class="net-plan">
-            <div class="net-plan-head"><b style="color:var(--accent)">方案三 · 手动导入模板包</b>(拷目录重启生效)</div>
-            <div class="small muted">在能上网的机器上更新好, 把规则目录 <span class="mono">rules/</span> 整个拷到目标机器, 重启即生效(本地版本正确时不会再下载)。</div>
+            <div class="net-plan-head"><b style="color:var(--accent)">{{ t('rl.plan3') }}</b>{{ t('rl.plan3Note') }}</div>
+            <div class="small muted">{{ t('rl.plan3Desc1') }} <span class="mono">rules/</span> {{ t('rl.plan3Desc2') }}</div>
           </div>
-          <div class="small muted" style="margin-top:8px">更新失败不影响在用规则: 失败会清除暂存并保留旧版本。</div>
+          <div class="small muted" style="margin-top:8px">{{ t('rl.planFail') }}</div>
         </div>
       </details>
       <div class="muted small" style="margin-top:4px" v-if="upd.tiered && upd.tiered.enabled">
-        分级加载: 常驻 {{ upd.tiered.residentCount }} / 按需 {{ upd.tiered.onDemandCount }}
-        (已加载 {{ upd.tiered.loadedCount }})
+        {{ t('rl.tiered', { a: upd.tiered.residentCount, b: upd.tiered.onDemandCount, c: upd.tiered.loadedCount }) }}
       </div>
       <div class="muted small err-line" v-if="updErr">{{ updErr }}</div>
 
@@ -167,7 +163,7 @@
       <div v-if="upd.running || updProgText" style="margin-top:14px">
         <!-- 字节级进度(单包下载阶段): totalBytes=0 表示对端未给长度, 只显示已下载量不编造百分比 -->
         <div class="bar-row" v-if="upd.progress && upd.progress.totalBytes > 0">
-          <span class="bar-label">下载</span>
+          <span class="bar-label">{{ t('rl.dl') }}</span>
           <div class="bar-track">
             <div class="bar-fill" :style="{ width: dlPercent + '%', background: 'var(--green)' }"></div>
           </div>
@@ -175,7 +171,7 @@
         </div>
         <!-- 逐文件进度(自建源通道) -->
         <div class="bar-row" v-else-if="upd.progress && upd.progress.total > 0">
-          <span class="bar-label">文件</span>
+          <span class="bar-label">{{ t('rl.file') }}</span>
           <div class="bar-track">
             <div class="bar-fill" :style="{ width: filePercent + '%', background: 'var(--accent)' }"></div>
           </div>
@@ -187,12 +183,12 @@
       <!-- 备份版本回滚: 更新出错或想退回旧版规则时使用 -->
       <div v-if="upd.backups && upd.backups.length" style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--border)">
         <div class="small muted" style="margin-bottom:6px">
-          可回滚的备份版本(每次更新前自动备份, 保留最近 3 版; 恢复后自动热加载):
+          {{ t('rl.backupsNote') }}
         </div>
         <div class="toolbar" style="flex-wrap:wrap; gap:8px">
           <span v-for="b in upd.backups" :key="b" class="badge">
             <span class="mono">{{ b }}</span>
-            <button class="btn xs" style="margin-left:6px" :disabled="updBusy || upd.running" @click="restore(b)">回滚</button>
+            <button class="btn xs" style="margin-left:6px" :disabled="updBusy || upd.running" @click="restore(b)">{{ t('rl.rollback') }}</button>
           </span>
         </div>
       </div>
@@ -200,34 +196,34 @@
 
     <!-- 适用范围页签: 全部 / Web / 主机 -->
     <div class="tabs">
-      <div class="tab" :class="{ active: scopeTab === '' }" @click="scopeTab = ''">全部 ({{ rows.length }})</div>
-      <div class="tab" :class="{ active: scopeTab === 'web' }" @click="scopeTab = 'web'">Web 范围 ({{ scopeCount('web') }})</div>
-      <div class="tab" :class="{ active: scopeTab === 'host' }" @click="scopeTab = 'host'">主机范围 ({{ scopeCount('host') }})</div>
+      <div class="tab" :class="{ active: scopeTab === '' }" @click="scopeTab = ''">{{ t('rl.all') }} ({{ rows.length }})</div>
+      <div class="tab" :class="{ active: scopeTab === 'web' }" @click="scopeTab = 'web'">{{ t('rl.webScope', { n: scopeCount('web') }) }}</div>
+      <div class="tab" :class="{ active: scopeTab === 'host' }" @click="scopeTab = 'host'">{{ t('rl.hostScope', { n: scopeCount('host') }) }}</div>
     </div>
 
     <div class="card">
       <div class="toolbar">
-        <input class="input" v-model.trim="q" placeholder="过滤: ID / 名称 / 模式 / 详情">
+        <input class="input" v-model.trim="q" :placeholder="t('rl.filterPh')">
         <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 等级/匹配方式选项
              从当前规则列表(rows 全量, 不分页)聚合; 某类数据删光后选项消失, 有了再出现 -->
         <select class="select" v-model="fSeverity">
-          <option value="">全部等级</option>
-          <option v-for="s in sevOpts" :key="s" :value="s">{{ SEV_CN[s] || s }}</option>
+          <option value="">{{ t('rl.allSev') }}</option>
+          <option v-for="s in sevOpts" :key="s" :value="s">{{ t(SEV_CN[s] || s) }}</option>
         </select>
         <select class="select" v-model="fType">
-          <option value="">全部匹配方式</option>
-          <option v-for="t in typeOpts" :key="t" :value="t">{{ TYPE_CN[t] || t }}</option>
+          <option value="">{{ t('rl.allType') }}</option>
+          <option v-for="tp in typeOpts" :key="tp" :value="tp">{{ t(TYPE_CN[tp] || tp) }}</option>
         </select>
-        <button class="btn sm" @click="resetF">清空</button>
+        <button class="btn sm" @click="resetF">{{ t('as.reset') }}</button>
         <div class="spacer"></div>
-        <button class="btn sm" @click="showBuiltin">查看内置规则 JSON</button>
-        <button class="btn sm primary" @click="openImport">导入自定义规则</button>
+        <button class="btn sm" @click="showBuiltin">{{ t('rl.builtinJson') }}</button>
+        <button class="btn sm primary" @click="openImport">{{ t('rl.import') }}</button>
       </div>
 
       <div class="table-wrap" v-if="filtered.length">
         <!-- 规则库扩充到数千条后全量渲染会卡死页面: 截断到 500 行并引导用户用搜索/筛选收敛 -->
         <div class="muted small" v-if="filtered.length > 500" style="padding:8px 10px">
-          共 {{ filtered.length }} 条, 仅显示前 500 条 —— 请用上方搜索或筛选条件收敛
+          {{ t('rl.truncated', { n: filtered.length }) }}
         </div>
         <!-- 本表用 fixed 布局 + colgroup 定宽: auto 布局下列宽由内容决定, 4238 字符的
              模式会把该列撑到几千 px(横向滚动 + 大片空白); 且 td 上的 max-width 在 auto
@@ -240,8 +236,8 @@
           </colgroup>
           <thead>
             <tr>
-              <th>适用范围</th><th>ID</th><th>名称</th><th>等级</th>
-              <th>匹配方式</th><th>模式</th><th>来源</th><th>状态</th><th>说明</th>
+              <th>{{ t('rl.cScope') }}</th><th>ID</th><th>{{ t('rl.cName') }}</th><th>{{ t('rl.cSev') }}</th>
+              <th>{{ t('rl.cType') }}</th><th>{{ t('rl.cPattern') }}</th><th>{{ t('rl.cSource') }}</th><th>{{ t('rl.cStatus') }}</th><th>{{ t('rl.cDetail') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -259,76 +255,76 @@
                 <div class="pattern-cell mono small" :title="r.pattern" @click="openPattern(r)">{{ r.pattern }}</div>
               </td>
               <td class="small">
-                <span class="muted" v-if="r.source === 'builtin'">内置</span>
-                <span class="badge st-pending" v-else>{{ r.source || '外部' }}</span>
+                <span class="muted" v-if="r.source === 'builtin'">{{ t('rl.builtinWord') }}</span>
+                <span class="badge st-pending" v-else>{{ r.source || t('rl.externalWord') }}</span>
               </td>
               <td>
                 <!-- 内置规则恒已验证; 导入规则默认已验证(导入即生效); 显式待验证(暂存)的规则可手动"标记已验证" -->
-                <span class="badge st-success" v-if="r.source === 'builtin'">已验证</span>
-                <span class="badge st-success" v-else-if="r.status === 'verified'">已验证</span>
-                <span v-else class="badge st-pending">待验证</span>
+                <span class="badge st-success" v-if="r.source === 'builtin'">{{ t('rl.verified') }}</span>
+                <span class="badge st-success" v-else-if="r.status === 'verified'">{{ t('rl.verified') }}</span>
+                <span v-else class="badge st-pending">{{ t('rl.pending') }}</span>
                 <button class="btn xs" v-if="r.source !== 'builtin' && r.status !== 'verified'"
-                        style="margin-left:6px" :disabled="verifying" @click="verifyRule(r)">标记已验证</button>
+                        style="margin-left:6px" :disabled="verifying" @click="verifyRule(r)">{{ t('rl.markVerified') }}</button>
               </td>
               <td class="small muted" style="max-width:260px">{{ r.detail || '-' }}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <Empty v-else :text="hasFilter ? '无匹配规则' : '暂无规则(内置规则应至少 10 条, 请检查服务端加载)'" />
+      <Empty v-else :text="hasFilter ? t('rl.noMatch') : t('rl.noRules')" />
     </div>
 
     <!-- 导入弹窗 -->
-    <Modal v-if="importOpen" title="导入自定义规则" width="640px" @close="importOpen = false">
+    <Modal v-if="importOpen" :title="t('rl.import')" width="640px" @close="importOpen = false">
       <div class="field">
-        <label class="label">文件名(可选, 留空按时间戳命名)</label>
+        <label class="label">{{ t('rl.fileName') }}</label>
         <input class="input mono" v-model.trim="importName" placeholder="custom_rules.json">
       </div>
       <div class="field" style="margin-top:10px">
-        <label class="label">规则 JSON *</label>
+        <label class="label">{{ t('rl.rulesJson') }}</label>
         <textarea class="input mono" rows="10" v-model="importJSON" :placeholder="importPh"></textarea>
       </div>
       <div class="muted small" style="margin-top:8px">
-        结构: <span class="mono">{ "rules": [ { "id", "name", "severity", "type", "pattern", "detail", "scope" } ] }</span>;
-        type 仅支持 body / header / path; scope 为 web 或 host(留空按 type 推导)。
+        {{ t('rl.structLine1') }} <span class="mono">{ "rules": [ { "id", "name", "severity", "type", "pattern", "detail", "scope" } ] }</span>
+        {{ t('rl.structLine2') }}
       </div>
       <div class="login-err" style="text-align:left">{{ importErr }}</div>
       <div class="login-err ok" style="text-align:left">{{ importOk }}</div>
       <template #footer>
-        <button class="btn sm" @click="importOpen = false">关闭</button>
-        <button class="btn sm primary" :disabled="busy" @click="doImport">导入</button>
+        <button class="btn sm" @click="importOpen = false">{{ t('common.close') }}</button>
+        <button class="btn sm primary" :disabled="busy" @click="doImport">{{ t('rl.importBtn') }}</button>
       </template>
     </Modal>
 
     <!-- 内置规则 JSON 弹窗 -->
-    <Modal v-if="builtinOpen" title="内置规则 JSON (vuln_builtin.json)" width="760px" @close="builtinOpen = false">
+    <Modal v-if="builtinOpen" :title="t('rl.builtinTitle')" width="760px" @close="builtinOpen = false">
       <pre class="code-block" style="max-height:60vh; overflow:auto">{{ builtinJSON }}</pre>
       <template #footer>
-        <button class="btn sm" @click="builtinOpen = false">关闭</button>
+        <button class="btn sm" @click="builtinOpen = false">{{ t('common.close') }}</button>
       </template>
     </Modal>
 
     <!-- 规则模式全文弹窗: 列表里只显示一行(超长正则否则会把整行撑变形), 点开看完整并可复制 -->
-    <Modal v-if="patternOpen" :title="'规则模式 · ' + (patternRule.id || '')" width="760px" @close="patternOpen = false">
+    <Modal v-if="patternOpen" :title="t('rl.patternTitle') + ' · ' + (patternRule.id || '')" width="760px" @close="patternOpen = false">
       <div class="muted small" style="margin-bottom:8px">
-        {{ patternRule.name }} · 匹配方式 <span class="mono">{{ patternRule.type }}</span> ·
-        共 {{ (patternRule.pattern || '').length }} 字符
+        {{ patternRule.name }} · {{ t('rl.matchType') }} <span class="mono">{{ patternRule.type }}</span> ·
+        {{ t('rl.chars', { n: (patternRule.pattern || '').length }) }}
       </div>
       <pre class="code-block mono" style="max-height:60vh; overflow:auto; white-space:pre-wrap; word-break:break-all">{{ patternRule.pattern }}</pre>
       <template #footer>
-        <button class="btn sm" @click="patternOpen = false">关闭</button>
+        <button class="btn sm" @click="patternOpen = false">{{ t('common.close') }}</button>
         <button class="btn sm primary" @click="copyText(patternRule.pattern)">
-          {{ copied === patternRule.pattern ? '已复制' : '复制正则' }}
+          {{ copied === patternRule.pattern ? t('rl.copied') : t('rl.copyRegex') }}
         </button>
       </template>
     </Modal>
 
     <!-- 更新日志弹窗 -->
-    <Modal v-if="logOpen" title="规则库更新日志" width="900px" @close="logOpen = false">
+    <Modal v-if="logOpen" :title="t('rl.logTitle')" width="900px" @close="logOpen = false">
       <div class="table-wrap" v-if="logEntries.length">
         <table class="table">
           <thead>
-            <tr><th>时间</th><th>类型</th><th>版本变化</th><th>文件</th><th>结果</th><th>耗时</th><th>说明</th></tr>
+            <tr><th>{{ t('rl.lTime') }}</th><th>{{ t('rl.lType') }}</th><th>{{ t('rl.lVer') }}</th><th>{{ t('rl.lFile') }}</th><th>{{ t('rl.lResult') }}</th><th>{{ t('rl.lDur') }}</th><th>{{ t('rl.lDesc') }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="(e, i) in logEntries" :key="i">
@@ -338,7 +334,7 @@
               <td class="mono small">{{ e.files || 0 }}</td>
               <td>
                 <span class="badge" :class="e.status === 'success' ? 'st-success' : 'st-failed'">
-                  {{ e.status === 'success' ? '成功' : '已回滚' }}
+                  {{ e.status === 'success' ? t('rl.ok') : t('rl.rolledBack') }}
                 </span>
               </td>
               <td class="mono small">{{ e.durationMs || 0 }}ms</td>
@@ -347,9 +343,9 @@
           </tbody>
         </table>
       </div>
-      <Empty v-else text="暂无更新记录" />
+      <Empty v-else :text="t('rl.noLog')" />
       <template #footer>
-        <button class="btn sm" @click="logOpen = false">关闭</button>
+        <button class="btn sm" @click="logOpen = false">{{ t('common.close') }}</button>
       </template>
     </Modal>
 
@@ -364,9 +360,11 @@ import SevTag from '../components/SevTag.vue'
 import Modal from '../components/Modal.vue'
 import { api } from '../api/http'
 import { fmtDT, fmtBytes, fmtSpeed, fmtDuration, etaSeconds, copyText as copy } from '../utils'
+import { t } from '../i18n'
 
 // 与 scanner.ScopeWeb / ScopeHost 对齐(见 scanner/vuln.go 的 Scope* 常量)
-const SCOPE_NAME = { web: 'Web', host: '主机' }
+// 值存 i18n 词条键, 调用处 t() 解析(2026-10-04 i18n 批次 10)
+const SCOPE_NAME = { web: 'rl.scWeb', host: 'rl.scHost' }
 
 const loading = ref(false)
 const busy = ref(false)
@@ -380,8 +378,9 @@ const fSeverity = ref('')
 const fType = ref('')
 const err = ref('')
 // 2026-10-02: 等级/匹配方式筛选选项 = 当前规则列表里实际存在的值(只含存在的)
-const SEV_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
-const TYPE_CN = { body: 'body (响应体)', header: 'header (响应头)', path: 'path (敏感路径)' }
+// 2026-10-04 i18n: 值存词条键, 模板 t() 解析
+const SEV_CN = { critical: 'rl.sevCritical', high: 'rl.sevHigh', medium: 'rl.sevMedium', low: 'rl.sevLow', info: 'rl.sevInfo' }
+const TYPE_CN = { body: 'rl.tpBody', header: 'rl.tpHeader', path: 'rl.tpPath' }
 const sevOpts = computed(() => ['critical', 'high', 'medium', 'low', 'info'].filter(s => rows.value.some(r => (r.severity || '') === s)))
 const typeOpts = computed(() => ['body', 'header', 'path'].filter(t => rows.value.some(r => (r.type || '') === t)))
 watch(rows, () => {
@@ -445,10 +444,10 @@ async function loadLastSync() {
 const sync = ref({ running: false, finished: false, currentPage: 0, totalPages: 0, totalCves: 0, keptCves: 0, products: 0, error: '', apiKeyConfigured: false, mode: '', batchIndex: 0, batchTotal: 0, batchFromPage: 0, batchToPage: 0, resumable: false })
 const syncModeText = computed(() => {
   const m = sync.value.mode
-  if (m === 'incremental') return '增量'
-  if (m === 'resume') return '续传'
-  if (m === 'full-batch') return '全量分批'
-  return '全量'
+  if (m === 'incremental') return t('rl.mInc')
+  if (m === 'resume') return t('rl.mResume')
+  if (m === 'full-batch') return t('rl.mFullBatch')
+  return t('rl.mFull')
 })
 const syncBusy = ref(false)
 // 可选 NVD API Key(留空 = 用已保存的或匿名档)。仅本地持有, 提交后由后端保存到 settings.json
@@ -461,16 +460,16 @@ async function startSync() {
   if (sync.value.running) return
   const withKey = !!syncKey.value.trim()
   const how = syncFull.value
-    ? '全量: 拉取全部 ~40 万条 CVE, 带 API Key 约 3-5 分钟, 匿名约 20 分钟(官方限流 5 次/30 秒)。\n'
-    : '增量: 只拉上次同步之后 NVD 修改过的 CVE, 通常秒级~分钟级\n(无上次同步记录时自动回退全量)。\n'
+    ? t('rl.syncHowFull') + '\n'
+    : t('rl.syncHowInc') + '\n'
   // 有未完成的批计划时, 本次是"续跑" —— 必须写在确认框里, 否则用户以为又要从头等 20 分钟
   const resumeNote = (sync.value.resumable && !syncFull.value)
-    ? `\n检测到上次未完成的同步(第 ${(sync.value.batchIndex || 0) + 1}/${sync.value.batchTotal} 批), 本次从断点继续, 已完成批次不会重跑。\n`
+    ? '\n' + t('rl.syncResume', { i: (sync.value.batchIndex || 0) + 1, n: sync.value.batchTotal }) + '\n'
     : ''
-  if (!confirm('将从 NVD 2.1 API (services.nvd.nist.gov) 拉取 CVE 数据, 过滤到可指纹产品后写入 vuln/cpe/ 目录。\n\n' + how +
+  if (!confirm(t('rl.syncBase') + '\n\n' + how +
     resumeNote +
-    '注意: 需网络可达 NVD(国内可能需要代理)。\n\n' +
-    (withKey ? '本次将保存并使用新填写的 API Key。\n\n' : '') + '继续?')) return
+    t('rl.syncNote') + '\n\n' +
+    (withKey ? t('rl.syncKeyNote') + '\n\n' : '') + t('rl.continueQ'))) return
   syncBusy.value = true
   sync.value = { running: true, finished: false, currentPage: 0, totalPages: 0, totalCves: 0, keptCves: 0, products: 0, error: '', apiKeyConfigured: withKey, mode: syncFull.value ? 'full' : (sync.value.resumable ? 'resume' : 'full-batch'), batchIndex: sync.value.resumable ? sync.value.batchIndex : 0, batchTotal: sync.value.batchTotal, batchFromPage: 0, batchToPage: 0, resumable: false }
   try {
@@ -561,7 +560,7 @@ const filePercent = computed(() => {
 
 // shortRev 把 commit 哈希截短展示(空值给出人话而不是空白)
 function shortRev(s) {
-  if (!s) return '未应用'
+  if (!s) return t('rl.notApplied')
   return String(s).slice(0, 10)
 }
 
@@ -574,8 +573,8 @@ function updProgTextLine(p, prefix) {
   const bytes = p.bytes ? ' · ' + fmtBytes(p.bytes) + (p.totalBytes ? '/' + fmtBytes(p.totalBytes) : '') : ''
   const speed = p.speed ? ' · ' + fmtSpeed(p.speed) : ''
   const eta = fmtDuration(etaSeconds(p.bytes, p.totalBytes, p.speed))
-  const files = p.total > 0 ? ' · ' + (p.done || 0) + '/' + p.total + ' 个文件' : ''
-  return (prefix || '状态: ') + status + files + bytes + speed + (eta ? ' · 剩余约 ' + eta : '') +
+  const files = p.total > 0 ? ' · ' + (p.done || 0) + '/' + p.total + ' ' + t('rl.files') : ''
+  return (prefix || t('rl.statusLbl')) + status + files + bytes + speed + (eta ? ' · ' + t('rl.left', { time: eta }) : '') +
     (p.current ? ' · ' + p.current : '')
 }
 
@@ -587,7 +586,7 @@ async function loadUpdStatus() {
     upd.value = d || {}
     // 状态端点回带的 direct 段只含 enabled/repo/ref; 把 repo 提升到顶层供模板直接取用
     if (d && d.direct) upd.value.directRepo = d.direct.repo
-  } catch (e) { updErr.value = '更新状态查询失败: ' + e.message }
+  } catch (e) { updErr.value = t('rl.statusFail', { err: e.message }) }
   finally { updBusy.value = false }
 }
 
@@ -595,17 +594,17 @@ async function loadUpdStatus() {
 // 两个通道(direct / rules)共用同一套 /progress 状态, 只是启动端点不同, 因此合并成一个函数
 // 避免两份几乎相同的轮询代码各自漂移。
 async function startUpdate(channel) {
-  if (upd.value.running) { updErr.value = '已有更新任务进行中'; return }
+  if (upd.value.running) { updErr.value = t('rl.alreadyRunning'); return }
   if (channel === 'direct') {
-    if (!confirm('将从官方模板仓库拉取 HTTP 模板并更新本地规则库(只保留可被内置引擎执行的模板)。\n\n首次更新需下载几十 MB 源码包, 请确认网络可达。继续?')) return
+    if (!confirm(t('rl.updConfirm'))) return
   }
   updErr.value = ''
-  updProgText.value = channel === 'direct' ? '正在查询官方仓库最新修订...' : '更新已启动, 等待下载...'
+  updProgText.value = channel === 'direct' ? t('rl.querying') : t('rl.started')
   try {
     const path = channel === 'direct' ? '/api/rules/update/direct/start' : '/api/rules/update/start'
     await api(path, { method: 'POST' })
   } catch (e) {
-    updErr.value = '无法启动更新: ' + e.message
+    updErr.value = t('rl.startFail', { err: e.message })
     updProgText.value = ''
     return
   }
@@ -624,12 +623,12 @@ function startUpdPoll(channel) {
       p = await api('/api/rules/update/progress')
     } catch (e) {
       // 瞬时网络抖动不终止轮询(下一轮重试); 但连续失败不应无限轮询, 由用户手动刷新兜底
-      updProgText.value = '进度查询失败, 重试中...'
+      updProgText.value = t('rl.progFail')
       return
     }
     if (p.running) {
       upd.value = { ...upd.value, running: true, progress: p.progress || {} }
-      updProgText.value = updProgTextLine(p.progress, channel === 'direct' ? '直连: ' : '状态: ')
+      updProgText.value = updProgTextLine(p.progress, channel === 'direct' ? t('rl.directLbl') : t('rl.statusLbl'))
       return
     }
     // 任务结束: 先停轮询再处理结果, 避免结果处理期间又被定时器覆盖
@@ -637,14 +636,14 @@ function startUpdPoll(channel) {
     const pg = p.progress || {}
     upd.value = { ...upd.value, running: false, progress: pg }
     if (p.error) {
-      updErr.value = (channel === 'direct' ? '直连更新失败: ' : '更新失败: ') + p.error
-      updProgText.value = '旧规则包未受影响, 详情见更新日志'
+      updErr.value = (channel === 'direct' ? t('rl.directUpdFail') : t('rl.updFail')) + p.error
+      updProgText.value = t('rl.keepOld')
     } else if (p.result) {
       const r = p.result
       updProgText.value = r.updated
-        ? '更新完成: ' + (r.files || 0) + ' 个模板, 版本 ' + shortRev(r.commit) + '(已自动热加载)'
-        : '本地已是最新, 无需更新'
-      if (r.errors && r.errors.length) updErr.value = '部分文件处理告警: ' + r.errors.join('; ')
+        ? t('rl.updDone', { n: r.files || 0, v: shortRev(r.commit) })
+        : t('rl.localOk')
+      if (r.errors && r.errors.length) updErr.value = t('rl.partWarn', { errs: r.errors.join('; ') })
     } else {
       updProgText.value = ''
     }
@@ -660,15 +659,15 @@ function stopUpdPoll() {
 
 // restore 回滚到指定备份版本(恢复后服务端自动热加载)
 async function restore(label) {
-  if (!confirm('确认回滚到备份版本 ' + label + ' ?\n\n当前同名规则文件会被该备份覆盖, 恢复后立即生效。')) return
+  if (!confirm(t('rl.restoreConfirm', { label }))) return
   updBusy.value = true
   updErr.value = ''
   try {
     const d = await api('/api/rules/update/restore', { method: 'POST', body: { backup: label } })
-    updProgText.value = '已回滚: 恢复 ' + (d.files || 0) + ' 个文件, 当前版本 ' + shortRev(d.localCommit) + '(已自动热加载)'
+    updProgText.value = t('rl.restored', { n: d.files || 0, v: shortRev(d.localCommit) })
     await loadUpdStatus()
     await load()
-  } catch (e) { updErr.value = '回滚失败: ' + e.message }
+  } catch (e) { updErr.value = t('rl.restoreFail', { err: e.message }) }
   finally { updBusy.value = false }
 }
 
@@ -678,7 +677,7 @@ async function openUpdLog() {
   try {
     const d = await api('/api/rules/update/log')
     logEntries.value = d.entries || []
-  } catch (e) { updErr.value = '更新日志查询失败: ' + e.message }
+  } catch (e) { updErr.value = t('rl.logFail', { err: e.message }) }
 }
 
 // 占位文案用 JS 常量: Vue 模板里直接写 {{...}} 字面量会被当插值解析,
@@ -707,12 +706,12 @@ async function verifyRule(r) {
   try {
     await api('/api/vuln/rules/verify', { method: 'POST', body: { ids: [r.id] } })
     await load()
-  } catch (e) { alert('标记失败: ' + e.message) }
+  } catch (e) { alert(t('rl.verifyFail', { err: e.message })) }
   finally { verifying.value = false }
 }
 const hasFilter = computed(() => !!(q.value || fSeverity.value || fType.value || scopeTab.value))
 
-function scopeName(r) { return SCOPE_NAME[r.scope] || r.scope || 'Web' }
+function scopeName(r) { return t(SCOPE_NAME[r.scope] || r.scope || 'rl.scWeb') }
 // host 用蓝色徽章(中性区分), web 用绿色: 两者只是分类不是风险, 不用红色以免误读为告警
 function scopeBadge(r) { return r.scope === 'host' ? 'st-pending' : 'st-success' }
 
@@ -753,7 +752,7 @@ async function load() {
     serverScopes.value = d.scopes || null
     sevMap.value = d.severities || {}
     statusCount.value = d.status || { verified: 0, pending: 0 }
-  } catch (e) { err.value = '加载失败: ' + e.message }
+  } catch (e) { err.value = t('rl.loadFail', { err: e.message }) }
   finally { loading.value = false }
 }
 
@@ -766,15 +765,15 @@ function openImport() {
 async function doImport() {
   importErr.value = ''
   importOk.value = ''
-  if (!importJSON.value.trim()) { importErr.value = '规则 JSON 不能为空'; return }
+  if (!importJSON.value.trim()) { importErr.value = t('rl.jsonEmpty'); return }
   busy.value = true
   try {
     const d = await api('/api/vuln/import', {
       method: 'POST',
       body: { json: importJSON.value, filename: importName.value }
     })
-    importOk.value = '导入成功: 有效 ' + d.imported + ' 条, 当前共 ' + d.total + ' 条' +
-      (d.warnings && d.warnings.length ? '; 警告: ' + d.warnings.join('; ') : '')
+    importOk.value = t('rl.importOk', { a: d.imported, b: d.total }) +
+      (d.warnings && d.warnings.length ? t('rl.importWarn', { w: d.warnings.join('; ') }) : '')
     importJSON.value = ''
     await load()
   } catch (e) { importErr.value = e.message }
@@ -787,7 +786,7 @@ async function showBuiltin() {
     const d = await api('/api/vuln/builtin')
     builtinJSON.value = typeof d === 'string' ? d : JSON.stringify(d, null, 2)
     builtinOpen.value = true
-  } catch (e) { err.value = '内置规则读取失败: ' + e.message }
+  } catch (e) { err.value = t('rl.builtinFail', { err: e.message }) }
 }
 
 onMounted(async () => {
@@ -801,7 +800,7 @@ onMounted(async () => {
     const p = await api('/api/rules/update/progress')
     if (p && p.running) {
       upd.value = { ...upd.value, running: true }
-      updProgText.value = updProgTextLine(p.progress, '状态: ')
+      updProgText.value = updProgTextLine(p.progress, t('rl.statusLbl'))
       startUpdPoll('rules')
     }
   } catch (e) { /* 进度端点不可用不影响页面其它功能 */ }
