@@ -34,8 +34,11 @@ import (
 // EngineConfig 外部引擎编排配置(exe 同目录 engine.json, 可选)。
 // 缺省: 外部引擎关闭(enabled=false), 一切走内置引擎, 与旧版本行为一致。
 type EngineConfig struct {
-	// Enabled 总开关: true 时才把外部引擎接入扫描编排(默认 false)
-	Enabled bool `json:"enabled"`
+	// Enabled 总开关: 是否启用外部引擎编排。指针区分"未配置"与"显式关闭":
+	// nil(未写) = 默认启用; true = 启用; false = 显式关闭(回落纯内置引擎)。
+	// 默认启用是产品口径: 外部引擎作为默认执行路径, 引擎二进制缺失时由
+	// 编排器自动降级内置, 不阻塞扫描(见 scan_engine.go / orchestrator)。
+	Enabled *bool `json:"enabled,omitempty"`
 	// Engines 启用的引擎名(nmap/trivy/zap), 空 = 全部
 	Engines []string `json:"engines,omitempty"`
 	// TimeoutSec 单引擎执行超时(秒), 0 = 取默认 600
@@ -54,6 +57,10 @@ var (
 	engMu   sync.Mutex
 )
 
+// engExec 外部引擎执行器引用: 扫描前预判引擎二进制是否已安装(缺失直接走内置,
+// 避免 orchestrator 降级重复端口探测)。
+var engExec *engine.Executor
+
 const engLogMax = 100
 
 // instanceOrchestrator 返回全局引擎编排器(懒加载单例, 并发安全)。
@@ -69,13 +76,14 @@ func instanceOrchestrator() *parsers.Orchestrator {
 			cfg.BinDir = dir
 		}
 		ex := engine.NewExecutor(cfg)
+		engExec = ex
 		engOrch = parsers.NewEngineOrchestrator(ex, builtinRunner)
 		engOrch.DisableFallback = engCfg.DisableFallback
 		engOrch.SetLogger(engineLog)
-		if !engCfg.Enabled {
-			// 总开关关闭: 断开外部执行器 -> 所有请求直接走内置降级(零外部进程调用)
+		if !engineOn(engCfg) {
+			// 总开关显式关闭: 断开外部执行器 -> 所有请求直接走内置降级(零外部进程调用)
 			engOrch.SetExec(nil)
-			engineLog("外部引擎编排: 未启用(engine.enabled=false), 全部使用内置引擎")
+			engineLog("外部引擎编排: 已关闭(engine.enabled=false), 全部使用内置引擎")
 		} else {
 			engineLog("外部引擎编排: 已启用, 引擎 " + engineSummary() + " (失败自动降级为内置引擎)")
 		}
@@ -93,7 +101,13 @@ func engineSummary() string {
 // engineEnabled 外部引擎是否已启用(前端据此提示"当前为内置引擎模式")
 func engineEnabled() bool {
 	instanceOrchestrator()
-	return engCfg.Enabled
+	return engineOn(engCfg)
+}
+
+// engineOn 解析总开关: 未显式配置(nil)时默认启用, 显式 false 才关闭。
+// 默认启用符合"外部引擎作为默认执行路径, 二进制缺失由编排器降级"的口径。
+func engineOn(cfg EngineConfig) bool {
+	return cfg.Enabled == nil || *cfg.Enabled
 }
 
 // engineLog 记录编排/降级日志(并入 yugsight.log 并保留最近 100 条供面板展示)
@@ -124,7 +138,7 @@ func loadEngineConfig() EngineConfig {
 		return cfg
 	}
 	if json.Unmarshal(data, &cfg) != nil {
-		logLine("engine 配置解析失败, 使用默认配置(外部引擎关闭)")
+		logLine("engine 配置解析失败, 使用默认配置(外部引擎启用)")
 		return EngineConfig{}
 	}
 	return cfg
@@ -206,7 +220,7 @@ func handleEngineStatus(w http.ResponseWriter, r *http.Request) {
 	engMu.Unlock()
 
 	jsonOK(w, map[string]any{
-		"enabled":       engCfg.Enabled,
+		"enabled":       engineOn(engCfg),
 		"engines":       engCfg.Engines,
 		"timeoutSec":    effectiveTimeoutSec(),
 		"binDir":        engineBinDir(),
@@ -258,7 +272,7 @@ func engineSnapshot() EngineStatusSnapshot {
 	o := instanceOrchestrator()
 	st := o.Stats()
 	return EngineStatusSnapshot{
-		Enabled:      engCfg.Enabled,
+		Enabled:      engineOn(engCfg),
 		ExecReady:    st.ExecReady,
 		LastSource:   st.LastSource,
 		DegradeCount: st.DegradeCount,

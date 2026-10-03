@@ -34,25 +34,20 @@
         </div>
 
         <div class="form-row" style="margin-bottom:10px">
+          <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 状态/风险等级选项
+               由后端按全量任务聚合回带(statuses/risks), 无数据的选项不出现 -->
           <div class="field" style="max-width:150px">
             <label class="label">状态</label>
             <select class="input" v-model="filt.status">
               <option value="">全部</option>
-              <option value="pending">待执行</option>
-              <option value="running">执行中</option>
-              <option value="done">完成</option>
-              <option value="failed">失败</option>
+              <option v-for="s in pentaStatusOpts" :key="s.id" :value="s.id">{{ statusName(s.id) }} ({{ s.count }})</option>
             </select>
           </div>
           <div class="field" style="max-width:150px">
             <label class="label">风险等级</label>
             <select class="input" v-model="filt.risk">
               <option value="">全部</option>
-              <option value="critical">严重</option>
-              <option value="high">高危</option>
-              <option value="medium">中危</option>
-              <option value="low">低危</option>
-              <option value="info">信息</option>
+              <option v-for="s in pentaRiskOpts" :key="s.id" :value="s.id">{{ RISK_CN[s.id] || s.id }} ({{ s.count }})</option>
             </select>
           </div>
           <div class="field" style="max-width:220px">
@@ -81,6 +76,7 @@
                 <option value="tcp">tcp</option>
                 <option value="http">http</option>
                 <option value="https">https</option>
+                <option value="redis">redis</option>
               </select>
             </div>
             <div class="field" style="max-width:170px">
@@ -97,6 +93,12 @@
                 <option value="">未指定（执行时选择）</option>
                 <option v-for="t in allTemplates" :key="t.id" :value="t.id">{{ t.name }}（{{ t.id }}）</option>
               </select>
+            </div>
+            <!-- 2026-09-25 命名扫描: 关联扫描任务名(可选)。控制台"下一步渗透"会
+                 预填它; 手动建任务时填了, 报告中心"按任务名生成报告"能带上该任务 -->
+            <div class="field" style="max-width:190px">
+              <label class="label">关联任务名（可选）</label>
+              <input class="input" v-model.trim="nf.job" placeholder="如: 办公网 9 月巡检">
             </div>
             <div class="field" style="max-width:150px">
               <label class="label">初始风险等级</label>
@@ -272,7 +274,9 @@
                 {{ outcome.ok ? '已完成' : '未获得结论' }}
               </span>
               <div class="spacer"></div>
-              <button class="btn xs" v-if="lines.length" @click="copyLog">复制日志</button>
+              <!-- 2026-09-25 起移除"复制日志"按钮: 内网 IP(http 非安全上下文)下
+                   navigator.clipboard 恒被浏览器拒绝, 按钮点了只会报错;
+                   日志区文本可直接选中复制 -->
             </div>
             <div v-if="outcome" class="result-brief">
               <div class="muted small">{{ outcome.summary || '-' }}</div>
@@ -282,6 +286,7 @@
                   <span class="muted small mono">{{ s.type }}</span>
                   <span class="badge" :class="s.hit ? 'badge-ok' : ''">{{ s.hit ? '命中' : '未命中' }}</span>
                   <span class="mono small muted">{{ s.durationMs }}ms</span>
+                  <div class="small" v-if="s.hit && s.risk" style="width:100%; color:var(--warn,#d97706)">{{ s.risk }}</div>
                 </div>
               </div>
             </div>
@@ -559,7 +564,9 @@ const runErr = ref('')
 const showNew = ref(false)
 const filt = reactive({ status: '', risk: '', target: '' })
 const checked = reactive({})
-const nf = reactive({ target: '', port: 0, protocol: 'tcp', cve: '', title: '', templateId: '', severity: '' })
+// job: 关联的扫描任务名(2026-09-25 命名扫描: 控制台"下一步渗透"批量建任务时
+// 带上, 报告中心"按任务名生成报告"的渗透章节按它过滤; 空 = 独立渗透任务)
+const nf = reactive({ target: '', port: 0, protocol: 'tcp', cve: '', title: '', templateId: '', severity: '', job: '' })
 
 const tpls = ref({})
 const tplTag = ref('')
@@ -708,6 +715,10 @@ async function loadStatus() {
   try { st.value = await v2('/penta/status') } catch (e) { st.value = { enabled: false } }
 }
 
+// 2026-10-02: 状态/风险等级筛选选项 = 后端全量聚合回带(只含真实存在的值)
+const RISK_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+const pentaStatusOpts = ref([])
+const pentaRiskOpts = ref([])
 async function loadTasks() {
   loading.value = true
   listErr.value = ''
@@ -720,6 +731,16 @@ async function loadTasks() {
     const d = await v2('/penta/tasks?' + q.toString())
     tasks.value = d.list || []
     total.value = d.total || tasks.value.length
+    pentaStatusOpts.value = d.statuses || []
+    pentaRiskOpts.value = d.risks || []
+    // 已选的筛选值对应任务全删 → 选项消失, 筛选自清(防列表卡死为空)
+    if (filt.status && !pentaStatusOpts.value.some(s => s.id === filt.status)) {
+      filt.status = ''
+      loadTasks()
+    } else if (filt.risk && !pentaRiskOpts.value.some(s => s.id === filt.risk)) {
+      filt.risk = ''
+      loadTasks()
+    }
   } catch (e) {
     listErr.value = '任务列表加载失败: ' + e.message
   } finally {
@@ -780,7 +801,8 @@ async function createTask() {
       method: 'POST',
       body: {
         target: nf.target, port: nf.port || 0, protocol: nf.protocol,
-        cve: nf.cve, title: nf.title, templateId: nf.templateId, severity: nf.severity
+        cve: nf.cve, title: nf.title, templateId: nf.templateId, severity: nf.severity,
+        job: nf.job // 关联扫描任务名(可选; 报告按任务名关联)
       }
     })
     nf.target = ''
@@ -788,6 +810,8 @@ async function createTask() {
     nf.title = ''
     nf.templateId = ''
     nf.severity = ''
+    // job 不清空: 控制台"下一步渗透"批量建任务时, 多个任务共享同一任务名,
+    // 保持预填避免用户每台手填一遍
     await Promise.all([loadTasks(), loadResultTasks()])
   } catch (e) {
     listErr.value = '创建失败: ' + e.message
@@ -986,13 +1010,7 @@ async function execTask() {
   }
 }
 
-async function copyLog() {
-  try {
-    await navigator.clipboard.writeText(logText.value)
-  } catch (e) {
-    runErr.value = '复制失败（浏览器限制），请手动选中日志复制'
-  }
-}
+// (copyLog 已移除: 非安全上下文下 clipboard API 不可用, 见模板处注释)
 
 // ===== 结果管理 =====
 function gotoResult(t) {
@@ -1045,6 +1063,8 @@ async function doImportTpl() {
 //   /penta?import=<vulnId,...>        漏洞管理页 / 详情页带过来的漏洞
 //   /penta?task=<taskId>              已存在任务, 直接进执行台
 //   /penta?new=host:port:service:user 弱口令检测页「验证」过来, 预填新建表单
+//   /penta?job=<任务名>                2026-09-25 命名扫描: 控制台"下一步渗透"
+//                                     批量建任务后跳来, 新建表单预填任务名
 //   /penta?tab=result                 直接落在结果管理
 function applyQuery() {
   const imp = route.query.import
@@ -1053,6 +1073,7 @@ function applyQuery() {
     openImport()
     for (const id of ids) vulnSel[id] = true
   }
+  if (route.query.job) nf.job = String(route.query.job).trim()
   const tk = route.query.task
   if (tk) gotoRun({ id: String(tk), target: '', templateId: '' })
   const nw = route.query.new

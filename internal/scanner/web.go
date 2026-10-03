@@ -22,6 +22,11 @@ type Finding struct {
 	// Fix 内置修复建议(可空): 扫描不只报"有问题", 还要回答"怎么处理"。
 	// 由 FixFor 或具体常量给出, 前端与报告在非空时展示"修复建议"列。
 	Fix string `json:"fix,omitempty"`
+	// Host/Port 发现归属的资产与端口(可空 = 由扫描上下文兜底)。
+	// 2026-09-25 用户反馈: 原始报告"端口/CVE 列空白"——服务风险类发现
+	// (如"MySQL 数据库端口开放")此前不携带端口, 报告表格只能显示 "-"。
+	Host string `json:"host,omitempty"`
+	Port int    `json:"port,omitempty"`
 }
 
 // NewFinding 构造一条发现。fix 传内置修复建议(无则传 "" 或 FixFor 的结果)。

@@ -107,15 +107,32 @@ func TestDetectNoBinDir(t *testing.T) {
 	if st.BinDir == "" {
 		t.Fatal("binDir 为空")
 	}
-	if len(st.Engines) != len(engineSpecs) {
-		t.Fatalf("引擎数 = %d", len(st.Engines))
+	// 引擎数 = 外部引擎 + 内置引擎(2026-10-01: 内置引擎计入引擎总数, 用户要求可见)
+	if len(st.Engines) != len(engineSpecs)+1 {
+		t.Fatalf("引擎数 = %d, 期望 %d(外部 %d + 内置 1)", len(st.Engines), len(engineSpecs)+1, len(engineSpecs))
 	}
+	var builtinSeen bool
 	for _, e := range st.Engines {
 		if e.State != "missing" && e.State != "ok" && e.State != "error" {
 			t.Fatalf("引擎 %s 状态异常: %s", e.Name, e.State)
 		}
 		if e.State != "ok" && !e.Fallback {
 			t.Fatalf("引擎 %s 缺失但未标记降级", e.Name)
+		}
+		if e.Name == EngineBuiltin {
+			builtinSeen = true
+			// 契约: 内置引擎恒就绪且不参与降级 —— 缺失 bin/ 也不能把它算成 missing/fallback
+			if !e.Builtin || e.State != "ok" || e.Fallback {
+				t.Fatalf("内置引擎状态异常: %+v", e)
+			}
+		}
+	}
+	if !builtinSeen {
+		t.Fatal("引擎列表中缺少内置引擎 " + EngineBuiltin)
+	}
+	for _, d := range st.Degraded {
+		if d == EngineBuiltin {
+			t.Fatalf("内置引擎不应出现在降级列表: %v", st.Degraded)
 		}
 	}
 }
@@ -135,8 +152,8 @@ func TestGetPlaceholder(t *testing.T) {
 	if !s.Detecting {
 		t.Fatal("期望 detecting=true")
 	}
-	if len(s.Engines) != len(engineSpecs) {
-		t.Fatalf("占位引擎数 = %d", len(s.Engines))
+	if len(s.Engines) != len(engineSpecs)+1 {
+		t.Fatalf("占位引擎数 = %d, 期望 %d(外部 %d + 内置 1)", len(s.Engines), len(engineSpecs)+1, len(engineSpecs))
 	}
 }
 

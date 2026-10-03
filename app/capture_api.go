@@ -514,17 +514,24 @@ func handleCaptureStart(w http.ResponseWriter, r *http.Request) {
 	// 会把 IPv6 流量整体滤掉, 页面上的 IPv6 协议选项永远没有数据, 与"全量采集"
 	// 语义矛盾。
 	reqFilter := strings.TrimSpace(req.Filter)
-	// 内置全量过滤器的候选链(从"收得最全"到"最保守"): 只有**编译失败**(BPF 关键字
+	// 内置全量过滤器的候选链(从"收得最全"到"最保守"): 只有**编译失败**(BPF 写法
 	// 不被本机的 Npcap 支持)才顺位降级; 其它错误(网卡打不开等)不换过滤器重试 ——
 	// 换了也还是打不开, 只会在日志里多一条噪音。
 	//
-	// 【为什么 ip6 排在 ipv6 前面】ip6 才是 libpcap 的正统关键字, ipv6 是后来的别名,
-	// 部分 Npcap 版本只认前者。实测有机器上 "arp or ip or ipv6" 每次都编译失败并
-	// 降级, 日志里刷一屏"编译失败" —— 用户会误以为抓包坏了, 其实只是少收 IPv6。
+	// 【为什么三条 IPv6 写法都试】不同 Npcap 版本对 IPv6 过滤的写法支持不一致:
+	// ip6 是 libpcap 正统关键字, ipv6 是别名, "ether proto 0x86dd" 是最底层的
+	// 以太类型匹配(不依赖关键字解析, 兼容性最好)。三条都编译失败才回退纯
+	// "arp or ip"(丢 IPv6)。实测有机器上 ip6/ipv6 每次都失败, 若只回退到 arp or ip
+	// 会让 IPv6 流量整体收不到 —— 加 ether proto 0x86dd 兜底就是为了尽量保住 IPv6。
 	//
 	// 【为什么要缓存】验证通过的那条记在 captureFullFilter, 下次直接用: 否则每次
 	// 开始抓包都要重跑一遍失败候选(每次都拉起一个子进程试编译)。
-	candidates := []string{"arp or ip or ip6", "arp or ip or ipv6", "arp or ip"}
+	candidates := []string{
+		"arp or ip or ip6",
+		"arp or ip or ipv6",
+		"arp or ip or ether proto 0x86dd",
+		"arp or ip",
+	}
 	if cached := captureFilterCached(); cached != "" {
 		candidates = []string{cached, "arp or ip"}
 	}
@@ -537,6 +544,7 @@ func handleCaptureStart(w http.ResponseWriter, r *http.Request) {
 	var stdout io.ReadCloser
 	var err error
 	var filter string
+	var tried []string // 尝试过但编译失败的写法(用于最后一条中性提示, 不再逐条刷"编译失败")
 	for i, f := range candidates {
 		c, s, e := startCaptureProc(device, f)
 		if e == nil {
@@ -550,11 +558,21 @@ func handleCaptureStart(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(e.Error(), "BPF") || i == len(candidates)-1 {
 			break // 非编译错误, 或已到最后一条候选
 		}
-		logLine("抓包: 全量过滤器 '" + f + "' 编译失败, 降级为 '" + candidates[i+1] + "'")
+		tried = append(tried, f)
 	}
 	if err != nil {
 		jsonErr(w, http.StatusInternalServerError, "启动抓包子进程失败: "+err.Error())
 		return
+	}
+	// 发生过降级 = 本机 Npcap 不支持某些 IPv6 写法(版本差异, 非故障)。中性提示,
+	// 避免"编译失败"字样让用户误以为抓包坏了; 只有最终回退到纯 "arp or ip" 才
+	// 说明 IPv6 未纳入(其余情况是用替代写法保住了 IPv6)。
+	if len(tried) > 0 {
+		if filter == "arp or ip" {
+			logLine("抓包: 本机 Npcap 不支持 IPv6 过滤器(" + strings.Join(tried, " / ") + " 均不可用), 已回退 '" + filter + "', IPv6 流量未纳入")
+		} else {
+			logLine("抓包: 已用 '" + filter + "' 采集(前序写法 " + strings.Join(tried, " / ") + " 在本机 Npcap 不可用)")
+		}
 	}
 	capProcMu.Lock()
 	capProc = cmd
@@ -865,59 +883,11 @@ func aiModelConfigFromLegacy(c *aiCfg) scanner.AIModelConfig {
 	return cfg
 }
 
-// persistAICfg 把 AI 配置写入 settings.json 的 ai 节(合并写, 保留其它节与注释),
-// 并热生效到全局分析器。
-//
-// 【为什么写 settings.json 的 ai 节而不是旧 ai.json】全局分析器(扫描/采集/
-// 探针结果的后置 AI 分析)走 initAI, 它优先读 settings.json 的 ai 节; 而
-// ai 节一旦存在, 就会完全遮蔽 ai.json —— 本机的 ai 节里就躺着 enabled=false,
-// 只保存 ai.json 的结果是"用户以为保存了, 全局功能永远是关的"。
-//
-// 【为什么保存后要清缓存 + initAI】settings.json 是进程级缓存(启动时快照),
-// 不清缓存 section() 继续读到旧 ai 节; initAI 重建全局分析器后, 下一次 AI
-// 分析立即使用新配置, 无需重启服务。
-func persistAICfg(base, key, model string) error {
-	// 与已有 ai 节合并: 用户手写过的 maxTokens/retry/maxConcurrency 等字段
-	// 不能被一键保存抹掉(writeSection 是整节替换, 合并必须在这里做)
-	prev := map[string]any{}
-	if path := settingsFilePath(); path != "" {
-		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-			var all map[string]json.RawMessage
-			if json.Unmarshal(stripBOM(data), &all) == nil {
-				if raw, ok := all[secAI]; ok {
-					_ = json.Unmarshal(raw, &prev)
-				}
-			}
-		}
-	}
-	backend := "openai"
-	if strings.Contains(base, "11434") || strings.Contains(base, "ollama") {
-		backend = "ollama"
-	}
-	prev["enabled"] = true
-	prev["apiBase"] = base
-	prev["apiKey"] = key
-	if m := strings.TrimSpace(model); m != "" {
-		prev["model"] = m
-	}
-	prev["backend"] = backend
-	if _, has := prev["timeoutSec"]; !has {
-		prev["timeoutSec"] = 60
-	}
-	if err := writeSection(secAI, prev); err != nil {
-		return err
-	}
-	resetSettingsCache() // settings 缓存是启动快照, 不清则 section() 永远读到旧 ai 节
-	initAI(false)        // 热生效: 重建全局分析器(带 api key 缺口的兜底校验在内)
-	logLine("AI 配置已保存(settings.json ai 节, 已启用): backend=" + backend + " apiBase=" + base + " model=" + fmt.Sprint(prev["model"]))
-	return nil
-}
-
 // handleAITest POST /api/ai/test
 //
-// 测试 AI 连通性并列出服务端当前可用的模型, 供页面一键填回模型输入框;
-// 测试通过时同时把配置保存到服务端(用户预期: 这个按钮 = 测试连通并保存,
-// 失败则不保存 —— 保存一个连不通的配置只会造成"以为存了其实用不了")。
+// 测试 AI 连通性并列出服务端当前可用的模型, 供页面"测试连通"按钮自查
+// (只验证、不落盘 —— 落盘交给 /api/ai/config 的"保存"按钮, 职责分离:
+// 先"测试连通"确认能通, 再"保存"启用, 不再混在一个按钮里让人分不清)。
 //
 // 【为什么要有这个端点】"LLM HTTP 404" 是配置 AI 最常见的报错, 原因几乎总是
 // ① API Base 多粘了/少了一截路径 ② 服务端换过模型, 配置的模型名已不存在
@@ -968,23 +938,21 @@ func handleAITest(w http.ResponseWriter, r *http.Request) {
 		})
 		modelOK, modelMsg = aiTestChat(client, chatURL, hdr, body)
 	}
-	// 通过 = /models 可达 或 真实补全可达(有些服务端不提供 /models, 此时以
-	// 补全为准)。通过才保存; 不通过不保存(原因见函数头注释)。
+	// 只验证可达性, 不落盘(落盘走 /api/ai/config 的"保存"按钮, 见函数头注释)。
+	// 通过 = /models 可达 或 真实补全可达(有些服务端不提供 /models, 以补全为准)。
 	ok := modelsErr == "" || modelOK
-	if ok {
-		if serr := persistAICfg(base, strings.TrimSpace(req.APIKey), strings.TrimSpace(req.Model)); serr != nil {
-			// 保存失败必须显式报出来 —— 藏在"测试通过"后面, 用户下次发现
-			// 配置没生效时完全无从排查。
-			jsonErr(w, http.StatusInternalServerError, "测试通过但保存配置失败: "+serr.Error())
-			return
-		}
+	firstErr := modelsErr
+	if firstErr == "" {
+		firstErr = modelMsg
 	}
 	jsonOK(w, map[string]any{
+		"ok":        ok,
+		"error":     firstErr,
 		"models":    models,
 		"modelsErr": modelsErr,
 		"modelOk":   modelOK,
 		"modelMsg":  modelMsg,
-		"saved":     ok,
+		"saved":     false,
 	})
 }
 

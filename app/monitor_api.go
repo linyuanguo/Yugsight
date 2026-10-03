@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,9 +29,14 @@ import (
 
 	"yugsight/internal/db"
 	"yugsight/internal/monitor"
+	"yugsight/internal/probe"
+	"yugsight/internal/scanner"
 	"yugsight/internal/server"
 	"yugsight/internal/sse"
 )
+
+// centerTargetID 内置"中心端(本机)"条目的固定 ID(不进配置, 不可编辑/删除)。
+const centerTargetID = "center-self"
 
 var (
 	monOnce = &sync.Once{}
@@ -113,7 +120,15 @@ func loadMonitorConfig() monitor.Config {
 // 独立 monitor.json —— 避免"配置散落在多份文件"导致用户改 A 文件、服务读
 // B 文件的错位。读取仍保留 monitor.json 回退(兼容旧部署), 但写入只进 settings。
 func saveMonitorConfig(c monitor.Config) error {
-	return writeSection(secMonitor, c)
+	if err := writeSection(secMonitor, c); err != nil {
+		return err
+	}
+	// 2026-09-29 修: writeSection 之后必须 resetSettingsCache(与 node_push/collect 同口径) ——
+	// loadSettings 是一次性缓存, 不清缓存则 monitor 引擎每轮 currentCfg→loadMonitorConfig
+	// 拿到的永远是启动时的旧快照, SetConfig 更新的目标"下一轮被冲回", 表现为
+	// "页面上加了监控目标, 但一直不采集 / status 里看不到"(2026-09-29 实机复现)。
+	resetSettingsCache()
+	return nil
 }
 
 // monitorWriteHistory 一轮样本落库(装配层注入 monitor 包)。
@@ -159,6 +174,8 @@ func monitorOnRound(r *monitor.RoundResult) {
 		"durationMs": r.DurationMs,
 		"errors":     r.Errors,
 	})
+	// 拓扑链路流量/状态随 SNMP 轮次刷新(2026-09-29 阶段 B; 5s 节流)
+	publishTopoLinks()
 }
 
 // ===== 路由(在 api_v2.go 的 registerV2Routes 内挂载) =====
@@ -189,6 +206,8 @@ type monitorTargetView struct {
 	UptimeSec  int64    `json:"uptimeSec"`
 	SysName    string   `json:"sysName,omitempty"`
 	SysDescr   string   `json:"sysDescr,omitempty"`
+	// MAC 设备首个 up 接口的物理地址(2026-09-27 监控页"MAC 地址"列; 空 = 设备未上报)
+	MAC string `json:"mac,omitempty"`
 	CpuLoad    int64    `json:"cpuLoad"`   // 0 = 设备不支持
 	MemTotal   int64    `json:"memTotal"`  // 0 = 设备不支持
 	MemUsed    int64    `json:"memUsed"`
@@ -202,9 +221,65 @@ type monitorTargetView struct {
 	PrivProto   string `json:"privProto,omitempty"`
 	HasAuthPass bool   `json:"hasAuthPass"`
 	HasPrivPass bool   `json:"hasPrivPass"`
-	InRateBps  int64    `json:"inRateBps"` // 两帧差分, 首轮为 0
+	InRateBps  int64    `json:"inRateBps"`  // 两帧差分÷帧间隔(字节/秒), 首轮为 0
 	OutRateBps int64    `json:"outRateBps"`
 	Ifaces     []monIfaceView `json:"ifaces,omitempty"` // TOP5 按流量
+	// Source 区分条目来源: 空=用户配置的 SNMP 目标; "center"=内置"中心端(本机)"
+	// (2026-10-01 用户要求: 探针页能看到中心端, 监控目标里也该有它)。
+	// 内置条目不在 cfg.Targets 里, 不落配置、不可编辑/删除(前端据此禁用操作按钮)。
+	Source string `json:"source,omitempty"`
+}
+
+// centerMonitorView 内置"中心端(本机)"监控目标(2026-10-01 用户要求: 探针页能看到
+// 中心端, 监控目标里也该有它 —— 本机同样是被监控对象)。
+//
+// 为什么做成"状态视图里的虚拟条目"而不是写进 cfg.Targets: 中心端不是 SNMP 设备,
+// 存进配置会污染用户配置(导出/迁移带着一条改不动又删不掉的目标), 且每轮重建会被
+// 覆盖。指标全是本进程真实采集: CPU 两采样差分、内存、网卡上下行(Windows 走 PDH
+// 速率计数器, 非阻塞; 其它平台走 /proc); 任一采集失败对应字段归 0 —— UI 按"无数据
+// 不显示"处理, 不编造。
+func centerMonitorView() monitorTargetView {
+	host, _ := os.Hostname()
+	v := monitorTargetView{
+		ID: centerTargetID, Name: "中心端(本机)", Addr: strings.TrimSpace(scanner.LocalIP()),
+		Version: "center", Source: "center",
+		Collected: true, Online: true,
+		LastAt:  time.Now().Format(time.RFC3339),
+		SysName: host,
+		SysDescr: "Yugsight 中心端 v" + appVersion + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")",
+	}
+	if p := centerCPUPercent(); p != nil {
+		v.CpuLoad = int64(*p)
+	}
+	if total, used, ok := probe.MemStats(); ok {
+		v.MemTotal = int64(total)
+		v.MemUsed = int64(used)
+	}
+	// 网卡速率: 中心端进程与探针共用同一采集实现(probe.SampleMetrics)。
+	// 入方向=接收(NetDown), 出方向=发送(NetUp), 与 SNMP ifIn/ifOut 口径对齐。
+	if s := probe.SampleMetrics(30 * time.Second); s != nil {
+		v.InRateBps = int64(s.NetDownBps)
+		v.OutRateBps = int64(s.NetUpBps)
+	}
+	// 网卡端口明细(2026-10-02 用户要求: 中心端也要能看网口/绑端口): 与探针同一采样
+	// 实现(probe.SampleIfaces, 逐口累计字节窗口差分)。主机网卡数量少, 全量回带不做
+	// TOP5 截断(截断口径只用于交换机 100+ 口的聚合展示)。平台给不了的状态/带宽字段
+	// 留空, 前端显示 '-' —— 不猜不编造。
+	if faces := probe.SampleIfaces(30 * time.Second); len(faces) > 0 {
+		ivs := make([]monIfaceView, 0, len(faces))
+		for _, f := range faces {
+			ivs = append(ivs, monIfaceView{
+				Name: f.Name, Speed: f.Speed, Up: f.State == "up",
+				InRate: int64(f.InBps), OutRate: int64(f.OutBps),
+			})
+			if f.State == "up" {
+				v.IfUp++
+			}
+		}
+		v.Ifaces = ivs
+		v.IfaceCount = len(ivs)
+	}
+	return v
 }
 
 // monIfaceView 接口视图(聚合展示用)。
@@ -226,7 +301,10 @@ func hMonitorStatus(w http.ResponseWriter, r *http.Request) {
 	interval := monitor.EffectiveInterval(cfg.IntervalSec)
 
 	type targetView = monitorTargetView
-	views := make([]targetView, 0, len(cfg.Targets))
+	// 内置"中心端(本机)"排在最前: 它是本进程自己, 永远在线且指标实时可取
+	// (2026-10-01 用户要求: 中心端也要进监控目标)。只出现在状态视图, 不入配置。
+	views := make([]targetView, 0, len(cfg.Targets)+1)
+	views = append(views, centerMonitorView())
 	for _, t := range cfg.Targets {
 		v := targetView{ID: t.ID, Name: t.Name, Addr: t.Addr, TimeoutMs: t.TimeoutMs,
 			Version: t.Version(), V3User: t.User, AuthProto: t.AuthProto, PrivProto: t.PrivProto,
@@ -241,21 +319,24 @@ func hMonitorStatus(w http.ResponseWriter, r *http.Request) {
 			v.UptimeSec = s.UptimeSec
 			v.SysName = s.SysName
 			v.SysDescr = s.SysDescr
+			v.MAC = s.MAC
 			v.CpuLoad = s.CpuLoad
 			v.MemTotal = s.MemTotal
 			v.MemUsed = s.MemUsed
 			v.IfaceCount = len(s.Ifaces)
-			// 速率: latest 与 prev 两帧差分; 接口按名字对齐(设备重启后 ifIndex 可能变)
+			// 速率: latest 与 prev 两帧差分 ÷ 两帧实际间隔(字节/秒); 接口按名字对齐(设备重启后 ifIndex 可能变)
 			pi := map[string]*monitor.IfaceSample{}
+			var dt time.Duration // 两帧间隔; 无 prev(首轮) = 0 → 速率归 0
 			if p, ok := prev[t.ID]; ok {
 				for i := range p.Ifaces {
 					pi[p.Ifaces[i].Name] = &p.Ifaces[i]
 				}
+				dt = s.At.Sub(p.At)
 			}
 			top := make([]monIfaceView, 0, 5)
 			for i := range s.Ifaces {
 				cur := &s.Ifaces[i]
-				inBps, outBps := monitor.IfaceRate(cur, pi[cur.Name])
+				inBps, outBps := monitor.IfaceRate(cur, pi[cur.Name], dt)
 				v.InRateBps += inBps
 				v.OutRateBps += outBps
 				if cur.Oper == 1 {
@@ -525,11 +606,10 @@ func hMonitorCollectNow(w http.ResponseWriter, r *http.Request) {
 		server.Fail(w, http.StatusBadGateway, server.CodeInternal, "采集失败: "+fmt.Sprint(res.Errors))
 		return
 	}
-	// 报告中心二期: "立即采集一轮"完成 → 原始报告自动存档。
-	// 周期性轮询不自动存档(60s 一轮会刷屏), 手动触发 + 快照按钮才是存档时机。
-	if rr := buildRawMonitorReport(currentUser()); rr != nil {
-		autoSaveRawReport(v2DB(), rr)
-	}
+	// 2026-10-02 用户口径: 节点监控是连续采样, 不生成原始报告(报告中心被节点监控
+	// 报告刷屏, 用户: "这些不需要生成原始报告, 最多是信息做为日志记录一下") →
+	// 只记一条摘要日志; 周期轮询原本也不存档, 口径统一为"节点监控永不进报告中心"。
+	logLine(fmt.Sprintf("节点监控采集一轮完成: %d/%d 在线(不存报告中心, 仅日志记录)", res.OKCount, res.Total))
 	server.OK(w, res)
 }
 

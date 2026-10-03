@@ -1,22 +1,25 @@
 <template>
   <div>
-    <PageHeader title="漏洞管理" desc="全部漏洞记录"></PageHeader>
+    <PageHeader title="漏洞管理" desc="全部漏洞记录 · 漏扫管控(白名单/误报/置信度)"></PageHeader>
 
-    <div class="card">
+    <div class="tabs" style="margin-bottom:14px">
+      <div class="tab" :class="{ active: tab === 'list' }" @click="setTab('list')">漏洞列表 ({{ total }})</div>
+      <div class="tab" :class="{ active: tab === 'control' }" @click="setTab('control')">漏扫管控</div>
+    </div>
+
+    <div class="card" v-if="tab === 'list'">
       <div class="toolbar">
+        <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 等级/状态选项由
+             /vulns/options 按全量漏洞库聚合(列表是分页接口, 当前页取不全); 删光
+             某类数据后选项消失, 后期有了再出现 -->
         <select class="select" v-model="f.severity">
           <option value="">全部等级</option>
-          <option value="critical">严重</option>
-          <option value="high">高危</option>
-          <option value="medium">中危</option>
-          <option value="low">低危</option>
-          <option value="info">信息</option>
+          <option v-for="s in vulnOpts.severities" :key="s" :value="s">{{ SEV_CN[s] || s }}</option>
         </select>
         <!-- 两态口径: 开放(含历史 new/duplicate) / 已修复; 重复命中见"最后命中"列 -->
         <select class="select" v-model="f.status">
           <option value="">全部状态</option>
-          <option value="open">开放</option>
-          <option value="fixed">已修复</option>
+          <option v-for="s in vulnOpts.statuses" :key="s.id" :value="s.id">{{ s.id === 'fixed' ? '已修复' : '开放' }} ({{ s.count }})</option>
         </select>
         <input class="input mono" v-model.trim="f.cve" placeholder="CVE 编号" @keyup.enter="reload">
         <input class="input mono" v-model.trim="f.ip" placeholder="资产 IP" @keyup.enter="reload">
@@ -87,6 +90,9 @@
       </div>
     </div>
 
+    <!-- 漏扫管控并入(2026-09-26): 白名单/误报/置信度, 内嵌 Whitelist 组件(embedded 隐藏其自身 PageHeader) -->
+    <Whitelist v-if="tab === 'control'" embedded />
+
     <!-- 清空全部漏洞: 不可逆, 要求输入确认词(与"删一条"的 confirm 区分开) -->
     <Modal v-if="showClear" title="清空全部漏洞" width="460px" @close="closeClear">
       <div class="alert warn" style="margin-bottom:12px">
@@ -107,9 +113,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { setPageData } from '../assistant/context'
 import PageHeader from '../components/PageHeader.vue'
+import Whitelist from './Whitelist.vue'
 import SevTag from '../components/SevTag.vue'
 import StatusTag from '../components/StatusTag.vue'
 import Modal from '../components/Modal.vue'
@@ -119,6 +127,51 @@ import { fmtDT, vulnStatus } from '../utils'
 import { isAdmin } from '../auth'
 
 const router = useRouter()
+const route = useRoute()
+// 漏扫管控并入漏洞管理(2026-09-26): URL query 驱动 tab; 旧 /whitelist 重定向到 ?tab=control
+const tab = computed(() => (route.query.tab === 'control' ? 'control' : 'list'))
+// 2026-09-27: 列表状态(筛选/分页)URL 持久化 —— 详情页"返回"用 router.back()
+// 回到带 query 的精确列表 URL, 原筛选条件/分页/排序全部保留; 刷新/书签也不丢。
+// 键名用短形式: sev/status/cve/ip/title/page。
+function listQuery() {
+  const q = {}
+  if (f.severity) q.sev = f.severity
+  if (f.status) q.status = f.status
+  if (f.cve) q.cve = f.cve
+  if (f.ip) q.ip = f.ip
+  if (f.title) q.title = f.title
+  if (page.value > 1) q.page = String(page.value)
+  return q
+}
+function queryEq(a, b) {
+  const ka = Object.keys(a).sort(), kb = Object.keys(b).sort()
+  if (ka.length !== kb.length) return false
+  return ka.every(k => a[k] === b[k])
+}
+function syncQuery() {
+  const q = listQuery()
+  if (route.query.tab === 'control') q.tab = 'control'
+  if (!queryEq(route.query, q)) router.replace({ query: q }) // replace 不堆历史(后退应离开本页)
+}
+function initFromQuery() {
+  const q = route.query
+  if (q.sev) f.severity = String(q.sev)
+  if (q.status === 'open' || q.status === 'fixed') f.status = String(q.status)
+  if (q.cve) f.cve = String(q.cve)
+  if (q.ip) f.ip = String(q.ip)
+  if (q.title) f.title = String(q.title)
+  if (q.page) {
+    const n = parseInt(String(q.page), 10)
+    if (n > 0) page.value = n
+  }
+}
+function setTab(t) {
+  if (t === tab.value) return
+  const q = listQuery() // 切 tab 不清空列表状态(切回列表 tab 时还在)
+  if (t === 'control') q.tab = 'control'
+  else delete q.tab
+  router.replace({ path: '/vulns', query: q })
+}
 // admin 必须 computed 跟随 auth.js 的响应式角色: 整页刷新时本组件可能在
 // whoami 返回前挂载, 快照式 ref(isAdmin()) 会永远拿到 false(阶段 4 已踩过)
 const admin = computed(() => isAdmin())
@@ -166,6 +219,23 @@ const f = reactive({ severity: '', status: '', cve: '', ip: '', title: '' })
 // 真正边界在后端 adminOrOperator 中间件, 这里只是不给只读角色一个必然 403 的按钮
 const canWrite = ref(false)
 
+// 2026-10-02: 等级/状态筛选选项 = 全量漏洞库聚合(后端 /vulns/options), 只含存在的值
+const SEV_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+const vulnOpts = ref({ severities: [], statuses: [] })
+async function loadVulnOpts() {
+  try {
+    const d = await v2('/vulns/options')
+    if (d) {
+      vulnOpts.value = { severities: d.severities || [], statuses: d.statuses || [] }
+      // 已选的等级/状态对应数据被删光 → 选项消失, 筛选要自清, 否则列表卡死为空
+      let reset = false
+      if (f.severity && !vulnOpts.value.severities.includes(f.severity)) { f.severity = ''; reset = true }
+      if (f.status && !vulnOpts.value.statuses.some(s => s.id === f.status)) { f.status = ''; reset = true }
+      if (reset) load()
+    }
+  } catch (e) { /* 选项失败不影响列表 */ }
+}
+
 const hasFilter = computed(() => !!(f.severity || f.status || f.cve || f.ip || f.title))
 
 const showClear = ref(false)
@@ -184,6 +254,17 @@ async function load() {
 }
 
 function reload() { page.value = 1; load().catch(e => alert(e.message)) }
+
+// 小 Y 助手(2026-09-27): 向助手注册本页关键数据(getter 惰性求值, 提问/上报时
+// 读到的是当前列表+筛选状态)。纯 add 式接入, 不改既有逻辑。
+setPageData('vulns', () => ({
+  total: total.value,
+  page: page.value,
+  filters: { severity: f.severity, status: f.status, cve: f.cve, ip: f.ip, title: f.title },
+  list: list.value.slice(0, 50).map(v => ({
+    title: v.title, severity: v.severity, status: v.status, cve: v.cve || '', ip: v.ip || ''
+  }))
+}))
 function resetF() {
   Object.assign(f, { severity: '', status: '', cve: '', ip: '', title: '' })
   reload()
@@ -205,6 +286,7 @@ async function doClear() {
     showClear.value = false
     page.value = 1
     await load()
+    loadVulnOpts()   // 清库后刷新筛选选项(等级/状态全没了要同步消失)
     alert('已清空 ' + ((d && d.deleted != null) ? d.deleted : 0) + ' 条漏洞记录')
   } catch (e) {
     clearErr.value = e.message
@@ -220,6 +302,12 @@ async function loadRole() {
   }
 }
 
+// 2026-09-27: 挂载时先从 URL 还原列表状态(必须在首次 load 之前)
+initFromQuery()
+// 筛选/分页变化 → 同步到 URL(详情页"返回"时据此还原, 见 syncQuery 注释)
+watch([() => f.severity, () => f.status, () => f.cve, () => f.ip, () => f.title, page], syncQuery)
+
 onMounted(loadRole)
 load().catch(e => alert(e.message))
+loadVulnOpts()
 </script>

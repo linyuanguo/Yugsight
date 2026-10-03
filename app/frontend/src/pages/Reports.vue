@@ -16,95 +16,138 @@
         <button class="tab" :class="{ on: tab === 'gen' }" @click="tab = 'gen'">报告生成</button>
         <button class="tab" :class="{ on: tab === 'raw' }" @click="tab = 'raw'; loadRaw()">原始报告</button>
         <button class="tab" :class="{ on: tab === 'arch' }" @click="tab = 'arch'; loadArchives()">报告存档</button>
-        <button class="tab" :class="{ on: tab === 'topo' }" @click="tab = 'topo'; loadTopo()">资产拓扑</button>
-        <button class="tab" :class="{ on: tab === 'diff' }" @click="tab = 'diff'; loadHistory()">历史对比</button>
-        <!-- 模板管理默认隐藏(2026-09-21 收尾): 进阶功能, "报告生成"里已有模板下拉,
-             独立 tab 常驻会干扰主流程; "高级"开关记忆用户选择(localStorage) -->
-        <button class="tab" v-if="tplTabVisible" :class="{ on: tab === 'tpl' }" @click="tab = 'tpl'; loadTemplates(); loadPacks()">模板管理</button>
+        <button class="tab" :class="{ on: tab === 'diff' }" @click="tab = 'diff'; loadHistory(); loadArchives()">历史对比</button>
         <div class="spacer"></div>
-        <a class="adv-toggle" href="javascript:void(0)" @click="toggleTplTab"
-           :title="tplTabVisible ? '隐藏模板管理页签' : '显示模板管理页签(自定义报告模板)'">{{ tplTabVisible ? '收起高级' : '高级' }}</a>
         <span class="muted small" v-if="status && status.rawCount != null">原始报告 {{ status.rawCount }} 份</span>
         <span class="muted small" v-if="status && status.archiveCount != null">已存档 {{ status.archiveCount }} 份</span>
       </div>
+      <!-- 2026-09-25 用户口径调整:
+           ① "资产拓扑"不再是独立页签 —— 拓扑只是原始报告内容的列表化, 随原始报告
+             详情展示(原始报告页签内的子表);
+           ② "模板管理"页签并入"报告生成" —— 生成页本身就是 WPS 式模板编辑器
+             (编辑排版 → 保存模板 → 三个按钮出报告), 不再分两个页签。 -->
 
-      <!-- ===== 报告生成 ===== -->
+      <!-- ===== 报告生成(2026-09-25 三轮: 浮窗编辑) =====
+           用户口径: 点"编辑/新建"弹出浮窗, 在浮窗里像 Word 一样改
+           (标题1/副标题/客户/报告人/检测工具/生成时间/页眉/页脚/免责声明/
+           版权信息, 支持字体颜色/底色/加粗等格式, 可删), 浮窗底部保存。
+           模板落 data/outp; 下面三个按钮出报告, 模板用于后续报告存档。 -->
       <div class="card" v-show="tab === 'gen'">
-        <div class="form-grid">
-          <label>报告标题<input class="input" v-model.trim="form.title" placeholder="留空则按时间自动命名"></label>
-          <label>报告人<input class="input" v-model.trim="form.operator" placeholder="安全部"></label>
-          <label>导出格式
-            <select class="select" v-model="form.format">
-              <option value="html">HTML(可离线归档)</option>
-              <option value="pdf">PDF(自动唤起打印)</option>
-              <option value="word">Word(.docx)</option>
+        <div class="block-title">报告模板</div>
+        <p class="muted small" style="margin:0 0 10px">
+          点「新建模板 / 编辑」在浮窗里排版: 标题、客户、页眉页脚、免责声明、版权信息、
+          报告人、检测工具、生成时间都能改(支持字体颜色/底色/格式, 清空即删除该处)。
+          保存后落到 data/outp, 之后"生成并存档"的报告都用这个版式。
+        </p>
+        <div class="toolbar" style="margin-bottom:8px">
+          <button class="btn primary" @click="openTplModal('')">新建模板</button>
+          <span class="muted small" v-if="tplSavedMsg" style="color:var(--ok,#16a34a)">{{ tplSavedMsg }}</span>
+        </div>
+        <div class="table-wrap" v-if="wordTpls.length">
+          <table class="table">
+            <thead><tr><th>名称</th><th>类型</th><th>更新时间</th><th style="width:200px">操作</th></tr></thead>
+            <tbody>
+              <tr v-for="t in wordTpls" :key="t.name">
+                <td class="small">{{ t.name }}<span class="tag-mini" v-if="t.logo">logo</span></td>
+                <td class="small muted">{{ (t.builtin || t.name === 'default') ? '内置默认' : (t.visual ? '可视化排版' : 'Word 文件导入') }}</td>
+                <td class="muted small mono">{{ t.updated || '-' }}</td>
+                <td>
+                  <button class="btn xs" :disabled="t.name === 'default'" :title="t.name === 'default' ? '内置默认模板不可编辑' : ''" @click="openTplModal(t.name)">编辑</button>
+                  <button class="btn xs" @click="previewWordTpl(t.name)">预览</button>
+                  <button class="btn xs" v-if="!t.builtin" :disabled="t.name === 'default'" :title="t.name === 'default' ? '内置默认模板不可删除' : ''" @click="delWordTpl(t)">删除</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted small" v-else style="margin:6px 0 0">暂无自定义模板(不保存时按内置版式出报告)</p>
+
+        <div class="block-title">生成报告</div>
+        <!-- 2026-09-26: 生成报告只突出三项(选模板 + 选任务 + 选格式), 7 个漏洞
+             范围筛选项收进下方默认收起的"高级筛选"。任务可多选(取并集)。 -->
+        <div class="form-grid" style="margin-bottom:12px">
+          <label>报告模板
+            <select class="select" v-model="form.f.template">
+              <option value="builtin">内置版式</option>
+              <option v-for="t in genTplOptions" :key="t.name" :value="t.name">{{ t.name }}</option>
             </select>
           </label>
-          <label>模板包
-            <select class="select" v-model="form.packId">
-              <option value="">内置默认模板</option>
-              <option v-for="p in packs" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <label>扫描任务(必选, 可多选)
+            <select class="select" v-model="jobPicker" @change="addJob()">
+              <option value="" disabled>选择扫描任务...</option>
+              <option v-for="j in jobList" :key="j.id" :value="j.id">{{ j.name }} · {{ j.target }}</option>
             </select>
+            <div class="job-chips" v-if="form.f.jobIds.length">
+              <span class="chip" v-for="id in form.f.jobIds" :key="id">
+                {{ jobNameOfId(id) }}
+                <a class="chip-x" href="javascript:void(0)" @click="removeJob(id)">×</a>
+              </span>
+            </div>
+            <div class="muted small" v-else>未选择(必选: 请至少选一个扫描任务)</div>
           </label>
-          <label>旧版模板
-            <select class="select" v-model="form.templateId">
-              <option value="">不使用(页眉页脚模板)</option>
-              <option v-for="t in templates" :key="t.id" :value="t.id">{{ t.name }}</option>
+          <label>报告格式
+            <select class="select" v-model="form.f.format">
+              <option value="word">Word (.docx)</option>
+              <option value="html">HTML (网页)</option>
+              <option value="pdf">PDF (浏览器打印)</option>
             </select>
           </label>
         </div>
 
-        <div class="block-title">多维度筛选</div>
-        <div class="form-grid">
-          <label>风险等级
-            <select class="select" v-model="form.f.severity">
-              <option value="">全部等级</option>
-              <option value="critical">严重</option>
-              <option value="high">高危</option>
-              <option value="medium">中危</option>
-              <option value="low">低危</option>
-              <option value="info">信息</option>
-            </select>
-          </label>
-          <label>IP 段<input class="input mono" v-model.trim="form.f.cidr" placeholder="192.168.1.0/24"></label>
-          <label>资产 IP<input class="input mono" v-model.trim="form.f.ip" placeholder="精确匹配"></label>
-          <label>CVE 编号<input class="input mono" v-model.trim="form.f.cve" placeholder="支持前缀, 如 CVE-2021"></label>
-          <label>扫描起始<input class="input" type="date" v-model="form.f.from"></label>
-          <label>扫描截止<input class="input" type="date" v-model="form.f.to"></label>
-          <label>探针节点
-            <select class="select" v-model="form.f.probeNode">
-              <option value="">全部节点</option>
-              <option v-for="n in options.nodes" :key="n.id" :value="n.id">{{ n.name }}</option>
-            </select>
-          </label>
-          <label class="chk"><input type="checkbox" v-model="form.f.onlyEvidence"> 仅含验证证据的漏洞</label>
-        </div>
+        <details class="gen-filter">
+          <summary>高级筛选(可选, 按漏洞范围收窄报告内容)</summary>
+          <div class="form-grid">
+            <label>风险等级
+              <!-- 2026-10-02 用户口径: 风险等级选项 = 漏洞库中真实存在的等级
+                   (后端 /report/options 按存量聚合; 之前固定 5 级全量) -->
+              <select class="select" v-model="form.f.severity">
+                <option value="">全部等级</option>
+                <option v-for="s in options.severities" :key="s" :value="s">{{ SEV_CN[s] || s }}</option>
+              </select>
+            </label>
+            <label>IP 段<input class="input mono" v-model.trim="form.f.cidr" placeholder="192.168.1.0/24"></label>
+            <label>资产 IP<input class="input mono" v-model.trim="form.f.ip" placeholder="精确匹配"></label>
+            <label>CVE 编号<input class="input mono" v-model.trim="form.f.cve" placeholder="支持前缀, 如 CVE-2021"></label>
+            <label>扫描起始<input class="input" type="date" v-model="form.f.from"></label>
+            <label>扫描截止<input class="input" type="date" v-model="form.f.to"></label>
+            <label>探针节点
+              <select class="select" v-model="form.f.probeNode">
+                <option value="">全部节点</option>
+                <option v-for="n in options.nodes" :key="n.id" :value="n.id">{{ n.name }}</option>
+              </select>
+            </label>
+            <label class="chk"><input type="checkbox" v-model="form.f.onlyEvidence"> 仅含验证证据的漏洞</label>
+          </div>
+        </details>
 
         <div class="toolbar" style="margin-top:14px">
-          <button class="btn" @click="genPreview" :disabled="busy">预览报告</button>
-          <button class="btn primary" @click="genDownload" :disabled="busy">生成并下载</button>
-          <button class="btn" @click="genArchive" :disabled="busy">生成并存档</button>
+          <!-- 选了任务时高亮提示: 报告只含所选任务并集数据, 标题默认取任务名 -->
+          <span class="chip blue" v-if="jobNameOf" :title="'报告将只包含所选扫描任务「' + jobNameOf + '」的数据, 标题默认取任务名'">
+            按任务生成: {{ jobNameOf }}
+          </span>
+          <div class="spacer"></div>
+          <!-- 预览=HTML 抽屉内查看(可打印成 PDF); 下载/存档=所选格式(按所选模板版式) -->
+          <button class="btn" @click="genPreview" :disabled="busy || !form.f.jobIds.length">预览报告</button>
+          <button class="btn primary" @click="genDownload" :disabled="busy || !form.f.jobIds.length">生成并下载</button>
+          <button class="btn" @click="genArchive" :disabled="busy || !form.f.jobIds.length">生成并存档</button>
           <span class="muted small" v-if="busy">处理中...</span>
-        </div>
-
-        <div class="preview-frame" v-if="previewURL">
-          <div class="toolbar">
-            <b>预览</b>
-            <div class="spacer"></div>
-            <button class="btn xs" @click="closePreview">关闭</button>
-          </div>
-          <iframe :src="previewURL" title="报告预览"></iframe>
         </div>
       </div>
 
       <!-- ===== 原始报告(二期: 业务模块执行后的原始结构化结果) ===== -->
       <div class="card" v-show="tab === 'raw'">
         <p class="muted small" style="margin:0 0 10px">
-          实时抓包 / 扫描作业 / 弱口令检测 / 节点监控执行完成后, 原始结构化结果自动存到这里(只存原始数据, 不做加工)。
+          实时抓包 / 扫描作业 / 弱口令检测 / 渗透验证执行完成后, 原始结构化结果自动存到这里(只存原始数据, 不做加工)。
+          节点监控为连续采样, 不生成原始报告(采集结果仅记日志, 2026-10-02 用户口径; 存量历史报告仍可查)。
           业务页"AI 分析"的研判结果挂在本报告下(带 AI 徽标), 原始数据 + AI 研判可同时查看;
           勾选多份(含已 AI 分析的)可合并为汇总报告, AI 内容随合并保留。
         </p>
         <div class="toolbar">
+          <!-- 按扫描作业(任务名)分类: 选某任务名只看该作业的原始报告(用户要求"按任务名分类进子表") -->
+          <select class="select" v-model="rawF.job" @change="loadRaw()">
+            <option value="">全部作业</option>
+            <option v-for="j in rawOptions.jobs" :key="j" :value="j">{{ j }}</option>
+          </select>
           <select class="select" v-model="rawF.module" @change="loadRaw()">
             <option value="">全部来源</option>
             <option v-for="m in rawOptions.modules" :key="m.id" :value="m.id">{{ m.label }} ({{ m.count }})</option>
@@ -132,6 +175,8 @@
           <button class="btn primary sm" @click="mergeRaw" :disabled="rawBusy || rawSel.length < 2">
             {{ rawBusy ? '合并中...' : '合并为汇总报告' }}
           </button>
+          <!-- 2026-09-26: 删除选中(批量, 走 /raw/batch-delete) -->
+          <button class="btn danger sm" @click="rawBatchDel" :disabled="rawBusy || !rawSel.length">删除选中</button>
           <button class="btn xs" @click="rawSel = []">清空选择</button>
           <span class="muted small" v-if="rawSel.length === 1">至少选 2 份才能合并</span>
         </div>
@@ -143,6 +188,7 @@
                 <th style="width:30px"><input type="checkbox" :checked="allRawSelected" @change="toggleAllRaw"></th>
                 <th>报告</th>
                 <th>来源模块</th>
+                <th>任务名</th>
                 <th>来源标记</th>
                 <th>资产</th>
                 <th>关键统计</th>
@@ -160,6 +206,10 @@
                   <div class="muted small" v-if="r.summary">{{ r.summary }}</div>
                 </td>
                 <td><span class="badge" :class="'mod-' + rawModKey(r.module)">{{ rawModLabel(r.module) }}</span></td>
+                <td class="small" :title="r.job || '独立扫描(未关联作业)'">
+                  <template v-if="r.job">{{ r.job }}</template>
+                  <span v-else class="muted">-</span>
+                </td>
                 <td class="mono small">{{ r.source || '-' }}<template v-if="r.operator"> / {{ r.operator }}</template></td>
                 <td class="mono small">
                   <template v-if="r.assets && r.assets.length">
@@ -178,7 +228,7 @@
             </tbody>
           </table>
         </div>
-        <Empty v-if="!rawList.length" text="暂无原始报告(各业务模块执行完成后自动存入; 节点监控在「立即采集」或「存快照」时存入)"></Empty>
+        <Empty v-if="!rawList.length" text="暂无原始报告(实时抓包 / 扫描作业 / 弱口令检测 / 渗透验证执行完成后自动存入; 节点监控不生成原始报告)"></Empty>
 
         <!-- 原始报告详情 -->
         <Modal v-if="rawDetail" :title="rawDetail.title" @close="rawDetail = null">
@@ -314,10 +364,42 @@
             </details>
           </template>
 
-          <!-- AI 分析(阶段 3): 业务页触发的研判结果挂在本报告下 -->
-          <div class="block-title">AI 分析</div>
+          <!-- 资产拓扑(2026-09-25 用户口径: 拓扑就是原始报告里资产信息的列表化,
+               只做子表, 不做独立页签/画布): 资产 -> 开放端口 -> 关联漏洞数 -->
+          <template v-if="rawTopo.length">
+            <div class="block-title">资产拓扑(列表, {{ rawTopo.length }} 台)</div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>资产</th><th>主机名</th><th>操作系统</th><th>开放端口</th><th>关联漏洞</th></tr></thead>
+                <tbody>
+                  <tr v-for="t in rawTopo" :key="t.ip">
+                    <td class="mono small">{{ t.ip }}</td>
+                    <td class="small">{{ t.hostname || '-' }}</td>
+                    <td class="small">{{ t.os || '-' }}</td>
+                    <td class="mono small">
+                      <template v-if="t.ports && t.ports.length">
+                        <span class="tag-mini" v-for="p in t.ports" :key="p">{{ p }}</span>
+                      </template>
+                      <span v-else class="muted">-</span>
+                    </td>
+                    <td class="mono small">
+                      <span v-if="t.vulns > 0" class="score warn">{{ t.vulns }}</span>
+                      <span v-else class="muted">0</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- AI 分析(阶段 3): 业务页触发的研判结果挂在本报告下; 也可在此直接(重新)分析 -->
+          <div class="block-title" style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+            <span>AI 分析</span>
+            <AiAnalyzeButton :module="rawDetail.module" :reportId="rawDetail.id"
+                             :label="rawDetail.aiAnalyzedAt ? '重新分析' : 'AI 分析'" />
+          </div>
           <p class="muted small" v-if="!rawDetail.aiAnalyzedAt">
-            尚未进行 AI 分析。在对应业务页面(实时抓包 / 扫描作业 / 弱口令 / 节点监控)点"AI 分析",
+            尚未进行 AI 分析。点上方"AI 分析"立即研判, 或在对应业务页面(实时抓包 / 扫描作业 / 弱口令 / 节点监控)触发,
             研判结果会自动存到本报告(参数与知识库在 系统配置 → AI 配置 管理)。
           </p>
           <div v-else>
@@ -369,6 +451,7 @@
                 <td class="small muted">{{ a.operator || '-' }}</td>
                 <td class="muted small mono">{{ fmtDT(a.createdAt) }}</td>
                 <td>
+                  <button class="btn xs" @click="previewArchive(a)">预览</button>
                   <button class="btn xs" @click="download(a)">下载</button>
                   <button class="btn xs" @click="del(a)">删除</button>
                 </td>
@@ -377,86 +460,50 @@
           </table>
         </div>
         <Empty v-else text="暂无报告存档(生成报告时默认归档)"></Empty>
-      </div>
-
-      <!-- ===== 资产拓扑 ===== -->
-      <div class="card" v-show="tab === 'topo'">
-        <div class="toolbar">
-          <select class="select" v-model="topoFilter.severity" @change="loadTopo">
-            <option value="">全部等级</option>
-            <option value="critical">严重</option>
-            <option value="high">高危</option>
-            <option value="medium">中危</option>
-            <option value="low">低危</option>
-          </select>
-          <input class="input mono" v-model.trim="topoFilter.cidr" placeholder="IP 段筛选 10.0.0.0/24" @keyup.enter="loadTopo">
-          <button class="btn sm" @click="loadTopo">查询</button>
-          <div class="spacer"></div>
-          <span class="muted small" v-if="topoStats">
-            资产 {{ topoStats.assets }} / 端口 {{ topoStats.ports }} / 服务 {{ topoStats.services }} / 高危资产 {{ topoStats.atRisk }}
-          </span>
-        </div>
-
-        <div class="legend">
-          <span class="lg"><i class="dot critical"></i>严重</span>
-          <span class="lg"><i class="dot high"></i>高危</span>
-          <span class="lg"><i class="dot medium"></i>中危</span>
-          <span class="lg"><i class="dot low"></i>低危</span>
-          <span class="lg"><i class="dot none"></i>无风险</span>
-          <span class="lg"><i class="dot offline"></i>离线/未知</span>
-        </div>
-
-        <div class="topo-wrap" v-if="topoNodes.length">
-          <div class="topo-node" v-for="n in topoNodes" :key="n.id"
-               :class="['risk-' + (n.risk || 'none'), { dim: n.unknown }]"
-               @click="onNodeClick(n)">
-            <div class="tn-head">
-              <span class="tn-kind">{{ nodeKindName(n.kind) }}</span>
-              <span class="tn-on" v-if="n.kind === 'asset'">{{ n.unknown ? '未知' : (n.online ? '在线' : '离线') }}</span>
-            </div>
-            <div class="tn-label mono">{{ n.label }}</div>
-            <div class="tn-meta" v-if="n.service">服务: {{ n.service }}</div>
-            <div class="tn-meta" v-if="n.vulnCount">漏洞: {{ n.vulnCount }}</div>
-            <div class="tn-meta" v-if="n.probeNode">节点: {{ n.probeNode }}</div>
-          </div>
-        </div>
-        <Empty v-else text="暂无拓扑数据(需先有资产与扫描结果)"></Empty>
-
-        <!-- 点击节点详情 -->
-        <Modal v-if="sel" :title="'节点详情 · ' + sel.label" @close="sel = null">
-          <table class="kv">
-            <tr><td>类型</td><td>{{ nodeKindName(sel.kind) }}</td></tr>
-            <tr><td>标识</td><td class="mono">{{ sel.id }}</td></tr>
-            <tr v-if="sel.kind === 'asset'"><td>IP</td><td class="mono">{{ sel.ip }}</td></tr>
-            <tr v-if="sel.hostname"><td>主机名</td><td>{{ sel.hostname }}</td></tr>
-            <tr v-if="sel.os"><td>操作系统</td><td>{{ sel.os }}</td></tr>
-            <tr v-if="sel.service"><td>服务</td><td>{{ sel.service }}</td></tr>
-            <tr v-if="sel.probeNode"><td>探针节点</td><td class="mono">{{ sel.probeNode }}</td></tr>
-            <tr><td>风险等级</td><td><SevTag :sev="sel.risk || 'info'" /></td></tr>
-            <tr v-if="sel.kind === 'asset'"><td>在线状态</td><td>{{ sel.unknown ? '未知' : (sel.online ? '在线' : '离线') }}</td></tr>
-            <tr><td>关联漏洞</td><td>{{ sel.vulnCount || 0 }}</td></tr>
-          </table>
-          <template #footer>
-            <button class="btn sm" @click="viewVulns(sel)" v-if="sel.kind === 'asset'">查看该资产漏洞</button>
-            <button class="btn sm" @click="sel = null">关闭</button>
-          </template>
-        </Modal>
+        <!-- 预览统一走右侧抽屉(2026-09-25 二轮: "像抽屉一样打开页面看"):
+             Word 存档由服务端转 HTML(X-Yugsight-Preview: word-html), 所有格式
+             都能在抽屉 iframe 里直接看, 不再"必须下载"。 -->
       </div>
 
       <!-- ===== 历史对比 ===== -->
       <div class="card" v-show="tab === 'diff'">
+        <div class="block-title">存档对比(选择两份报告存档)</div>
+        <!-- 2026-09-26: 历史对比主入口 = 选两份报告存档对比(按各自筛选条件重建
+             漏洞明细), 而非无根据的时间窗; 时间窗对比降为下方备选。 -->
+        <div class="form-grid" style="margin-bottom:10px">
+          <label>基线存档(较早)
+            <select class="select" v-model="diffForm.baseId">
+              <option value="">请选择</option>
+              <option v-for="a in archives" :key="a.id" :value="a.id">{{ a.title }} · {{ fmtDT(a.createdAt) }}</option>
+            </select>
+          </label>
+          <label>目标存档(较晚)
+            <select class="select" v-model="diffForm.targetId">
+              <option value="">请选择</option>
+              <option v-for="a in archives" :key="a.id" :value="a.id">{{ a.title }} · {{ fmtDT(a.createdAt) }}</option>
+            </select>
+          </label>
+        </div>
         <div class="toolbar">
-          <span class="small muted">目标轮次时间窗</span>
-          <input class="input" type="date" v-model="diffForm.from">
-          <span class="muted">~</span>
-          <input class="input" type="date" v-model="diffForm.to">
-          <button class="btn sm" @click="runDiff" :disabled="diffBusy">开始对比</button>
+          <button class="btn primary sm" @click="runDiff" :disabled="diffBusy">开始对比</button>
+          <span class="muted small" v-if="diffBusy">对比中...</span>
           <div class="spacer"></div>
           <label class="chk small"><input type="checkbox" v-model="diffForm.save"> 存档对比报告</label>
         </div>
         <p class="muted small" style="margin:6px 0 0">
-          基线自动取目标时间窗之前等长的一段; 两侧都按「资产 + CVE」匹配(无 CVE 时按资产+协议:端口+标题)。人工标记的误报不参与对比。
+          按两份存档各自的筛选条件重新取数对比(新增/修复/仍存在明细), 按「资产 + CVE」匹配(无 CVE 时按资产+协议:端口+标题), 人工标记的误报不参与。前提: 对应漏洞仍在库中。
         </p>
+        <details class="gen-filter" style="margin-top:10px">
+          <summary>备选: 按时间窗对比(全库漏洞切窗, 不依赖存档)</summary>
+          <div class="toolbar">
+            <span class="small muted">目标轮次时间窗</span>
+            <input class="input" type="date" v-model="diffForm.from">
+            <span class="muted">~</span>
+            <input class="input" type="date" v-model="diffForm.to">
+            <button class="btn sm" @click="runWindowDiff" :disabled="diffBusy">按时间窗对比</button>
+          </div>
+          <p class="muted small" style="margin:6px 0 0">基线自动取目标时间窗之前等长的一段。</p>
+        </details>
 
         <div v-if="diff">
           <div class="block-title">差异总览</div>
@@ -544,184 +591,276 @@
         <Empty v-else text="暂无扫描任务记录"></Empty>
       </div>
 
-      <!-- ===== 模板管理 ===== -->
-      <div class="card" v-show="tab === 'tpl'">
-        <div class="block-title">新建 / 编辑模板</div>
-        <div class="form-grid">
-          <label>模板名称<input class="input" v-model.trim="tpl.name" placeholder="如: 公司季度报告"></label>
-          <label>主题色<input class="input" v-model.trim="tpl.accent" placeholder="#4f46e5"></label>
-          <label>副标题<input class="input" v-model.trim="tpl.subtitle" placeholder="XX 公司 内部资料"></label>
-        </div>
-        <div class="form-grid">
-          <label>页眉左<input class="input" v-model.trim="tpl.header.headerLeft" :placeholder="phTitle"></label>
-          <label>页眉中<input class="input" v-model.trim="tpl.header.headerCenter"></label>
-          <label>页眉右<input class="input" v-model.trim="tpl.header.headerRight" :placeholder="phTime"></label>
-        </div>
-        <div class="form-grid">
-          <label>页脚左<input class="input" v-model.trim="tpl.header.footerLeft"></label>
-          <label>页脚中<input class="input" v-model.trim="tpl.header.footerCenter" :placeholder="phOperator"></label>
-          <label>页脚右<input class="input" v-model.trim="tpl.header.footerRight"></label>
-        </div>
-        <div class="form-grid">
-          <label class="wide">免责声明<input class="input" v-model.trim="tpl.header.disclaimer"></label>
-        </div>
-        <p class="muted small">可用占位符: {{ placeholderHint }}</p>
-        <div class="toolbar">
-          <button class="btn primary" @click="saveTpl">保存模板</button>
-          <button class="btn" @click="resetTpl">清空</button>
-        </div>
-
-        <div class="block-title">已有模板</div>
-        <div class="table-wrap" v-if="templates.length">
-          <table class="table">
-            <thead><tr><th>名称</th><th>主题色</th><th>页脚</th><th>创建时间</th><th style="width:140px">操作</th></tr></thead>
-            <tbody>
-              <tr v-for="t in templates" :key="t.id">
-                <td>{{ t.name }}</td>
-                <td><span class="swatch" :style="{ background: t.accent || '#4f46e5' }"></span><span class="mono small">{{ t.accent || '默认' }}</span></td>
-                <td class="small muted">{{ (t.header && t.header.footerCenter) || '-' }}</td>
-                <td class="muted small mono">{{ fmtDT(t.createdAt) }}</td>
-                <td>
-                  <button class="btn xs" @click="editTpl(t)">编辑</button>
-                  <button class="btn xs" @click="delTpl(t)">删除</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <Empty v-else text="暂无自定义模板(未配置时使用内置模板)"></Empty>
-
-        <div class="block-title">模板包(HTML / Word / PDF 三出口)</div>
-        <p class="muted small">
-          模板包是 exe 同目录 res/report_templates/&lt;模板名&gt;/ 下的目录: config.yaml(名称/logo/配色/页脚/章节)
-          + report.html.tpl + report.docx.tpl。改完重启服务生效, 不需要重新编译。
-        </p>
-        <div class="table-wrap" v-if="packs.length">
-          <table class="table">
-            <thead><tr><th>名称</th><th>ID</th><th>出口</th><th>客户</th><th>配色</th><th style="width:180px">操作</th></tr></thead>
-            <tbody>
-              <tr v-for="p in packs" :key="p.id">
-                <td>{{ p.name }}<span class="tag-mini" v-if="p.builtin">内置</span></td>
-                <td class="mono small">{{ p.id }}</td>
-                <td class="small">
-                  <span v-if="p.hasHtml">HTML</span><span v-if="p.hasHtml && p.hasDocx"> / </span>
-                  <span v-if="p.hasDocx">Word</span>
-                  <span v-if="!p.hasHtml && !p.hasDocx" class="muted">-</span>
-                </td>
-                <td class="small muted">{{ p.config && p.config.client || '-' }}</td>
-                <td><span class="swatch" :style="{ background: (p.config && p.config.accent) || '#4f46e5' }"></span></td>
-                <td>
-                  <button class="btn xs" @click="downloadPack(p)">下载</button>
-                  <button class="btn xs" v-if="!p.builtin && packMgmt" @click="delPack(p)">删除</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <Empty v-else text="暂无模板包(使用内置默认模板)"></Empty>
-
-        <div v-if="packMgmt">
-          <div class="block-title">新建 / 更新模板包</div>
-          <div class="form-grid">
-            <label>ID(目录名)<input class="input mono" v-model.trim="packForm.id" placeholder="client-a"></label>
-            <label>名称<input class="input" v-model.trim="packForm.name" placeholder="客户 A 报告模板"></label>
-            <label>客户名<input class="input" v-model.trim="packForm.client" placeholder="某某科技有限公司"></label>
-            <label>主题色<input class="input" v-model.trim="packForm.accent" placeholder="#0f766e"></label>
-          </div>
-          <div class="form-grid">
-            <label class="wide">页脚<input class="input" v-model.trim="packForm.footer" placeholder="报告页脚文案"></label>
-            <label>logo(png/jpg/svg)<input type="file" accept=".png,.jpg,.jpeg,.svg" @change="onPackLogo"></label>
-            <label>Word 模板(.docx)<input type="file" accept=".docx" @change="onPackDocx"></label>
-          </div>
-          <label class="wide">HTML 模板(留空则用内置)
-            <textarea class="input" rows="6" v-model="packForm.html" :placeholder="phTplVar"></textarea>
-          </label>
-          <p class="muted small">可用变量: {{ packVarHint }}</p>
-          <div class="toolbar">
-            <button class="btn primary" @click="savePack" :disabled="packBusy">保存模板包</button>
-            <button class="btn" @click="resetPack">清空</button>
-          </div>
-        </div>
-        <p class="muted small" v-else>
-          模板管理未启用: 在 settings.json 的 report 节设置 templateManagement=true 后重启即可新建/删除模板包。
-        </p>
-      </div>
     </template>
+
+    <!-- 报告预览抽屉(2026-09-25 二轮: "像抽屉一样打开页面看"):
+         右侧全高抽屉 + iframe, "报告生成-预览"与"报告存档-预览"共用。
+         存档预览直连 /preview 接口(Word 由服务端转 HTML); 生成预览是
+         POST 回来的 HTML blob。Esc / 点遮罩关闭。 -->
+    <div class="drawer-mask" v-if="drawer.url" @click.self="closeDrawer">
+      <div class="drawer">
+        <div class="drawer-head">
+          <b class="drawer-title">{{ drawer.title || '报告预览' }}</b>
+          <div class="spacer"></div>
+          <button class="btn xs" v-if="drawer.download" @click="window.open(drawer.download, '_blank')">下载原件</button>
+          <button class="btn xs" @click="closeDrawer">关闭 (Esc)</button>
+        </div>
+        <div class="drawer-body">
+          <iframe :src="drawer.url" title="报告预览"></iframe>
+        </div>
+      </div>
+    </div>
+
+    <!-- 模板编辑浮窗(2026-09-25 三轮: "点击编辑时是浮窗并有保存功能";
+         2026-09-26 四轮改版: 不再是"左侧一堆输入框 + 右侧只读预览", 而是
+         顶部工具条 + 右侧 A4 版面就地编辑(Editable 块), 左侧只留模板属性与
+         章节结构; 底部 保存/取消。Esc 关闭。 -->
+    <div class="tpl-mask" v-if="tplModal" @click.self="closeTplModal">
+      <div class="tpl-modal" @click="closePops">
+        <div class="tpl-head">
+          <b>编辑报告模板</b>
+          <label class="head-field">名称
+            <input class="input xs" v-model.trim="vis.name" placeholder="如: 客户A季度报告">
+          </label>
+          <!-- 主题色: 顶栏只放一个色块入口, 点开才是色板(2026-09-26 深色化: 少控件、少亮色块) -->
+          <div class="head-accent">
+            <button class="accent-btn" type="button" :style="{ background: vis.accent }"
+                    title="主题色(封面标题/章节标题条)" @click.stop="accentOpen = !accentOpen"></button>
+            <div class="pop" v-if="accentOpen" @click.stop>
+              <div class="pop-title">主题色</div>
+              <div class="swatches">
+                <button v-for="c in ACCENTS" :key="c.hex" type="button" class="sw"
+                        :class="{ on: vis.accent.toLowerCase() === c.hex.toLowerCase() }"
+                        :style="{ background: c.hex }" :title="c.name"
+                        @click="vis.accent = c.hex; accentOpen = false"></button>
+              </div>
+              <label class="pop-custom">自定义
+                <input type="color" v-model="vis.accent">
+                <span class="mono small muted">{{ vis.accent }}</span>
+              </label>
+            </div>
+          </div>
+          <label class="chk"><input type="checkbox" v-model="vis.cover"> 封面</label>
+          <button class="btn xs" @click="pickLogo">{{ visLogo ? '更换 logo' : '上传 logo' }}</button>
+          <button class="btn xs" v-if="visLogo" @click="delLogo">移除 logo</button>
+          <input type="file" ref="logoInput" accept="image/png,image/jpeg,image/gif"
+                 style="display:none" @change="onLogoFile">
+          <div class="spacer"></div>
+          <span class="muted small" v-if="visBusy">保存中...</span>
+          <button class="btn xs" @click="resetVis">重置</button>
+          <button class="btn xs" @click="closeTplModal">取消 (Esc)</button>
+          <button class="btn xs primary" @click="saveVisualTpl" :disabled="visBusy">保存</button>
+        </div>
+        <!-- 2026-09-26 用户: 字符格式工具条(样式/BIU/字色/底色/字号/清格式)在画布上"点了没反应",
+             直接删除; 配色改由左侧「风格预设」一键套用, 版权信息由下方文案字段 + 章节勾选控制。 -->
+
+        <div class="tpl-body">
+          <!-- 侧栏(窄, 视觉上在右, 见 CSS order): 只留"要插入的章节结构"与生成时间。
+               字段类配置全部上移到顶栏/页面就地编辑 —— 用户口径: 不要挨个自定义。 -->
+          <div class="tpl-left">
+          <div class="tpl-field">
+            <div class="tpl-field-label">生成时间</div>
+            <div class="tpl-time">
+              <label class="chk"><input type="radio" value="auto" v-model="vis.timeMode"> 自动生成(报告生成时刻)</label>
+              <label class="chk"><input type="radio" value="custom" v-model="vis.timeMode"> 自定义</label>
+            </div>
+            <!-- 自定义时直接在此处填(与封面同步); 以前输入框只藏在右侧页面里, 用户找不到 -->
+            <input class="input xs" v-model.trim="vis.timeText" placeholder="自定义生成时间, 如 2026-09-26"
+                   :disabled="vis.timeMode !== 'custom'" style="margin-top:6px; width:100%">
+          </div>
+
+          <!-- 风格预设(2026-09-26 四轮补刀: 用户"好亮好闪、不要挨个挨个自定义";
+               改为 WPS 式整套配色一键套用, 而非逐章节堆一堆亮色块) -->
+          <div class="tpl-field">
+            <div class="tpl-field-label">风格预设(整套配色一键套用)</div>
+            <div class="style-presets">
+              <button v-for="p in STYLE_PRESETS_THEME" :key="p.key" type="button"
+                      class="style-sw" :class="{ on: stylePreset === p.key }"
+                      :title="p.name" @click="applyStylePreset(p.key)">
+                <span class="style-sw-bar" :style="{ background: p.accent }"></span>
+                <span class="style-sw-name">{{ p.name }}</span>
+              </button>
+            </div>
+            <p class="muted small" style="margin:7px 0 0; line-height:1.6">
+              选一套配色即应用到全部章节(封面标题 / 章节标题条 / 章节底色), 像 WPS 选模板, 无需逐章节调。
+            </p>
+          </div>
+
+          <div class="tpl-field">
+            <div class="tpl-field-label">章节结构(勾选 + 排序)</div>
+            <div class="vis-sec-list">
+              <!-- 点行/点画布章节互相选中(activeSec): 版面编辑模式下"选中谁改谁" -->
+              <div class="vis-sec-row" v-for="(k, i) in vis.sections" :key="k"
+                   :class="{ 'row-on': activeSec === k }" @click="activeSec = k">
+                <div class="vis-sec-main">
+                  <span class="mono small muted">{{ String(i + 1).padStart(2, '0') }}</span>
+                  <input type="checkbox"
+                    :checked="k === 'copyright' ? vis.copyrightOn : visEnabled[k]"
+                    :disabled="k === 'copyright' ? false : !secOptional(k)"
+                    @change="k === 'copyright' ? toggleCopyright() : toggleVisSec(k)">
+                  <span class="small">{{ secTitle(k) }}</span>
+                  <span class="muted small" v-if="k === 'copyright'">(可勾选开关; 文案在下方编辑)</span>
+                  <span class="muted small" v-else-if="!secOptional(k)">(核心章节, 始终保留)</span>
+                  <span class="muted small" v-else-if="visEnabled[k] === false">(无数据时自动省略)</span>
+                  <div class="spacer"></div>
+                  <button class="btn xs" @click="moveVisSec(i, -1)" :disabled="i === 0">上移</button>
+                  <button class="btn xs" @click="moveVisSec(i, 1)" :disabled="i === vis.sections.length - 1">下移</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div><!-- /tpl-left -->
+
+          <!-- 版面编辑(2026-09-26): 不再是只读预览 —— 页面上的文字点哪改哪,
+               改完即时进 vis 并最终落到报告。灰色占位条 = 扫描数据自动填充(不可改)。 -->
+          <div class="tpl-preview-wrap">
+            <div class="tpl-preview-title muted small">版面编辑(直接在页面上点选文字修改)</div>
+            <div class="tpl-page" :style="{ '--tp-accent': vis.accent }">
+              <!-- 封面(就地编辑) -->
+              <div class="tp-cover" v-if="vis.cover">
+                <div class="tp-logo" v-if="visLogo"><img :src="visLogo" alt="logo"></div>
+                <Editable class="tp-title" v-model="vis.title" placeholder="报告标题(留空 = 用报告标题)" />
+                <Editable class="tp-sub" v-model="vis.subtitle" placeholder="副标题" />
+                <Editable class="tp-client" v-model="vis.client" placeholder="客户名(可空)" />
+                <div class="tp-risk">整体风险: <b>生成时按扫描数据自动填充</b></div>
+                <div class="tp-meta">
+                  <div>报告人: <Editable class="tp-inline" v-model="vis.operator" placeholder="留空 = 登录账号" /></div>
+                  <div>检测工具: <Editable class="tp-inline" v-model="vis.tool" placeholder="留空 = 平台名" /></div>
+                  <div v-if="vis.timeMode === 'custom'">生成时间: <Editable class="tp-inline" v-model="vis.timeText" placeholder="如 2026-09-26" /></div>
+                  <div v-else>生成时间: <span class="muted">自动生成(报告生成时刻)</span></div>
+                </div>
+              </div>
+              <!-- 封面关闭时字段仍要给编辑入口: 否则这些值再也改不动 -->
+              <div class="tp-cover-off" v-else>
+                <div class="muted small">封面已关闭(不输出)。封面字段仍可编辑:</div>
+                <div>标题 <Editable class="tp-inline" v-model="vis.title" placeholder="标题" /></div>
+                <div>副标题 <Editable class="tp-inline" v-model="vis.subtitle" placeholder="副标题" /></div>
+                <div>客户 <Editable class="tp-inline" v-model="vis.client" placeholder="客户名" /></div>
+              </div>
+              <!-- 正文页: 页眉 + 章节(可点选 → 左侧改样式) + 免责/版权 + 页脚 -->
+              <div class="tp-body">
+                <div class="tp-header">页眉 <Editable class="tp-inline" v-model="vis.header" placeholder="留空 = 默认" /></div>
+                <div class="tp-sec" v-for="(k, i) in previewSections" :key="k"
+                     :class="{ 'sec-on': activeSec === k }" @click="activeSec = k"
+                     :title="'点击选中「' + secTitle(k) + '」, 在左侧改它的字体/底色/顺序'">
+                  <div class="tp-sec-title" :style="tpTitleStyle(k)">
+                    <span class="tp-sec-no">{{ String(i + 1).padStart(2, '0') }}</span>
+                    <span v-html="secTitle(k)"></span>
+                  </div>
+                  <div class="tp-sec-body" :style="tpBodyStyle(k)">
+                    <div class="tp-line" v-for="n in 3" :key="n"></div>
+                    <div class="tp-note muted small">正文由扫描数据自动生成(不可编辑)</div>
+                  </div>
+                </div>
+                <!-- 免责/版权在底部单独呈现并可就地编辑文案; 与"未勾选不显示"同口径:
+                     在右侧章节结构里勾上才显示, 取消勾选这里即不显示。文案留空 = 用内置默认。 -->
+                <div class="tp-tail" v-if="visEnabled.disclaimer">免责声明 <Editable class="tp-inline" v-model="vis.disclaimer" placeholder="留空 = 用内置默认文案" /></div>
+                <div class="tp-tail" v-if="vis.copyrightOn">版权信息 <Editable class="tp-inline" v-model="vis.copyright" placeholder="留空 = 用内置默认文案" /></div>
+                <div class="tp-footer">页脚 <Editable class="tp-inline" v-model="vis.footer" placeholder="页脚文案" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import SevTag from '../components/SevTag.vue'
 import Empty from '../components/Empty.vue'
 import Modal from '../components/Modal.vue'
+// AiAnalyzeButton: 原始报告详情里可直接(重新)触发 AI 分析, 回写到本报告
+import AiAnalyzeButton from '../components/AiAnalyzeButton.vue'
+// Editable: 就地编辑块(2026-09-26 —— 版面直接编辑, 取代原先那排 RichText 输入框)
+import Editable from '../components/Editable.vue'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
 
-const router = useRouter()
-const tab = ref('gen')
+const route = useRoute()
+// tab 支持 URL query 驱动(如 /reports?tab=gen&job=<id>, 从"扫描作业"页跳来直接
+// 落在报告生成并预选该作业); 默认 gen
+const tab = ref(['gen', 'raw', 'arch', 'diff'].includes(route.query.tab) ? route.query.tab : 'gen')
 
-// 模板管理页签默认隐藏: 进阶功能(自定义报告模板), 主流程"报告生成"里已有模板下拉,
-// tab 常驻会干扰; 用户从"高级"开关打开后记忆选择, 下次直接可见。
-const tplTabVisible = ref(localStorage.getItem('yugsight_report_tpl_tab') === '1')
-function toggleTplTab() {
-  tplTabVisible.value = !tplTabVisible.value
-  try { localStorage.setItem('yugsight_report_tpl_tab', tplTabVisible.value ? '1' : '0') } catch (e) { /* 忽略 */ }
-  if (!tplTabVisible.value && tab.value === 'tpl') tab.value = 'gen'
-}
 const status = ref(null)
 const busy = ref(false)
 const diffBusy = ref(false)
-const previewURL = ref('')
+// 预览抽屉(2026-09-25 二轮: "像抽屉一样打开页面看"): url 是接口地址(存档)或
+// blob URL(生成预览), download 是可选的"下载原件"直链。
+const drawer = ref({ url: '', title: '', download: '' })
 const lastDiffID = ref('')
 
 const options = ref({ nodes: [{ id: 'local', name: '中心本地' }] })
-const templates = ref([])
-// 模板包(二期): 目录式模板, 一个模板同时产出 HTML / Word / PDF
-const packs = ref([])
-const packMgmt = ref(false) // 服务端 report.templateManagement 开关
-const packBusy = ref(false)
-const packVars = ref([])
-const packForm = reactive({ id: '', name: '', client: '', accent: '', footer: '', html: '', docx: '', logoB64: '', logoExt: '' })
-const phTplVar = '<h1>{{.Title}}</h1>  {{range .Vulns}}...{{end}}'
-const packVarHint = computed(() => {
-  if (!packVars.value.length) return '.Title / .Vulns / .Assets / .Stats / .SevRows / .Targets'
-  return packVars.value.map(x => x.key + '(' + x.desc + ')').join(' / ')
+// Word 模板列表(可视化排版 + 手动导入的 .docx; builtin 不在列表里展示)
+const wordTpls = ref([])
+// 可视化排版编辑器状态(2026-09-25 起它就是"报告生成"页本体)
+const visBusy = ref(false)
+const visSectionsMeta = ref([]) // [{key, title, optional}] 来自 /word/templates/sections
+const visEnabled = ref({}) // key -> bool
+// 模板字段(2026-09-25 二轮用户清单): 页眉/页脚/标题1/版权/检测工具/免责声明/
+// 报告人/生成时间 均可编辑可删除; 富文本字段存"白名单 HTML 片段"(RichText 组件
+// 产出, 后端再清洗一次)。空值 = 该处按内置占位符走(报告数据自动填充)。
+const vis = reactive({
+  name: '', title: '', header: '', client: '', subtitle: '',
+  operator: '', tool: '', timeMode: 'auto', timeText: '',
+  footer: '', copyright: '', copyrightOn: true, disclaimer: '',
+  accent: '#1F3A5F', cover: true, sections: [],
+  // sectionStyles: 章节 key -> {titleColor,titleBg,fontColor,bg,bold,size}
+  // (2026-09-25 三轮: 逐章节字体颜色/底色/格式, 内容不可改; 颜色本地存 #rrggbb,
+  // 提交/回显时去掉 #)
+  sectionStyles: {}
 })
+// 版权默认文案(与后端 report.CopyrightLine 口径一致; 预填进编辑器,
+// 用户清空 = 报告不出版权章)
+const DEFAULT_COPYRIGHT = 'Copyright © 2026 yugo. 版权所有。\n本报告由 Yugsight(御视)安全运维一体化平台自动生成, 报告内容仅限内部安全运维使用。\n未经著作权人书面许可, 不得复制、传播本报告全部或部分内容。'
+// 模板编辑浮窗(2026-09-25 三轮: "点击编辑时是浮窗并有保存功能")
+const tplModal = ref(false)
+// 封面 logo(2026-09-25 用户要求"模板能放 logo"): visLogo 是预览用 data URL,
+// 上传/删除走后端接口(落 data/outp/logos/, 与模板 .docx 同树)
+const visLogo = ref('')
+const logoBusy = ref(false)
+const tplSavedMsg = ref('')
 const archives = ref([])
 const history = ref([])
-const topoNodes = ref([])
-const topoStats = ref(null)
-const sel = ref(null)
+
+// ===== 模板编辑浮窗(2026-09-25 三轮: "点击编辑时是浮窗并有保存功能") =====
+// 富文本字段由 RichText 组件承载(组件内 contenteditable 单向同步, 与旧白纸区
+// 同口径: DOM 是编辑源, 不绑 Vue 文本插值)。浮窗打开时才挂载编辑器, 初始
+// 内容由组件挂载时写入 —— 换模板/重开浮窗自然重新填充。
+const logoInput = ref(null)
+function pickLogo() {
+  if (logoInput.value) logoInput.value.click()
+}
+
+// 打开编辑浮窗: name 空 = 新建(默认文案); 否则载入已有模板配置 + logo
+async function openTplModal(name) {
+  if (name) {
+    await loadVisualTpl(name)
+    await loadLogoPreview(name)
+  } else {
+    resetVis()
+    visLogo.value = ''
+  }
+  activeSec.value = '' // 打开时不预选章节(避免误改到上一个模板选中的章节样式)
+  tplModal.value = true
+}
+function closeTplModal() {
+  tplModal.value = false
+}
 
 const form = reactive({
-  title: '', operator: '', format: 'html', templateId: '', packId: '',
-  f: { severity: '', cidr: '', ip: '', cve: '', from: '', to: '', probeNode: '', onlyEvidence: false }
+  // 2026-09-26 重构: 生成报告 = 选模板 + 选任务(可多选) + 选格式(word/html/pdf)。
+  // 标题按时间自动命名, 报告人取登录用户; 7 个漏洞范围筛选项收进"高级筛选"(默认收起)。
+  // template: 报告模板名(builtin=内置版式 / 自定义名); jobIds: 选中的扫描任务名(多选, 空=全部);
+  // format: 下载/存档格式(word/html/pdf), 预览固定 html(可在浏览器打印成 PDF)。
+  f: { template: 'builtin', jobIds: [], format: 'word', severity: '', cidr: '', ip: '', cve: '', from: '', to: '', probeNode: '', onlyEvidence: false }
 })
-const topoFilter = reactive({ severity: '', cidr: '' })
-const diffForm = reactive({ from: '', to: '', save: false })
+// diffForm: 历史对比主入口 = 选两份存档对比(baseId/targetId); from/to 仅作"按时间窗"备选
+const diffForm = reactive({ baseId: '', targetId: '', from: '', to: '', save: false })
 const diff = ref(null)
-const tpl = reactive({
-  id: '', name: '', accent: '#4f46e5', subtitle: '',
-  header: { headerLeft: '', headerCenter: '', headerRight: '', footerLeft: '', footerCenter: '', footerRight: '', disclaimer: '' }
-})
-
-// 占位符提示: 后端 /report/templates 返回 [{key, desc}], 这里渲染成
-// "{{title}}(报告标题) / {{operator}}(操作者)" 便于用户直接照抄。
-// 注意: 这些字符串不能在模板里字面量写, "{{...}}" 会被 Vue 当成插值解析而编译失败。
-const placeholders = ref([])
-const placeholderHint = computed(() => {
-  const list = placeholders.value.length
-    ? placeholders.value
-    : [{ key: '{{title}}', desc: '报告标题' }, { key: '{{operator}}', desc: '操作者' },
-       { key: '{{time}}', desc: '生成时间' }, { key: '{{tool}}', desc: '工具名与版本' }]
-  return list.map(x => x.key + '(' + x.desc + ')').join(' / ')
-})
-const phTitle = '{{title}}'
-const phTime = '{{time}}'
-const phOperator = '{{operator}}'
 
 function buildFilter() {
   const f = {}
@@ -729,32 +868,384 @@ function buildFilter() {
   if (form.f.cidr) f.cidr = form.f.cidr
   if (form.f.ip) f.ip = form.f.ip
   if (form.f.cve) f.cve = form.f.cve
-  if (form.f.from) f.from = form.f.from
-  if (form.f.to) f.to = form.f.to
+  // 时间窗: 后端 Filter 的 json tag 是 timeFrom/timeTo(不是 from/to; 之前发
+  // from/to 被静默丢弃不生效 —— 2026-09-26 修)
+  if (form.f.from) f.timeFrom = form.f.from
+  if (form.f.to) f.timeTo = form.f.to
   if (form.f.probeNode) f.probeNode = form.f.probeNode
   if (form.f.onlyEvidence) f.onlyWithEvidence = true
   return f
 }
 
-function buildRequest() {
-  const req = {
-    title: form.title, operator: form.operator, format: form.format,
-    templateId: form.templateId, filter: buildFilter()
-  }
-  // 模板包优先(二期主路径): 非空且非内置时后端走 pack 渲染, 否则沿用旧路径
-  if (form.packId) req.packId = form.packId
+function buildRequest(format) {
+  const req = { format: format || form.f.format || 'word', filter: buildFilter() }
+  // 报告模板: 下拉选定的模板名(builtin=内置版式); 标题/报告人由后端按时间/登录用户生成
+  req.wordTemplate = form.f.template || 'builtin'
+  // 扫描任务多选: 选中的任务名取并集(空 = 全部数据)
+  if (form.f.jobIds && form.f.jobIds.length) req.jobIds = form.f.jobIds
   return req
 }
 
-async function loadPacks() {
+// ===== 扫描作业(任务名)下拉: 报告按作业生成 / 原始报告按作业分类共用 =====
+const jobList = ref([]) // {id, name, target, status, running}
+async function loadJobList() {
   try {
-    const d = await v2('/report/packs')
-    packs.value = (d && d.list) || []
-    packMgmt.value = !!(d && d.management)
-    packVars.value = (d && d.variables) || []
-    // 服务端开启模板管理 -> 页签自动可见(不写 localStorage: 开关是服务端事实)
-    if (packMgmt.value) tplTabVisible.value = true
-  } catch (e) { /* 列表失败不阻断报告生成 */ }
+    const d = await v2('/jobs')
+    jobList.value = (d && d.jobs) || []
+  } catch (e) { jobList.value = [] }
+}
+// 报告标题的"按作业"提示: 选了任务就显示任务名(多选用"、"拼接), 便于确认生成的是哪份
+const jobNameOf = computed(() => {
+  if (!form.f.jobIds || !form.f.jobIds.length) return ''
+  return form.f.jobIds.map(id => {
+    const j = jobList.value.find(x => x.id === id)
+    return j ? j.name : id
+  }).join('、')
+})
+
+async function loadWordTpls() {
+  try {
+    const d = await v2('/report/word/templates')
+    wordTpls.value = ((d && d.list) || []).filter(t => !t.builtin)
+  } catch (e) { wordTpls.value = [] }
+  loadVisSections()
+}
+
+// ===== 扫描任务选择(2026-09-26: 下拉必选 + 可多选, 选中以 chip 展示, 不可留空) =====
+const jobPicker = ref('')
+function addJob() {
+  if (!jobPicker.value) return
+  if (!form.f.jobIds.includes(jobPicker.value)) form.f.jobIds.push(jobPicker.value)
+  jobPicker.value = '' // 重置, 便于继续选下一个
+}
+function removeJob(id) { form.f.jobIds = form.f.jobIds.filter(x => x !== id) }
+function jobNameOfId(id) { const j = jobList.value.find(x => x.id === id); return j ? j.name : id }
+// 报告生成下拉的模板选项: 排除 default(内置默认模板, 受保护仅展示; 报告生成直接用"内置版式"builtin)
+const genTplOptions = computed(() => (wordTpls.value || []).filter(t => t.name !== 'default'))
+
+// ===== 可视化排版编辑器 =====
+
+async function loadVisSections() {
+  try {
+    const d = await v2('/report/word/templates/sections')
+    visSectionsMeta.value = (d && d.list) || []
+    if (vis.sections.length === 0) resetVis()
+  } catch (e) { /* 失败时编辑器章节行空, 不影响模板列表 */ }
+}
+
+function secTitle(key) {
+  const m = visSectionsMeta.value.find(x => x.key === key)
+  return m ? m.title : key
+}
+function secOptional(key) {
+  const m = visSectionsMeta.value.find(x => x.key === key)
+  return !!(m && m.optional)
+}
+function toggleVisSec(key) {
+  visEnabled.value[key] = !(visEnabled.value[key] ?? true)
+}
+// 版权信息勾选: 开 = 带版权章(文案空则回退默认); 关 = 保存时空串 → 后端跳过该章
+function toggleCopyright() {
+  vis.copyrightOn = !vis.copyrightOn
+  if (vis.copyrightOn && !vis.copyright) vis.copyright = DEFAULT_COPYRIGHT
+}
+function moveVisSec(i, dir) {
+  const s = vis.sections
+  const j = i + dir
+  if (j < 0 || j >= s.length) return
+  const t = s[i]; s[i] = s[j]; s[j] = t
+}
+
+// 版面预览用: 当前勾选(启用)的"普通正文章节", 按当前顺序 —— 与报告实际章节编号
+// 口径一致(SectionBlocksWithOptions 连续编号, 未勾选的跳过)。
+// 免责声明/版权信息不混进编号章节序列: 它们在页面底部 tp-tail 单独呈现并可就地
+// 编辑文案, 若再进这里会同屏重复且编号错乱(取消勾选时也藏不掉)。
+const previewSections = computed(() =>
+  vis.sections.filter(k => (visEnabled.value[k] ?? true) && k !== 'disclaimer' && k !== 'copyright')
+)
+
+// ===== 主题色预设(2026-09-26 用户: 默认色太亮眼, 给一组沉稳的商务色) =====
+const ACCENTS = [
+  { hex: '#1F3A5F', name: '深蓝(推荐)' },
+  { hex: '#374151', name: '墨灰' },
+  { hex: '#0F766E', name: '深青' },
+  { hex: '#065F46', name: '深绿' },
+  { hex: '#7F1D1D', name: '暗红' },
+  { hex: '#1E3A8A', name: '藏青' },
+  { hex: '#4B5563', name: '石墨' },
+  { hex: '#5B4B8A', name: '黛紫' },
+  { hex: '#B45309', name: '赭石' },
+  { hex: '#4F46E5', name: '靛蓝(旧默认)' }
+]
+
+// ===== 风格预设(2026-09-26 四轮补刀: 取代"逐章节一堆亮色块"的挨个自定义)。
+//   每套是协调好的整套配色(accent + 各章节标题色/底色/正文字色), 一键套用到全部章节,
+//   像 WPS 选模板。颜色都取沉稳系, 不刺眼。 =====
+const STYLE_PRESETS_THEME = [
+  { key: 'biz',   name: '商务经典', accent: '#1F3A5F', titleColor: '#1F3A5F', titleBg: '#EAF0F7', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'gray',  name: '简约灰',   accent: '#374151', titleColor: '#374151', titleBg: '#F3F4F6', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'gov',   name: '政务红',   accent: '#9B2C2C', titleColor: '#9B2C2C', titleBg: '#FBEAEA', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'teal',  name: '科技青',   accent: '#0F766E', titleColor: '#0F766E', titleBg: '#E0F2FE', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'green', name: '清新绿',   accent: '#166534', titleColor: '#166534', titleBg: '#DCFCE7', fontColor: '#1F2937', bg: '#FFFFFF' }
+]
+
+// ===== 版面就地编辑状态(2026-09-26 四轮: 形态对齐 WPS —— 风格预设 + 画布点选高亮) =====
+const activeSec = ref('') // 画布上点选的章节(与侧栏章节列表联动, 仅用于高亮, 不再逐章改样式)
+const stylePreset = ref('') // 当前套用的风格预设 key(空 = 未套用/自定义)
+// 顶栏主题色 popover 开关; 点弹窗任意空白统一关掉
+const accentOpen = ref(false)
+function closePops() {
+  accentOpen.value = false
+}
+
+
+// ===== 风格预设: 一键套用整套协调配色到全部章节(取代逐章节手动调) =====
+function applyStylePreset(key) {
+  const p = STYLE_PRESETS_THEME.find(x => x.key === key)
+  if (!p) return
+  vis.accent = p.accent // 封面标题 / 章节标题条主色
+  const m = {}
+  for (const k of vis.sections) {
+    m[k] = { titleColor: p.titleColor, titleBg: p.titleBg, fontColor: p.fontColor, bg: p.bg, bold: false, size: 0 }
+  }
+  vis.sectionStyles = m // 整模板统一一套观感, 后端按章节存储但值相同
+  stylePreset.value = key
+}
+
+// ===== 逐章节字体样式(2026-09-25 三轮: 字体颜色/底色/格式, 内容不可改) =====
+// 本地存 #rrggbb(原生 color 输入框口径); 提交/回显时后端口径是 6 位 hex 不带 #
+const EMPTY_SEC_STYLE = { titleColor: '', titleBg: '', fontColor: '', bg: '', bold: false, size: 0 }
+function secStyle(k) {
+  return vis.sectionStyles[k] || EMPTY_SEC_STYLE
+}
+function hasSecStyle(k) {
+  const s = secStyle(k)
+  return !!(s.titleColor || s.titleBg || s.fontColor || s.bg || s.bold || s.size)
+}
+function setSecStyleColor(k, field, val) {
+  ensureSecStyle(k)[field] = val // val '' = 恢复默认(原生 input 只会回 #rrggbb)
+}
+function setSecStyleBool(k, field, val) {
+  ensureSecStyle(k)[field] = !!val
+}
+function setSecStyleSize(k, val) {
+  ensureSecStyle(k).size = Number(val) || 0
+}
+function ensureSecStyle(k) {
+  if (!vis.sectionStyles[k]) vis.sectionStyles[k] = { ...EMPTY_SEC_STYLE }
+  return vis.sectionStyles[k]
+}
+function resetSecStyle(k) {
+  vis.sectionStyles[k] = { ...EMPTY_SEC_STYLE }
+}
+// 版面预览: 标题/正文的实时样式(与报告渲染同语义 —— 后端 styleSectionBody)
+function tpTitleStyle(k) {
+  const s = secStyle(k)
+  const st = {}
+  if (s.titleColor) st.color = s.titleColor
+  if (s.titleBg) st.background = s.titleBg
+  return st
+}
+function tpBodyStyle(k) {
+  const s = secStyle(k)
+  const st = {}
+  if (s.bg) st.background = s.bg
+  if (s.fontColor) st.color = s.fontColor
+  if (s.size) st.fontSize = (s.size / 2) + 'px' // 半点 -> px
+  if (s.bold) st.fontWeight = 'bold'
+  return st
+}
+// 提交前清洗: 只保留非空项, 颜色去 #(后端 6 位 hex 口径); 无任何样式的章节不带 key
+function cleanSecStyles() {
+  const m = {}
+  for (const k of vis.sections) {
+    const s = vis.sectionStyles[k]
+    if (!s) continue
+    const e = {}
+    if (s.titleColor) e.titleColor = s.titleColor.replace('#', '')
+    if (s.titleBg) e.titleBg = s.titleBg.replace('#', '')
+    if (s.fontColor) e.fontColor = s.fontColor.replace('#', '')
+    if (s.bg) e.bg = s.bg.replace('#', '')
+    if (s.bold) e.bold = true
+    if (s.size) e.size = s.size
+    if (Object.keys(e).length) m[k] = e
+  }
+  return m
+}
+// 回显: 后端 6 位 hex 不带 # → 本地 #rrggbb; 章节清单外的样式 key 丢弃
+function loadSecStyles(d) {
+  const m = {}
+  for (const k of vis.sections) {
+    const s = (d.sectionStyles && d.sectionStyles[k]) || {}
+    const h = v => (v ? '#' + String(v).replace('#', '') : '')
+    m[k] = {
+      titleColor: h(s.titleColor), titleBg: h(s.titleBg),
+      fontColor: h(s.fontColor), bg: h(s.bg),
+      bold: !!s.bold, size: Number(s.size) || 0
+    }
+  }
+  vis.sectionStyles = m
+}
+
+async function loadVisualTpl(name) {
+  try {
+    const d = await v2('/report/word/templates/visual?name=' + encodeURIComponent(name))
+    if (!d) return
+    vis.name = d.name || name
+    vis.title = d.title || ''
+    vis.header = d.header || ''
+    vis.client = d.client || ''
+    vis.subtitle = d.subtitle || ''
+    vis.operator = d.operator || ''
+    vis.tool = d.tool || ''
+    vis.timeMode = d.timeMode === 'custom' ? 'custom' : 'auto'
+    vis.timeText = d.timeText || ''
+    vis.footer = d.footer || ''
+    // 版权(2026-09-26 用户: "版权信息"勾要能选中/取消, 不能灰):
+    //   "" = 用户明确关掉(不出该章) → 不勾;  null/undefined = 内置默认 → 勾+默认文案;
+    //   非空 = 自定义文案 → 勾。勾选态单独存 copyrightOn, 与文案文本解耦。
+    if (d.copyright === '') { vis.copyrightOn = false; vis.copyright = '' }
+    else if (d.copyright == null) { vis.copyrightOn = true; vis.copyright = DEFAULT_COPYRIGHT }
+    else { vis.copyrightOn = true; vis.copyright = d.copyright }
+    vis.disclaimer = d.disclaimer || ''
+    // 统一存带 # 的形式(input[type=color] 的口径; 后端保存时会去 #)。
+    // 旧实现这里把 # 去掉了, 编辑已有模板时颜色控件会失效(值非法显示成黑)。
+    vis.accent = '#' + String(d.accent || '1F3A5F').replace('#', '')
+    vis.cover = d.cover !== false
+    // 右侧"章节结构"始终显示 SectionList 全集(不因取消勾选而从列表消失): 取消勾选
+    // 只让该章在版面预览里不显示、报告不出该章, 用户随时可重新勾回。旧模板可能缺
+    // 后来新增的章节(如 disclaimer/copyright 是 2026-09-25 才加的), 按 SectionList
+    // 顺序补在末尾; 已保存章节按保存顺序在前。勾选态 = 该 key 是否在已保存 sections 里。
+    const fullKeys = visSectionsMeta.value.length
+      ? visSectionsMeta.value.map(x => x.key)
+      : ['summary', 'risk', 'assets', 'vulns', 'vulnfix', 'penta', 'scans', 'fix', 'disclaimer', 'copyright']
+    const saved = (d.sections && d.sections.length) ? d.sections.slice() : fullKeys.slice()
+    vis.sections = saved.concat(fullKeys.filter(k => !saved.includes(k)))
+    const m = {}
+    for (const k of vis.sections) m[k] = saved.includes(k)
+    visEnabled.value = m
+    visEnabled.value['copyright'] = vis.copyrightOn // 版权出章由 copyrightOn 决定, 对齐勾选态
+    loadSecStyles(d) // 逐章节样式回显(旧模板无此键 = 全默认, 行为不变)
+    stylePreset.value = '' // 载入既有模板: 不强行匹配预设(可能含自定义值)
+  } catch (e) { /* http.js 统一提示 */ }
+}
+
+function resetVisEnabled() {
+  const m = {}
+  for (const k of vis.sections) m[k] = true
+  visEnabled.value = m
+}
+
+async function saveVisualTpl() {
+  if (!vis.name.trim()) { window.alert('请填写模板名称'); return false }
+  visBusy.value = true
+  try {
+    // 只提交勾选的章节(顺序 = 当前排列); 版权信息由版权勾选(copyrightOn)决定:
+    // 不勾 = 后端按 Copyright 空串跳过该章; 勾 = 用文案字段(空则回退默认文案)。
+    // 注意: visEnabled 是 ref, 脚本里必须用 .value 取值(模板里 Vue 自动解包才可直接
+    // 用)。漏了 .value 时 visEnabled[k] 恒为 undefined → !== false 恒真 → 未勾的
+    // 章节也会被存进模板, 表现为"取消勾选保存后仍显示 / 重开仍勾选"。
+    const secs = vis.sections.filter(k => visEnabled.value[k] !== false)
+    await v2('/report/word/templates/visual', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: vis.name.trim(),
+        title: vis.title, header: vis.header,
+        client: vis.client, subtitle: vis.subtitle,
+        operator: vis.operator, tool: vis.tool,
+        timeMode: vis.timeMode, timeText: vis.timeMode === 'custom' ? vis.timeText : '',
+        footer: vis.footer, copyright: vis.copyrightOn ? (vis.copyright || DEFAULT_COPYRIGHT) : '',
+        disclaimer: vis.disclaimer,
+        accent: vis.accent, cover: vis.cover, sections: secs,
+        sectionStyles: cleanSecStyles() // 逐章节字体样式(空 = 不带, 旧模板零差异)
+      })
+    })
+    tplSavedMsg.value = '已保存到 data/outp/' + vis.name.trim()
+    setTimeout(() => { tplSavedMsg.value = '' }, 4000)
+    loadWordTpls()
+    closeTplModal()
+    return true
+  } catch (e) {
+    window.alert('模板保存失败: ' + (e.message || e))
+    return false
+  } finally { visBusy.value = false }
+}
+
+function previewWordTpl(name) {
+  window.open('/api/v2/report/word/templates/' + encodeURIComponent(name) + '/preview', '_blank')
+}
+
+function resetVis() {
+  vis.name = ''
+  vis.title = ''
+  vis.header = ''
+  vis.client = ''
+  vis.subtitle = '网络安全扫描与漏洞评估报告'
+  vis.operator = ''
+  vis.tool = ''
+  vis.timeMode = 'auto'
+  vis.timeText = ''
+  vis.footer = ''
+  vis.copyright = DEFAULT_COPYRIGHT
+  vis.copyrightOn = true // 新建模板默认带版权章
+  vis.disclaimer = '本报告基于 Yugsight 自动化扫描结果生成, 结论仅供安全加固参考。'
+  vis.accent = '#1F3A5F' // 默认改沉稳深蓝(2026-09-26 用户: 原靛蓝太亮眼)
+  vis.cover = true
+  visLogo.value = ''
+  vis.sections = visSectionsMeta.value.map(x => x.key)
+  if (vis.sections.length === 0) {
+    // sections 元数据还没拉到: 用内置兜底顺序(与后端 sectionOrder 一致)
+    vis.sections = ['summary', 'risk', 'assets', 'vulns', 'vulnfix', 'penta', 'scans', 'fix', 'disclaimer', 'copyright']
+  }
+  resetVisEnabled()
+  vis.sectionStyles = {} // 重置为默认: 逐章节样式全清
+  stylePreset.value = ''
+}
+
+// ===== 封面 logo(2026-09-25 用户要求"模板能放 logo") =====
+async function loadLogoPreview(name) {
+  visLogo.value = ''
+  if (!name) return
+  try {
+    const r = await fetch('/api/v2/report/word/templates/visual/logo?name=' + encodeURIComponent(name))
+    if (!r.ok) return // 无 logo(404)正常
+    visLogo.value = URL.createObjectURL(await r.blob())
+  } catch (e) { /* 预览失败不影响编辑 */ }
+}
+
+async function onLogoFile(e) {
+  const f = e.target.files && e.target.files[0]
+  e.target.value = '' // 允许重复选同一文件
+  if (!f) return
+  if (!vis.name.trim()) { window.alert('请先填写模板名称再上传 logo'); return }
+  logoBusy.value = true
+  try {
+    const b64 = await fileToB64(f)
+    const r = await v2('/report/word/templates/visual/logo', {
+      method: 'POST',
+      body: JSON.stringify({ name: vis.name.trim(), data: b64 })
+    })
+    visLogo.value = 'data:' + (f.type || 'image/png') + ';base64,' + b64
+    tplSavedMsg.value = 'logo 已保存(记得点"保存模板"让它进入报告)'
+    setTimeout(() => { tplSavedMsg.value = '' }, 4000)
+  } catch (err) { window.alert('logo 上传失败: ' + err.message) }
+  finally { logoBusy.value = false }
+}
+
+async function delLogo() {
+  if (!vis.name.trim()) return
+  try {
+    await v2('/report/word/templates/visual/logo?name=' + encodeURIComponent(vis.name.trim()), { method: 'DELETE' })
+    visLogo.value = ''
+  } catch (e) { window.alert('删除失败: ' + e.message) }
+}
+
+async function delWordTpl(t) {
+  if (!window.confirm('删除 Word 模板 ' + t.name + ' ?')) return
+  try {
+    await v2('/report/word/templates/' + encodeURIComponent(t.name), { method: 'DELETE' })
+    loadWordTpls()
+  } catch (e) { /* http.js 统一提示 */ }
 }
 
 // file -> base64(去掉 data: 前缀, 后端只认裸 base64)
@@ -771,77 +1262,25 @@ function fileToB64(file) {
   })
 }
 
-function onPackLogo(e) {
-  const f = e.target.files && e.target.files[0]
-  if (!f) return
-  fileToB64(f).then(b => {
-    packForm.logoB64 = b
-    const n = f.name.toLowerCase()
-    packForm.logoExt = n.endsWith('.png') ? 'png' : (n.endsWith('.svg') ? 'svg' : 'jpg')
-  }).catch(() => {})
-}
-
-function onPackDocx(e) {
-  const f = e.target.files && e.target.files[0]
-  if (!f) return
-  fileToB64(f).then(b => { packForm.docx = b }).catch(() => {})
-}
-
-async function savePack() {
-  if (!packForm.id) { window.alert('请填写模板 ID(目录名)'); return }
-  packBusy.value = true
-  try {
-    await v2('/report/packs', {
-      method: 'POST',
-      body: JSON.stringify({
-        id: packForm.id, name: packForm.name, html: packForm.html,
-        docx: packForm.docx, logoB64: packForm.logoB64, logoExt: packForm.logoExt,
-        config: { client: packForm.client, accent: packForm.accent, footer: packForm.footer }
-      })
-    })
-    resetPack()
-    loadPacks()
-  } finally { packBusy.value = false }
-}
-
-function resetPack() {
-  Object.assign(packForm, { id: '', name: '', client: '', accent: '', footer: '', html: '', docx: '', logoB64: '', logoExt: '' })
-}
-
-async function delPack(p) {
-  if (!window.confirm('删除模板包 ' + p.name + ' ? 目录将被移除。')) return
-  try {
-    await v2('/report/packs/' + encodeURIComponent(p.id), { method: 'DELETE' })
-    loadPacks()
-  } catch (e) { /* 失败提示由 http.js 统一处理 */ }
-}
-
-function downloadPack(p) {
-  // 同源 cookie 鉴权, 直接跳转即可(拼 URL 不需要 token)
-  window.location.href = '/api/v2/report/packs/' + encodeURIComponent(p.id) + '/download?kind=zip'
-}
-
 async function loadStatus() {
   try {
     status.value = await v2('/report/status')
     if (status.value && status.value.enabled) {
       loadOptions()
-      loadTemplates()
-      loadPacks() // 模板包列表(生成页下拉 + 模板管理 tab 共用)
+      loadWordTpls() // Word 模板列表(生成页"已有模板"区数据源)
     }
   } catch (e) { status.value = { enabled: false, hint: e.message } }
 }
 
+const SEV_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
 async function loadOptions() {
-  try { options.value = await v2('/report/options') } catch (e) { /* 降级: 保留默认节点 */ }
-}
-
-async function loadTemplates() {
   try {
-    const d = await v2('/report/templates')
-    templates.value = (d.list || []).filter(t => !t.builtin)
-    if (d.headerPlaceholders && d.headerPlaceholders.length) placeholders.value = d.headerPlaceholders
-  } catch (e) { templates.value = [] }
+    options.value = await v2('/report/options')
+    // 2026-10-02 用户口径: 选项基于数据里存在的 —— 已选的风险等级/探针节点
+    // 没有数据了(如扫描报告/漏洞全删) → 清除表单值, 防按不存在的值筛出空报告
+    if (form.f.severity && !((options.value.severities || []).includes(form.f.severity))) form.f.severity = ''
+    if (form.f.probeNode && !((options.value.nodes || []).some(n => n.id === form.f.probeNode))) form.f.probeNode = ''
+  } catch (e) { /* 降级: 保留默认节点 */ }
 }
 
 async function loadArchives() {
@@ -858,42 +1297,59 @@ async function loadHistory() {
   } catch (e) { /* 无任务时静默 */ }
 }
 
-async function loadTopo() {
-  const p = new URLSearchParams()
-  if (topoFilter.severity) p.set('severity', topoFilter.severity)
-  if (topoFilter.cidr) p.set('cidr', topoFilter.cidr)
-  try {
-    const d = await v2('/report/topology?' + p.toString())
-    topoNodes.value = (d.topology && d.topology.nodes) || []
-    topoStats.value = d.topology ? d.topology.stats : null
-  } catch (e) { alert(e.message) }
+// ===== 预览抽屉(2026-09-25 二轮: "像抽屉一样打开页面看") =====
+// 存档预览直连 /preview(同域 iframe 自动带会话 cookie; Word 由服务端转 HTML,
+// 解析不了才回二进制 → 抽屉里 iframe 打不开时用户点"下载原件"兜底)。
+// 生成预览是 POST 回来的 HTML → Blob URL。
+function openDrawer(url, title, downloadUrl) {
+  closeDrawer()
+  drawer.value = { url, title: title || '', download: downloadUrl || '' }
+}
+function closeDrawer() {
+  // 只有 blob: URL 需要回收(接口直链由浏览器自己管)
+  if (drawer.value.url && drawer.value.url.startsWith('blob:')) URL.revokeObjectURL(drawer.value.url)
+  drawer.value = { url: '', title: '', download: '' }
+}
+function previewArchive(a) {
+  openDrawer('/api/v2/report/' + a.id + '/preview', a.title, '/api/v2/report/' + a.id + '/download')
+}
+// Esc 关抽屉
+function onDrawerKeydown(e) {
+  if (e.key !== 'Escape') return
+  // 浮窗优先: 编辑中按 Esc 先关编辑窗, 别误关底下的预览抽屉
+  if (tplModal.value) { closeTplModal(); return }
+  if (drawer.value.url) closeDrawer()
 }
 
-// 预览: POST 返回 HTML, 用 Blob URL 交给 iframe(不能直接把 HTML 塞进 v-html,
-// 报告自身带 <style>/<script> 且体积大, iframe 隔离更安全)
+// 预览: POST 返回 HTML, 用 Blob URL 交给抽屉 iframe(不能直接把 HTML 塞进
+// v-html, 报告自身带 <style>/<script> 且体积大, iframe 隔离更安全)
 async function genPreview() {
   busy.value = true
   try {
+    await ensureTemplateSaved()
     const r = await fetch('/api/v2/report/preview', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildRequest())
+      body: JSON.stringify(buildRequest('html'))
     })
     if (!r.ok) throw new Error('HTTP ' + r.status)
     const html = await r.text()
-    closePreview()
-    previewURL.value = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+    openDrawer(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '报告预览')
   } catch (e) { alert('预览失败: ' + e.message) } finally { busy.value = false }
 }
 
-function closePreview() {
-  if (previewURL.value) URL.revokeObjectURL(previewURL.value)
-  previewURL.value = ''
+// 生成前确保选中的模板已落盘(用户"编辑完直接出报告"的路径):
+// 仅当"选中的模板"就是当前编辑器里未保存的模板时才强制保存; 否则按已存模板/内置版式。
+async function ensureTemplateSaved() {
+  if (vis.name.trim() && vis.name.trim() === form.f.template) {
+    await saveVisualTpl()
+  }
 }
 
 async function genDownload() {
   busy.value = true
   try {
-    const d = await v2('/report/generate', { method: 'POST', body: { ...buildRequest(), archive: false } })
+    await ensureTemplateSaved()
+    const d = await v2('/report/generate', { method: 'POST', body: { ...buildRequest(form.f.format), archive: false } })
     downloadReport(d.report.id)
   } catch (e) { alert('生成失败: ' + e.message) } finally { busy.value = false }
 }
@@ -901,7 +1357,8 @@ async function genDownload() {
 async function genArchive() {
   busy.value = true
   try {
-    const d = await v2('/report/generate', { method: 'POST', body: { ...buildRequest(), archive: true } })
+    await ensureTemplateSaved()
+    const d = await v2('/report/generate', { method: 'POST', body: { ...buildRequest(form.f.format), archive: true } })
     alert('报告已生成并归档')
     loadArchives()
     tab.value = 'arch'
@@ -925,13 +1382,35 @@ async function del(a) {
   } catch (e) { alert(e.message) }
 }
 
+// 主入口: 选两份报告存档对比(按各自筛选条件重建漏洞明细, 2026-09-26 用户口径:
+// 历史对比应对存档做对比, 而非无根据的时间窗)
 async function runDiff() {
-  if (!diffForm.from && !diffForm.to) { alert('请至少选择目标轮次的时间范围'); return }
+  if (!diffForm.baseId || !diffForm.targetId) { alert('请分别选择「基线存档」与「目标存档」'); return }
+  diffBusy.value = true
+  try {
+    const b = archives.value.find(a => a.id === diffForm.baseId)
+    const t = archives.value.find(a => a.id === diffForm.targetId)
+    const d = await v2('/report/compare', {
+      method: 'POST',
+      body: {
+        baseId: diffForm.baseId, targetId: diffForm.targetId,
+        save: diffForm.save,
+        title: '存档对比 ' + (b ? b.title : diffForm.baseId) + ' vs ' + (t ? t.title : diffForm.targetId)
+      }
+    })
+    diff.value = d.diff
+    lastDiffID.value = d.archiveId || ''
+  } catch (e) { alert('对比失败: ' + e.message) } finally { diffBusy.value = false }
+}
+
+// 备选: 按时间窗对比(全库漏洞切窗, 不依赖存档; 基线自动取目标窗前等长一段)
+async function runWindowDiff() {
+  if (!diffForm.from && !diffForm.to) { alert('请至少选择时间窗的起止日期'); return }
   diffBusy.value = true
   try {
     const d = await v2('/report/compare', {
       method: 'POST',
-      body: { from: diffForm.from, to: diffForm.to, save: diffForm.save, title: '扫描对比 ' + (diffForm.from || '') + '~' + (diffForm.to || '') }
+      body: { from: diffForm.from, to: diffForm.to, save: diffForm.save, title: '时间窗对比 ' + (diffForm.from || '') + '~' + (diffForm.to || '') }
     })
     diff.value = d.diff
     lastDiffID.value = d.archiveId || ''
@@ -942,17 +1421,6 @@ function diffPreview() {
   if (lastDiffID.value) downloadReport(lastDiffID.value)
 }
 
-function onNodeClick(n) { sel.value = n }
-
-function viewVulns(n) {
-  sel.value = null
-  router.push({ path: '/vulns', query: { ip: n.ip } })
-}
-
-function nodeKindName(k) {
-  return { asset: '资产', port: '端口', service: '服务' }[k] || k
-}
-
 function scoreCls(stats) {
   if (!stats) return ''
   const s = stats.riskScore || 0
@@ -961,61 +1429,20 @@ function scoreCls(stats) {
   return 'ok'
 }
 
-async function saveTpl() {
-  if (!tpl.name) { alert('请填写模板名称'); return }
-  try {
-    const body = { name: tpl.name, accent: tpl.accent, subtitle: tpl.subtitle, header: { ...tpl.header } }
-    if (tpl.id) body.id = tpl.id
-    await v2('/report/templates', { method: 'POST', body })
-    resetTpl()
-    loadTemplates()
-  } catch (e) { alert(e.message) }
-}
-
-function editTpl(t) {
-  tpl.id = t.id
-  tpl.name = t.name || ''
-  tpl.accent = t.accent || '#4f46e5'
-  tpl.subtitle = t.subtitle || ''
-  Object.assign(tpl.header, {
-    headerLeft: '', headerCenter: '', headerRight: '',
-    footerLeft: '', footerCenter: '', footerRight: '', disclaimer: '',
-    ...(t.header || {})
-  })
-}
-
-function resetTpl() {
-  tpl.id = ''
-  tpl.name = ''
-  tpl.accent = '#4f46e5'
-  tpl.subtitle = ''
-  Object.assign(tpl.header, {
-    headerLeft: '', headerCenter: '', headerRight: '',
-    footerLeft: '', footerCenter: '', footerRight: '', disclaimer: ''
-  })
-}
-
-async function delTpl(t) {
-  if (!confirm('确认删除模板「' + t.name + '」?')) return
-  try {
-    await v2('/report/templates/' + t.id, { method: 'DELETE' })
-    loadTemplates()
-  } catch (e) { alert(e.message) }
-}
 
 // ===== 原始报告(二期) =====
 // 数据源: 四大业务模块执行完成后的原始结构化结果(只存不加工, AI 字段预留)。
 const rawList = ref([])
 const rawTotal = ref(0)
-const rawOptions = ref({ modules: [], tags: [], assets: [], dateRange: { from: '', to: '' } })
-const rawF = reactive({ module: '', tag: '', asset: '', from: '', to: '', keyword: '' })
+const rawOptions = ref({ modules: [], tags: [], assets: [], jobs: [], dateRange: { from: '', to: '' } })
+const rawF = reactive({ module: '', tag: '', asset: '', from: '', to: '', keyword: '', job: '' })
 const rawSel = ref([])
 const rawDetail = ref(null)
 const rawBusy = ref(false)
 const mergeForm = reactive({ title: '', tags: '' })
 
 // 来源模块展示(与后端 report.RawModules 同口径, 未知模块原样回显)
-const RAW_MOD = { capture: '实时抓包', scan: '扫描作业', weakpass: '弱口令', monitor: '节点监控', merged: '合并报告' }
+const RAW_MOD = { capture: '实时抓包', scan: '扫描作业', weakpass: '弱口令', monitor: '节点监控', penta: '渗透验证', merged: '合并报告' }
 function rawModLabel(m) { return RAW_MOD[m] || m }
 function rawModKey(m) { return RAW_MOD[m] ? m : 'other' }
 
@@ -1041,6 +1468,7 @@ async function loadRaw() {
   if (rawF.from) p.set('from', rawF.from)
   if (rawF.to) p.set('to', rawF.to)
   if (rawF.keyword) p.set('keyword', rawF.keyword)
+  if (rawF.job) p.set('job', rawF.job)
   try {
     const d = await v2('/raw/list?' + p.toString())
     rawList.value = (d && d.list) || []
@@ -1062,14 +1490,22 @@ async function loadRawOptions() {
         modules: d.modules || [],
         tags: d.tags || [],
         assets: d.assets || [],
+        jobs: d.jobs || [],
         dateRange: d.dateRange || { from: '', to: '' }
       }
+      // 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 已选中的来源/作业
+      // 对应数据被删光后选项消失, 筛选要自动清除, 否则 select 无匹配 option、
+      // 列表卡死为空还查不出来
+      let reset = false
+      if (rawF.module && !rawOptions.value.modules.some(m => m.id === rawF.module)) { rawF.module = ''; reset = true }
+      if (rawF.job && !rawOptions.value.jobs.includes(rawF.job)) { rawF.job = ''; reset = true }
+      if (reset) loadRaw()
     }
   } catch (e) { /* 选项失败不影响列表 */ }
 }
 
 function resetRawFilter() {
-  Object.assign(rawF, { module: '', tag: '', asset: '', from: '', to: '', keyword: '' })
+  Object.assign(rawF, { module: '', tag: '', asset: '', from: '', to: '', keyword: '', job: '' })
   loadRaw()
 }
 
@@ -1096,6 +1532,24 @@ async function delRaw(r) {
     rawSel.value = rawSel.value.filter(id => id !== r.id)
     loadRaw()
   } catch (e) { alert(e.message) }
+}
+
+// 2026-09-26: 批量删除选中的原始报告(走 /raw/batch-delete, 后端上限 500/次)
+async function rawBatchDel() {
+  const n = rawSel.value.length
+  if (!n) return
+  if (n > 500) { alert('单次最多删除 500 条'); return }
+  if (!confirm('确认删除选中的 ' + n + ' 份原始报告？\n\n删除后不可恢复，继续？')) return
+  rawBusy.value = true
+  try {
+    const r = await v2('/raw/batch-delete', {
+      method: 'POST',
+      body: { ids: [...rawSel.value] }
+    })
+    rawSel.value = []
+    alert('已删除 ' + (r.deleted || 0) + ' 份原始报告')
+    loadRaw()
+  } catch (e) { alert(e.message) } finally { rawBusy.value = false }
 }
 
 async function mergeRaw() {
@@ -1147,6 +1601,59 @@ const rawPkts = computed(() => ((rawP.value && rawP.value.packets) || []).slice(
 const rawMonTargets = computed(() => (rawP.value && rawP.value.targets) || [])
 const rawSections = computed(() => (rawP.value && rawP.value.sections) || [])
 const rawMergedFrom = computed(() => (rawP.value && rawP.value.mergedFrom) || [])
+// 资产拓扑(2026-09-25 用户口径: 拓扑 = 原始报告里资产信息的列表化, 只做子表)。
+// 数据源: payload.assets(资产+端口) + payload.ports(端口明细) + payload.findings(按 host 归漏洞数)。
+// 合并键 = IP, 端口取并集, 漏洞数按该 IP 命中的 finding 计数。
+const rawTopo = computed(() => {
+  const d = rawDetail.value
+  const p = rawP.value
+  if (!d || !p) return []
+  if (d.module === 'scan') {
+    const byIp = {}
+    const order = []
+    const put = (ip) => {
+      if (!ip || byIp[ip]) return
+      byIp[ip] = { ip, hostname: '', os: '', ports: new Set(), vulns: 0 }
+      order.push(ip)
+    }
+    for (const a of (p.assets || [])) {
+      put(a.ip)
+      if (!byIp[a.ip]) continue
+      if (!byIp[a.ip].hostname && a.hostname) byIp[a.ip].hostname = a.hostname
+      if (!byIp[a.ip].os && a.os) byIp[a.ip].os = a.os
+      for (const pt of (a.ports || [])) byIp[a.ip].ports.add(pt)
+    }
+    for (const ip of Object.keys(p.ports || {})) {
+      put(ip)
+      if (!byIp[ip]) continue
+      for (const rec of (p.ports[ip] || [])) byIp[ip].ports.add(rec.port)
+    }
+    for (const f of (p.findings || [])) {
+      const ip = (f.host || '').split(':')[0].trim()
+      if (ip && byIp[ip]) byIp[ip].vulns++
+    }
+    return order.map(ip => {
+      const x = byIp[ip]
+      return { ip, hostname: x.hostname, os: x.os, ports: [...x.ports].sort((a, b) => a - b), vulns: x.vulns }
+    })
+  }
+  if (d.module === 'weakpass') {
+    const byIp = {}
+    const order = []
+    for (const r of (p.results || [])) {
+      const ip = (r.host || '').split(':')[0].trim()
+      if (!ip) continue
+      if (!byIp[ip]) { byIp[ip] = { ip, hostname: '', os: '', ports: new Set(), vulns: 0 }; order.push(ip) }
+      if (r.port) byIp[ip].ports.add(r.port)
+      if (r.ok) byIp[ip].vulns++
+    }
+    return order.map(ip => {
+      const x = byIp[ip]
+      return { ip, hostname: x.hostname, os: x.os, ports: [...x.ports].sort((a, b) => a - b), vulns: x.vulns }
+    })
+  }
+  return []
+})
 // 报告级 AI 元数据(aiData 是后端 json.RawMessage → 前端拿到的是 JSON 串)
 const rawAiData = computed(() => {
   const d = rawDetail.value && rawDetail.value.aiData
@@ -1167,26 +1674,64 @@ function initDates() {
 onMounted(() => {
   initDates()
   loadStatus()
+  loadJobList()
+  // 从"扫描作业"页跳来带 job 参数: 预选该作业并清空时间窗(否则默认 6 天窗会把
+  // 更早作业的结果滤光, 报告反而空)
+  if (route.query.job) {
+    form.f.jobIds = [route.query.job]
+    form.f.from = ''
+    form.f.to = ''
+  }
+  // 资产树联动深链(2026-09-28): ?rawId=<id> 直接打开某份原始报告详情(扫描快照
+  // 节点"查看报告"入口); ?asset=<ip> 预填资产筛选(资产行"原始报告"入口)。
+  if (route.query.asset) rawF.asset = String(route.query.asset)
+  if (route.query.rawId) {
+    tab.value = 'raw'
+    loadRaw()
+    viewRaw({ id: String(route.query.rawId) })
+  }
+  window.addEventListener('keydown', onDrawerKeydown)
 })
+// 选了任务(任务名)即清空时间窗: "按任务名生成"的语义是取该作业全部结果,
+// 默认时间窗(6 天)会把更早的作业数据滤掉。用户仍可在高级筛选里手动加回时间窗。
+// (多选数组需 deep:true 才能捕获 checkbox 增删)
+watch(() => form.f.jobIds, (ids) => {
+  if (ids && ids.length) {
+    form.f.from = ''
+    form.f.to = ''
+  }
+}, { deep: true })
 
-onBeforeUnmount(closePreview)
+onBeforeUnmount(() => {
+  closeDrawer() // 回收 blob URL, 关抽屉
+  window.removeEventListener('keydown', onDrawerKeydown)
+})
 </script>
 
 <style scoped>
+.job-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.job-chips .chip-x { cursor: pointer; margin-left: 4px; color: var(--muted); }
+.job-chips .chip-x:hover { color: var(--danger, #ef4444); }
 .tabs { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .tab { background: var(--panel); border: 1px solid var(--line); color: var(--muted);
   padding: 7px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; }
 .tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.adv-toggle { font-size: 12px; color: var(--muted); text-decoration: none; cursor: pointer; }
-.adv-toggle:hover { color: var(--accent); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 16px; }
 .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
 .form-grid label.wide { grid-column: 1 / -1; }
 .form-grid label.chk { flex-direction: row; align-items: center; gap: 6px; padding-top: 20px; }
 .block-title { font-size: 13px; font-weight: 600; margin: 18px 0 10px; padding-left: 9px;
   border-left: 3px solid var(--accent); }
-.preview-frame { margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.preview-frame iframe { width: 100%; height: 640px; border: 0; background: #fff; }
+/* 预览抽屉(2026-09-25 二轮: "像抽屉一样打开页面看"): 右侧全高 + iframe。
+   报告 HTML 自带 max-width 居中版式, 抽屉给足宽度(92vw/1150px)后观感才不挤。 */
+.drawer-mask { position: fixed; inset: 0; background: rgba(8, 12, 22, .55); z-index: 90; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(92vw, 1150px);
+  background: #f8fafc; display: flex; flex-direction: column; box-shadow: -8px 0 32px rgba(0,0,0,.35); }
+.drawer-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  background: rgba(11, 17, 30, .94); color: #fff; border-bottom: 1px solid var(--border); }
+.drawer-title { font-size: 13px; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer-body { flex: 1; min-height: 0; background: #fff; }
+.drawer-body iframe { width: 100%; height: 100%; border: 0; display: block; }
 .empty-hint { padding: 26px; text-align: center; }
 .empty-hint b { font-size: 15px; }
 .stat-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -1202,27 +1747,96 @@ onBeforeUnmount(closePreview)
 .score.bad { background: rgba(239,68,68,.16); color: #f87171; }
 .score.warn { background: rgba(245,158,11,.16); color: #fbbf24; }
 .score.ok { background: rgba(34,197,94,.16); color: #4ade80; }
-.legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0; font-size: 12px; color: var(--muted); }
-.lg { display: inline-flex; align-items: center; gap: 5px; }
-.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.dot.critical { background: #dc2626; } .dot.high { background: #ef4444; }
-.dot.medium { background: #f59e0b; } .dot.low { background: #eab308; }
-.dot.none { background: #64748b; } .dot.offline { background: #475569; border: 1px dashed #94a3b8; }
-.topo-wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-.topo-node { border: 1px solid var(--line); border-left-width: 4px; border-radius: 8px;
-  padding: 10px 12px; background: var(--panel); cursor: pointer; transition: transform .12s; }
-.topo-node:hover { transform: translateY(-2px); border-color: var(--accent); }
-.topo-node.risk-critical { border-left-color: #dc2626; }
-.topo-node.risk-high { border-left-color: #ef4444; }
-.topo-node.risk-medium { border-left-color: #f59e0b; }
-.topo-node.risk-low { border-left-color: #eab308; }
-.topo-node.risk-none, .topo-node.risk-info { border-left-color: #64748b; }
-.topo-node.dim { opacity: .6; }
-.tn-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
-.tn-label { font-size: 13px; font-weight: 600; margin: 4px 0; word-break: break-all; }
-.tn-meta { font-size: 11.5px; color: var(--muted); }
-.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
-/* 模板包表格里的"内置"角标 */
+/* 封面 logo 上传框(浮窗内用) */
+.doc-logo { width: 300px; height: 96px; margin: 0 auto 16px; border: 1.5px dashed #d1d5db;
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; position: relative; background: #fafafa; }
+.doc-logo:hover { border-color: var(--accent); background: #f5f7ff; }
+.doc-logo.has { border-style: solid; background: #fff; }
+.doc-logo img { max-width: calc(100% - 16px); max-height: calc(100% - 16px); object-fit: contain; }
+.doc-logo .busy { color: var(--accent); }
+.doc-logo-x { position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; border-radius: 50%;
+  border: 0; background: #ef4444; color: #fff; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
+/* 模板编辑浮窗(2026-09-25 三轮; 2026-09-26 四轮深色化: 原来整窗纯白, 深色主题下
+   长时间编辑刺眼 —— 外壳跟随主题深色, 只有中间那张纸是白的, 像 WPS 的"灰底白纸") */
+.tpl-mask { position: fixed; inset: 0; background: rgba(4, 8, 14, .72); z-index: 95;
+  display: flex; align-items: center; justify-content: center; padding: 3vh 3vw; }
+.tpl-modal { background: var(--panel); color: var(--text); border: 1px solid var(--border2);
+  border-radius: 12px; width: min(1320px, 96vw);
+  max-height: 94vh; display: flex; flex-direction: column;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .55); }
+.tpl-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border2); }
+.tpl-head .input.xs { width: 190px; height: 26px; font-size: 12.5px; }
+.head-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+/* 顶栏主题色入口: 一个色块按钮 + 点开的色板弹层(顶栏只占 26px, 不铺一片亮色块) */
+.head-accent { position: relative; display: inline-flex; }
+.accent-btn { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border2); cursor: pointer; padding: 0; }
+/* popover(主题色/字色/底色共用): 深色卡片, 不刺眼 */
+.pop {
+  position: absolute; top: 32px; left: 0; z-index: 30; min-width: 200px;
+  background: var(--panel2); border: 1px solid var(--border2); border-radius: 10px;
+  padding: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5);
+}
+.pop-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.pop-custom { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.tpl-body { flex: 1; min-height: 0; display: flex; gap: 14px; padding: 12px 14px 14px;
+  overflow: hidden; background: var(--bg); }
+/* 侧栏与画布: DOM 顺序是 侧栏→画布, 视觉顺序用 order 翻成 画布(左, 大) + 侧栏(右, 窄) */
+.tpl-left { order: 2; width: 400px; flex: none; min-width: 0; overflow-y: auto; }
+.tpl-preview-wrap { order: 1; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.tpl-preview-title { font-size: 12px; margin-bottom: 6px; flex: none; color: var(--muted); }
+/* A4 纸: 白纸 + 投影。纸面保持白(报告就是白纸, 预览必须所见即所得), 用 #fdfdfd
+   略柔化; 周围是深色编辑底, 整体亮度比"整窗纯白"低得多 */
+.tpl-page {
+  flex: 1; min-height: 0; overflow-y: auto;
+  background: #fdfdfd; color: #1f2937; font-size: 12px;
+  border: 1px solid #33415c; border-radius: 6px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .5);
+  padding: 22px 20px;
+}
+.tp-cover { text-align: center; padding: 8px 0 16px; border-bottom: 2px solid #e5e7eb; margin-bottom: 12px; }
+.tp-logo img { max-height: 48px; max-width: 160px; }
+.tp-title { font-size: 20px; font-weight: 700; color: var(--tp-accent, #1F3A5F); margin: 16px 0 8px; line-height: 1.5; }
+.tp-sub { font-size: 13px; color: #4b5563; margin-bottom: 12px; line-height: 1.6; }
+.tp-client { font-size: 13px; margin-bottom: 10px; }
+.tp-risk { font-size: 12.5px; margin-bottom: 14px; }
+.tp-meta { font-size: 12px; color: #374151; line-height: 2; }
+.tp-body { padding-top: 2px; }
+.tp-header { font-size: 11px; color: #6b7280; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-bottom: 10px; }
+.tp-sec { margin-bottom: 12px; }
+.tp-sec-title { font-size: 13px; font-weight: 700; color: var(--tp-accent, #1F3A5F); margin-bottom: 4px; }
+.tp-sec-no { margin-right: 6px; }
+.tp-sec-body { border: 1px dashed #dcdfe5; border-radius: 6px; padding: 9px 8px; background: #fafafa; }
+.tp-line { height: 7px; border-radius: 3px; background: #e8eaee; margin-bottom: 6px; }
+.tp-line:nth-child(2) { width: 88%; }
+.tp-line:nth-child(3) { width: 70%; }
+.tp-note { margin-top: 5px; font-size: 10.5px; }
+.tp-tail { font-size: 10.5px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 8px; margin-top: 10px; line-height: 1.7; }
+.tp-footer { font-size: 10.5px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 6px; margin-top: 10px; }
+.tpl-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-top: 1px solid var(--line); background: #f8fafc; border-radius: 0 0 12px 12px; }
+.tpl-cover { border: 1px dashed var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px;
+  background: #fafbfc; }
+.tpl-field { margin-bottom: 12px; }
+.tpl-field-label { font-size: 12px; color: var(--muted); margin-bottom: 5px; letter-spacing: .3px; }
+/* 风格预设(WPS 式整套配色): 深色卡片 + 顶部细色条, 不像色板那样铺一片亮色块 */
+.style-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.style-sw {
+  display: inline-flex; flex-direction: column; align-items: stretch;
+  width: 72px; border: 1px solid var(--border2); border-radius: 8px; overflow: hidden;
+  cursor: pointer; background: var(--panel2); padding: 0; transition: border-color .15s, box-shadow .15s;
+}
+.style-sw:hover { border-color: var(--border2); filter: brightness(1.08); }
+.style-sw.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(56, 189, 248, .25); }
+.style-sw-bar { height: 22px; }
+.style-sw-name { font-size: 11px; color: var(--muted); text-align: center; padding: 3px 2px; line-height: 1.2; }
+.style-sw.on .style-sw-name { color: var(--accent); }
+.tpl-time { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.gen-filter { border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; margin-bottom: 8px; }
+.gen-filter summary { cursor: pointer; font-size: 12.5px; color: var(--muted); user-select: none; }
+.gen-filter[open] summary { margin-bottom: 10px; }
+/* 模板列表里的"logo"角标 / "内置"角标 */
 .tag-mini { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px;
   background: rgba(79, 70, 229, .16); color: #a5b4fc; font-size: 11px; line-height: 16px; }
 textarea.input { min-height: 90px; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.5; }
@@ -1237,6 +1851,31 @@ textarea.input { min-height: 90px; font-family: ui-monospace, Consolas, "Courier
   border-radius: 8px; background: var(--panel2);
 }
 .raw-mergebar .input { width: 220px; }
+/* 可视化排版编辑器: 章节行(序号 + 勾选 + 标题 + 排序按钮) */
+.vis-sec-list { border: 1px solid var(--border2); border-radius: 8px; overflow: hidden; }
+/* 2026-09-25 三轮: 行改两排 —— 上排 勾选/标题/排序, 下排 逐章节字体样式
+   (字体颜色/底色/格式, 内容不可改) */
+.vis-sec-row {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 6px 12px; border-bottom: 1px solid var(--border2);
+}
+.vis-sec-main { display: flex; gap: 10px; align-items: center; }
+.vis-sec-row:last-child { border-bottom: none; }
+.vis-sec-row:nth-child(odd) { background: var(--panel2); }
+/* 选中态: 左侧章节行 与 右侧画布章节 双向联动("点哪改哪") */
+.vis-sec-row.row-on { background: rgba(56, 189, 248, .1); box-shadow: inset 2px 0 0 rgba(56, 189, 248, .9); }
+.tp-sec { cursor: pointer; border-radius: 6px; }
+.tp-sec.sec-on { outline: 2px solid rgba(56, 189, 248, .9); outline-offset: 3px; }
+/* 版面里的行内编辑块: 虚线提示"这里能直接改" */
+.tp-inline { display: inline-block; min-width: 80px; border-bottom: 1px dashed var(--border2); }
+.tp-cover-off {
+  border: 1px dashed var(--border2); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px;
+}
+/* 主题色/字色/底色 色板 */
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.sw { width: 24px; height: 24px; padding: 0; border-radius: 6px; cursor: pointer; border: 2px solid transparent; }
+.sw.on { border-color: var(--text); }
 /* 来源模块徽章配色(与 sev-* 同一语义: 一眼区分来源模块) */
 .badge.mod-capture { color: #67e8f9; border-color: rgba(103, 232, 249, .5); background: rgba(103, 232, 249, .1); }
 .badge.mod-scan { color: #93c5fd; border-color: rgba(147, 197, 253, .5); background: rgba(147, 197, 253, .1); }

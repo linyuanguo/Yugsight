@@ -158,6 +158,12 @@ func (m *Monitor) runRound(cfg Config) {
 	}
 }
 
+// RecordSample 注入一条样本(测试用: 单测无法发真实 SNMP, 直接注入样本验证聚合逻辑;
+// 生产代码不调用 —— 正常采集链路只走 runRound 内部的 record)。
+func (m *Monitor) RecordSample(id string, s *Sample) {
+	m.record(id, s)
+}
+
 // record 更新 latest/prev(速率差分的两帧)。
 func (m *Monitor) record(id string, s *Sample) {
 	m.mu.Lock()
@@ -256,10 +262,16 @@ func (m *Monitor) runRoundCtx(cfg Config, ctx context.Context) {
 	}
 }
 
-// IfaceRate 接口流量速率(B/s): 用 latest 与 prev 两帧差分。
-// 计数器回绕(重启清零)时差值为负, 归 0 不报负速率。
-func IfaceRate(cur, prev *IfaceSample) (inBps, outBps int64) {
+// IfaceRate 接口流量速率(字节/秒): 用 latest 与 prev 两帧差分再除以两帧实际间隔。
+// 2026-10-01 修复: 旧实现只返回两帧**字节增量**(未除以帧间隔), 60s 轮询下
+// 数值偏大约 60 倍, 拓扑链路速率标签/监控页速度全错。dt 由调用方传两帧 At 差。
+// 计数器回绕(重启清零)时差值为负, 归 0 不报负速率; dt 非正(缺帧/时间异常)归 0 防除零。
+func IfaceRate(cur, prev *IfaceSample, dt time.Duration) (inBps, outBps int64) {
 	if cur == nil || prev == nil {
+		return 0, 0
+	}
+	sec := dt.Seconds()
+	if sec <= 0 {
 		return 0, 0
 	}
 	if cur.In < prev.In {
@@ -268,5 +280,5 @@ func IfaceRate(cur, prev *IfaceSample) (inBps, outBps int64) {
 	if cur.Out < prev.Out {
 		return 0, 0
 	}
-	return cur.In - prev.In, cur.Out - prev.Out
+	return int64(float64(cur.In-prev.In) / sec), int64(float64(cur.Out-prev.Out) / sec)
 }

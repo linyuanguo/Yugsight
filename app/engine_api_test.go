@@ -12,7 +12,7 @@ import (
 )
 
 // TestEngineAPISmoke 任务 6.2 引擎编排 API 冒烟:
-// /api/engine/status 快照 + /api/engine/refresh 重建(默认配置下外部引擎关闭)。
+// /api/engine/status 快照 + /api/engine/refresh 重建(默认配置下外部引擎启用)。
 func TestEngineAPISmoke(t *testing.T) {
 	resetOrchestrator()
 
@@ -53,6 +53,21 @@ func TestEngineAPISmoke(t *testing.T) {
 	handleEngineRefresh(w, httptest.NewRequest("GET", "/api/engine/refresh", nil))
 	if w.Code != 405 {
 		t.Fatalf("refresh GET status=%d, want 405", w.Code)
+	}
+}
+
+// TestEngineOn 总开关解析: 未配置(nil)=默认启用, 显式 true=启用, 显式 false=关闭。
+// 这是"默认启用外部引擎"口径的核心 —— 老 settings.json 没写 engine 节时不应退回关闭。
+func TestEngineOn(t *testing.T) {
+	if !engineOn(EngineConfig{}) {
+		t.Error("未配置(nil)应默认启用")
+	}
+	var on, off bool = true, false
+	if !engineOn(EngineConfig{Enabled: &on}) {
+		t.Error("显式 true 应启用")
+	}
+	if engineOn(EngineConfig{Enabled: &off}) {
+		t.Error("显式 false 应关闭")
 	}
 }
 

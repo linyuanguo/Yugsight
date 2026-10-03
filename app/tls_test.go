@@ -193,3 +193,101 @@ func TestHTTPSRedirectHandler(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateCertPair 自动签发契约: 生成的 根CA + 服务端证书 必须配对可加载、
+// 服务端证书带 serverAuth 用途与 SAN(含 127.0.0.1)—— 否则浏览器校验主机仍报
+// "不受信任"(静默失效), 且同目录产出 rootCA.crt(登录页下载/信任工具的来源)。
+func TestGenerateCertPair(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "server.pem")
+	keyPath := filepath.Join(dir, "server-key.pem")
+	if err := generateCertPair(certPath, keyPath); err != nil {
+		t.Fatal(err)
+	}
+	// 证书与私钥配对可加载(否则 startTLSServer 失败 → 服务起不来)
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+		t.Fatalf("证书/私钥不配对: %v", err)
+	}
+	der, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blk, _ := pem.Decode(der)
+	if blk == nil {
+		t.Fatal("证书不是合法 PEM")
+	}
+	cert, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.IsCA {
+		t.Error("服务端证书不应是 CA")
+	}
+	hasServerAuth := false
+	for _, eu := range cert.ExtKeyUsage {
+		if eu == x509.ExtKeyUsageServerAuth {
+			hasServerAuth = true
+		}
+	}
+	if !hasServerAuth {
+		t.Error("服务端证书缺少 serverAuth 扩展用途")
+	}
+	found127 := false
+	for _, ip := range cert.IPAddresses {
+		if ip.Equal(net.ParseIP("127.0.0.1")) {
+			found127 = true
+		}
+	}
+	if !found127 {
+		t.Error("服务端证书 SAN 缺少 127.0.0.1")
+	}
+	if len(cert.DNSNames) == 0 {
+		t.Error("服务端证书缺少 DNS SAN(至少 localhost)")
+	}
+	// 同目录产出 rootCA.crt
+	if _, err := os.Stat(filepath.Join(dir, "rootCA.crt")); err != nil {
+		t.Errorf("未产出 rootCA.crt: %v", err)
+	}
+}
+
+// TestEnsureTLSAssetsUserSpecifiedMissing 用户显式指定证书路径但缺失 → 判定不可用
+// (降级 HTTP), 且**不**自动生成到该路径(尊重用户自己的证书, 不能拿自签覆盖其意图)。
+func TestEnsureTLSAssetsUserSpecifiedMissing(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "nope.pem")
+	ready, _ := ensureTLSAssets(tlsConfig{Enabled: true, Cert: missing, Key: filepath.Join(dir, "nope-key.pem")})
+	if ready {
+		t.Fatal("用户指定证书缺失时应判定不可用(降级 HTTP)")
+	}
+	if fileExists(missing) {
+		t.Error("不应在用户指定路径自动生成证书")
+	}
+}
+
+// TestEnsureTLSAssetsDisabled 未启用 → 不可用(不起 TLS, 纯 HTTP)。
+func TestEnsureTLSAssetsDisabled(t *testing.T) {
+	if ready, _ := ensureTLSAssets(tlsConfig{Enabled: false}); ready {
+		t.Fatal("未启用时不应可用")
+	}
+}
+
+// TestHSTSHandlerOnlyOnTLS HSTS 只在 HTTPS 请求下发: 明文 HTTP 请求(未配证书回退
+// 纯 HTTP 的场景)不能带 HSTS, 否则浏览器把该域记成"必须 HTTPS", 之后 http:// 打不开。
+func TestHSTSHandlerOnlyOnTLS(t *testing.T) {
+	h := hstsHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "https://x/", nil)
+	req.TLS = &tls.ConnectionState{}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Fatalf("HTTPS 请求应带 HSTS, 实际 %q", got)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "http://x/", nil)
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if got := rec2.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("明文 HTTP 请求不应带 HSTS, 实际 %q", got)
+	}
+}

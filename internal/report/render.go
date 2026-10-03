@@ -160,7 +160,7 @@ func buildViewData(s *Snapshot, st SnapshotStats, h Header, tpl *Template) *view
 		TimeISO:    now.Format(time.RFC3339),
 		RiskLevel:  st.RiskLevel,
 		RiskScore:  st.RiskScore,
-		Accent:     "#4f46e5",
+		Accent:     "#1f3a5f",
 		LogoText:   "YUGSIGHT · 网络扫描探测工具",
 		Subtitle:   "网络安全扫描与漏洞评估报告",
 		Stats:      st,

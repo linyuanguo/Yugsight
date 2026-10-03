@@ -96,7 +96,10 @@ func (h *Hub) Subscribe(lastID int64) (<-chan Event, func()) {
 	h.clients[ch] = struct{}{}
 	var replay []Event
 	for _, ev := range h.ring {
-		if ev.ID > lastID {
+		// hello 是连接握手信号而非业务数据: 每次(重)连接都会新发一条 hello,
+		// 若随 Last-Event-ID 补发, 前端会看到重复的"已接入 SSE 事件流"日志
+		// (用户实测 4 连重复)。hello 只实时广播, 不进补发窗口。
+		if ev.ID > lastID && ev.Name != "hello" {
 			replay = append(replay, ev)
 		}
 	}

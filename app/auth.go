@@ -169,7 +169,7 @@ func http403Role(w http.ResponseWriter, msg string) {
 
 // adminOnly RBAC 中间件: 只允许 admin(需包在 requireAuth 内使用)。
 //
-// 使用范围 = "授权管理"页与提权红线: 用户账号体系(/api/v2/users 写)、会话吊销、
+// 使用范围 = "授权与模型"页与提权红线: 用户账号体系(/api/v2/users 写)、会话吊销、
 // 审计配置与清理。这些能力若对操作员开放, 操作员可自建 admin 账号自我提权,
 // 与"操作员只是执行者"的定位冲突 —— 所以这里刻意比 adminOrOperator 更严。
 // auditor 等只读角色调写接口一律 403(直接调 API 也不能越权)。
@@ -194,8 +194,8 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 // adminOrOperator RBAC 中间件: admin 与 operator 均可(需包在 requireAuth 内使用)。
 //
-// 操作员定位: "除授权管理页外全部功能都能用" —— 扫描/抓包/落库数据/探针/引擎/报告
-// 这些写操作都走本中间件; 授权管理页相关(用户/会话/审计配置与清理)保持 adminOnly。
+// 操作员定位: "除授权与模型页外全部功能都能用" —— 扫描/抓包/落库数据/探针/引擎/报告
+// 这些写操作都走本中间件; 授权与模型页相关(用户/会话/审计配置与清理)保持 adminOnly。
 // auditor 仍然只读: 一律 403(与 adminOnly 同口径)。
 func adminOrOperator(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -385,6 +385,16 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 			role = account.NormalizeRole(u.Role)
 		}
 	}
+	// ===== 单会话限制: 一个账号只允许一个在线会话 =====
+	// 新登录成功即挤掉该用户全部旧会话(另一台设备/另一个标签页)。语义=最近登录
+	// 为准: 内网安全工具"这个账号此刻在哪台机器上"应当唯一。被挤掉的端下次
+	// API 调用收到 401, 前端自动回登录页。信任令牌(记住登录)不受影响 —— 它是
+	// "免动态码"凭据而非会话, 持有者重新登录本身是显式操作。
+	kicked := kickUserSessions(req.User)
+	if kicked > 0 {
+		logLine(req.User+": 单会话限制, 挤下线 "+strconv.Itoa(kicked)+" 个旧会话 (IP "+clientIP(r)+")")
+		logAudit(v2DB(), r, "session.kick", req.User, "单会话限制: "+strconv.Itoa(kicked)+" 个旧会话 (IP "+clientIP(r)+")")
+	}
 	token := randHex(24)
 	authMu.Lock()
 	sessions[token] = sessionRec{exp: time.Now().Add(12 * time.Hour), user: req.User, role: role}
@@ -423,7 +433,7 @@ func backfillPassHash(user, pass string) {
 	// 角色一并对齐(2026-09-24 修复): 空哈希行只会由 2FA 懒创建产生
 	// (auth_2fa.go twoFAUpsertSeed), 旧版本二进制懒创建时角色落在 db.NewUser
 	// 默认的 auditor —— 升级后用户首次登录前不修, 就会被锁进只读(写接口
-	// 403 + 授权管理菜单消失)。这里在首次登录回填时把"未设置"的角色
+	// 403 + 授权与模型菜单消失)。这里在首次登录回填时把"未设置"的角色
 	// (auditor 默认值 / 空值)对齐为 admin, 与注册路径同口径; 管理员显式
 	// 设置过的角色(operator)不动。
 	if u.Role == "" || u.Role == db.RoleAuditor {
@@ -443,8 +453,20 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if disabled {
 		registered = true
 	}
+	// selfSigned: 中心端是否用自动签发的自签证书跑 HTTPS —— 登录页据此在自签场景
+	// (此时 isSecureContext 已为 true)也显示"安装根证书"引导。纯 HTTP / 用户自带
+	// CA 证书时恒 false。
+	// certTrusted: 根 CA 是否已装入本机信任存储(Windows 读证书存储, 见
+	// certtrust_windows.go; 其他平台恒 false)。浏览器不向 JS 暴露证书受信状态,
+	// 只有中心端能判定 —— 登录页口径 = selfSigned && !certTrusted 时显示引导条:
+	// 没装证书→提示, 装好→自动消失(卸载后刷新页面提示自动回来)。
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]bool{"registered": registered, "disabled": disabled})
+	_ = json.NewEncoder(w).Encode(map[string]bool{
+		"registered":  registered,
+		"disabled":    disabled,
+		"selfSigned":  tlsSelfSignedActive,
+		"certTrusted": certTrustedBySystem(),
+	})
 }
 
 func handleWhoami(w http.ResponseWriter, r *http.Request) {

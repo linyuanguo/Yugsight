@@ -180,32 +180,42 @@ func consolePinAfterLog() {
 	pinURLTopline()
 }
 
-// consoleURLLineText 拼装顶栏整行文本: 标记 + URL + 操作提示 + 尾部空格填充。
+// consoleURLLineText 拼装顶栏整行文本: 标记 + URL + 版本号 + 操作提示 + 尾部空格填充。
 //
 // 【为什么整行覆盖而不是只写 URL】只写 URL 的话, 上一次更长的内容(如换端口前的旧
 // 地址、resize 前的宽行)会残留在行尾 —— 用户 Ctrl+点击点到的可能是残影里的旧链接。
 // 【为什么填到 width-1 而不是 width】写满最后一列会触发 conhost 的自动折行标志,
 // 下一次日志输出前先折行, 顶栏下方会凭空多出空行。
+// 【为什么带版本号】同一台机器常有多版本 exe 并存(见历史踩坑: 旧实例占 8420 给旧路由
+// 表, 新实例顺延 8421), 顶栏是用户盯着的最醒目的常驻行, 版本号放在这里比只藏在标题栏
+// 更容易被看到 —— 排查"行为不像新版本"时一眼就能确认这个窗口跑的是哪个版本。
 func consoleURLLineText(width int) string {
 	u := GetUIURL()
 	if u == "" || width < 20 {
 		return ""
 	}
 	target := width - 1
-	body := "  >> UI 界面: " + u + "   (按 O 键打开页面)"
+	ver := "v" + appVersion
+	body := "  >> UI 界面: " + u + "  " + ver + "  (按 O 键打开页面)"
 	if w := displayWidth(body); w > target {
-		// 窗口太窄, 逐级降级: 丢提示语 -> 丢 ">>" 前缀 -> 硬截断。URL 本身的优先级最高
-		// —— 链接不完整就点不开了, 剩下的装饰都可以牺牲。顶栏绝不能超宽: 超宽折行等于
-		// 把"钉一行"变成"钉多行", 每条日志都会把日志区顶下去几行。
-		body = "  >> " + u
+		// 窗口太窄, 逐级降级: 丢提示语 -> 丢"UI 界面"标签 -> 丢版本 -> 丢 ">>" 前缀 -> 硬截断。
+		// URL 本身的优先级最高 —— 链接不完整就点不开了, 剩下的装饰都可以牺牲。顶栏绝不能
+		// 超宽: 超宽折行等于把"钉一行"变成"钉多行", 每条日志都会把日志区顶下去几行。
+		body = "  >> UI 界面: " + u + "  " + ver
 		if displayWidth(body) > target {
-			body = "  " + u
+			body = "  >> " + u + " " + ver
 			if displayWidth(body) > target {
-				r := []rune(body)
-				for len(r) > 0 && displayWidth(string(r)) > target {
-					r = r[:len(r)-1]
+				body = "  >> " + u
+				if displayWidth(body) > target {
+					body = "  " + u
+					if displayWidth(body) > target {
+						r := []rune(body)
+						for len(r) > 0 && displayWidth(string(r)) > target {
+							r = r[:len(r)-1]
+						}
+						body = string(r)
+					}
 				}
-				body = string(r)
 			}
 		}
 	}

@@ -255,7 +255,10 @@ func (c *Client) roundTrip(ctx context.Context, msg []byte) ([]byte, error) {
 
 // decodeValue 按 tag 解码一个值。APPLICATION 类 tag 各有专属编码,
 // 不存在歧义, 不靠内容长度猜测(长度 4 的 OctetString 是合法字符串)。
-func decodeValue(tag int, content []byte) (string, string, int64, error) {
+//
+// oid 用于区分"该值是不是 MAC": OctetString 的展示形态(MAC/文本/hex)无法靠
+// 内容可靠判断(6 字节既可能是 MAC 也可能是 "Null 0"), 只能看它属于哪个 OID。
+func decodeValue(tag int, content []byte, oid string) (string, string, int64, error) {
 	switch {
 	case tag == tagInteger:
 		v, err := decodeInt(content)
@@ -268,7 +271,7 @@ func decodeValue(tag int, content []byte) (string, string, int64, error) {
 		if tag == tagOpaque {
 			t = "opaque"
 		}
-		return t, formatOctets(content), 0, nil
+		return t, formatOctets(content, isMACOID(oid)), 0, nil
 	case tag == tagNull:
 		return "null", "", 0, nil
 	case tag == tagOID:
@@ -400,7 +403,8 @@ func parsePDUVars(pdu tlv) ([]Varbind, int, error) {
 		if err != nil {
 			return out, errStatus, err
 		}
-		typ, text, num, err := decodeValue(valTLV.tag, valTLV.content)
+		oidStr := FormatOID(arc)
+		typ, text, num, err := decodeValue(valTLV.tag, valTLV.content, oidStr)
 		if err != nil {
 			// 单条 varbind 解码失败不拖垮整批: 标 unknown 继续。
 			out = append(out, Varbind{OID: FormatOID(arc), Type: "unknown", Value: hex.EncodeToString(valTLV.content)})

@@ -10,8 +10,11 @@ const routes = [
   { path: '/assets', component: () => import('./pages/Assets.vue'), meta: { title: '资产管理' } },
   // 菜单 B 方案(2026-09-22): 「实时扫描控制台」+「扫描任务管理」合并为 /console 两 tab,
   // 旧 /scans 保留为重定向(先例 /rules → /env?tab=rules): 书签/外链不失效, 打开即落在任务队列 tab
-  { path: '/scans', redirect: { path: '/console', query: { tab: 'queue' } }, meta: { title: '扫描作业' } },
-  { path: '/console', component: () => import('./pages/Console.vue'), meta: { title: '扫描作业' } },
+  { path: '/scans', redirect: { path: '/console', query: { tab: 'queue' } }, meta: { title: '扫描控制台' } },
+  { path: '/console', component: () => import('./pages/Console.vue'), meta: { title: '扫描控制台' } },
+  // 2026-09-25 四轮换口径: "扫描作业"页面已去掉 —— 命名扫描任务就是控制台
+  // 立即扫描 + 任务名(任务名+IP/子网 快速发现 → 勾选主机做主机漏扫/web漏扫/
+  // 弱口令/渗透), 报告中心按任务名生成报告 / 分类原始报告。
   { path: '/weakpass', component: () => import('./pages/Weakpass.vue'), meta: { title: '弱口令检测' } },
   // 阶段 5: 渗透工作台(仅 admin —— 攻击性能力, operator/auditor 无入口无权限;
   // 与扫描模块物理隔离: 扫描只发现, 渗透只做已知漏洞的验证)。
@@ -30,18 +33,31 @@ const routes = [
   { path: '/vulns', component: () => import('./pages/Vulns.vue'), meta: { title: '漏洞管理' } },
   { path: '/vulns/:id', component: () => import('./pages/VulnDetail.vue'), meta: { title: '漏洞详情' } },
 
-  // 漏扫管控(白名单/误报/置信度): 路由路径保持 /whitelist 不变以免破坏书签, 仅改展示名
-  { path: '/whitelist', component: () => import('./pages/Whitelist.vue'), meta: { title: '漏扫管控' } },
+  // 漏扫管控并入漏洞管理(2026-09-26): /whitelist 重定向到 /vulns?tab=control(旧书签不失效)
+  { path: '/whitelist', redirect: { path: '/vulns', query: { tab: 'control' } }, meta: { title: '漏洞管理' } },
   { path: '/reports', component: () => import('./pages/Reports.vue'), meta: { title: '报告中心' } },
+  // 版权信息(2026-09-25): 版本号从顶栏移到这里常驻(左上方菜单入口)
+  { path: '/copyright', component: () => import('./pages/Copyright.vue'), meta: { title: '版权信息' } },
+  // 2026-09-28: 独立网络拓扑页(套 Layout 外壳, 不加 meta.full; 全屏由页内按钮触发)。
+  // 2026-09-29: 一级菜单与节点监控内嵌入口按用户要求移除 —— 唯一入口=安全大屏的
+  // 网络拓扑卡(TopoCard, 卡内「⤢ 全屏」跳转本页); 本页保留供跳转与深链。
+  // 2026-09-30 用户要求: 页面改名"网络拓扑"(去掉 3D), 3D 三维视图移除, 只剩当前画布(2D)。
+  { path: '/topology/3d', component: () => import('./pages/NetworkTopology3d.vue'), meta: { title: '网络拓扑' } },
   // 阶段 3: AI 配置(系统配置分组, 用户指定路由 /settings/ai)。
   // 只管配置(参数/模板/文档库/记忆库), 分析触发入口在各业务页面。
-  { path: '/settings/ai', component: () => import('./pages/AICfg.vue'), meta: { title: 'AI 配置' } },
-  // 授权管理 = admin 专属(用户/会话/审计清理); 操作员与只读角色进不去 →
+  // AI 配置并入授权与模型(2026-09-26): /settings/ai 重定向到 /license?tab=ai(旧书签不失效; /license 为 admin 专属)
+  { path: '/settings/ai', redirect: { path: '/license', query: { tab: 'ai' } }, meta: { title: '授权与模型' } },
+  // 授权与模型 = admin 专属(用户/会话/审计清理); 操作员与只读角色进不去 →
   // meta.admin 由下方守卫拦截并回首页, 侧边栏菜单同步隐藏
-  { path: '/license', component: () => import('./pages/License.vue'), meta: { title: '授权管理', admin: true } },
+  { path: '/license', component: () => import('./pages/License.vue'), meta: { title: '授权与模型', admin: true } },
   // 阶段 4: 安全大屏并入首页仪表盘内建 Tab2(页面内嵌, 不再是独立全屏页)。
-  // 旧 /bigscreen 保留为重定向(先例 /scans → /console?tab=queue): 书签/外链不失效。
-  { path: '/bigscreen', redirect: { path: '/', query: { tab: 'screen' } }, meta: { title: '安全大屏' } },
+  // 2026-09-28: 旧 /bigscreen 重定向随仪表盘 Tab2 一并删除(Tab2 已迁至独立页
+  // /bigscreen-pro)。此处不留死路由: 落到一个不存在的 tab 会让书签打开后停在空白页。
+  // 2026-09-27: 安全大屏 Pro —— 一级菜单「安全大屏」入口, 套 Layout 外壳站内跳转
+  // (保留左侧菜单/顶部导航; 用户反馈: 之前的 meta.full 全屏脱离外壳, 像"打开新页面"
+  // 而非"转跳过去")。画布仍通过「一键全屏」按钮进入真正的浏览器全屏(投屏场景)。
+  // 与旧 /bigscreen(仪表盘 Tab2)并存: 两个入口各走各的, 旧重定向语义不变。
+  { path: '/bigscreen-pro', component: () => import('./pages/BigScreenPro.vue'), meta: { title: '安全大屏' } },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 

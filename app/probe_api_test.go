@@ -624,6 +624,15 @@ func TestProbeTargetMapping(t *testing.T) {
 		{scanReq{Type: "web", URL: "http://10.0.0.1:8080"}, "http://10.0.0.1:8080", ""},
 		{scanReq{Type: "host", IP: "10.0.0.2"}, "10.0.0.2", ""},
 		{scanReq{Type: "host", CIDR: "10.0.0.0/24"}, "10.0.0.0/24", ""}, // 目标缺失时回退
+		// 2026-09-27 SCA 自动枚举: 镜像/容器目标留空 → "自动枚举"占位(探针端识别后
+		// 在本机 docker 枚举); 显式目标原样透传; fs 无"自动枚举"概念, 留空保持空串
+		// (由"目标为空"拦截, 提示用户指定路径)。
+		{scanReq{Type: "image", TrivyTarget: "nginx:1.25"}, "nginx:1.25", ""},
+		{scanReq{Type: "image"}, scaAutoTarget, ""},
+		{scanReq{Type: "container"}, scaAutoTarget, ""},
+		{scanReq{Type: "container", TrivyTarget: "web-1"}, "web-1", ""},
+		{scanReq{Type: "fs"}, "", ""},
+		{scanReq{Type: "fs", TrivyTarget: "/opt/repo"}, "/opt/repo", ""},
 	}
 	for _, c := range cases {
 		target, ports := probeTarget(c.req)
@@ -704,16 +713,20 @@ func TestStopProbeNoop(t *testing.T) {
 	stopProbe() // 不应 panic
 }
 
-// TestProbeCfgPath 覆盖: 配置文件路径约定为 exe 同目录 probe.json。
+// TestProbeCfgPath 覆盖: 配置文件路径约定为 exe 同目录 data/ 下的 settings.json。
 func TestProbeCfgPath(t *testing.T) {
 	p := probeCfgPath()
 	// 红线「配置唯一」: 中心端不再有 probe.json, 配置来源必须是 settings.json
 	if filepath.Base(p) != "settings.json" {
 		t.Fatalf("配置文件名异常: %s", p)
 	}
+	// 2026-09-29 起配置迁入 exe 同目录的 data/ 子目录(随用户数据, 更新 exe 不受影响)
 	exe, err := os.Executable()
-	if err == nil && filepath.Dir(p) != filepath.Dir(exe) {
-		t.Fatalf("配置目录应为 exe 同目录: %s vs %s", filepath.Dir(p), filepath.Dir(exe))
+	if err == nil {
+		want := filepath.Join(filepath.Dir(exe), "data", "settings.json")
+		if p != want {
+			t.Fatalf("配置路径应为 exe 同目录 data/settings.json: %s vs %s", p, want)
+		}
 	}
 }
 

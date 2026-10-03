@@ -31,6 +31,9 @@ type Asset struct {
 	ProbeNode string    `json:"probeNode,omitempty"`
 	FoundAt   time.Time `json:"foundAt"`
 	Tags      []string  `json:"tags,omitempty"`
+	// Jobs 参与过该资产的扫描作业 ID 列表(2026-09-25 三轮: 报告按作业过滤时
+	// 资产维度需要"这台机器属于哪个作业"的关联; 跨作业并集, 同 Tags 口径)。
+	Jobs []string `json:"jobs,omitempty"`
 	// Alive 存活态: 最近一轮探测该主机是否有响应。
 	//
 	// 这里刻意不新增"在线/离线"枚举: 资产表的语义是"发现过的资产"而非"实时在线表",

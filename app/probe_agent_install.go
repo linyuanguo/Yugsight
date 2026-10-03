@@ -2,24 +2,33 @@
 //
 // ===== 与既有接口的分工 =====
 //
-//	/api/v2/probe/agent/list     给中心端使用者看的数据(JSON)
-//	/api/v2/probe/agent/download 给浏览器下载用(附件流)
-//	/api/v2/probe/agent/guide    纯文本指引(贴工单/邮件)
-//	/api/v2/probe/agent/install  本文件: 一个能直接在目标机器上打开的 HTML 页面
+//	/api/v2/probe/agent/list      给中心端使用者看的数据(JSON)
+//	/api/v2/probe/agent/download  给浏览器下载用(附件流)
+//	/api/v2/probe/agent/guide     纯文本指引(贴工单/邮件)
+//	/api/v2/probe/agent/install   本文件: 一个能直接在目标机器上打开的 HTML 页面
+//	/api/v2/probe/agent/install.sh 本文件: Linux 一键安装脚本(curl | bash 口径)
 //
 // 为什么还需要一个 HTML 页: 目标机器上的操作者通常不是安全运维, 让他"看 JSON 里的
 // addr/token 再手拼命令行"是部署失败的主要来源(密钥抄错、地址抄漏)。落地页把
 // 平台选择、下载按钮、可复制的启动命令放在一屏里, 照做即可。
 //
-// 安全边界(三条, 都很实际):
-//  1. 走 requireAuth: 页面内含节点密钥, 未登录者拿不到;
+// 为什么还要 install.sh: 落地页里"Linux 一键安装"原先是一整段多行内联命令,
+// 复制粘贴容易截断; 改成 curl | bash 单行后, 地址/密钥完全由服务端渲染注入,
+// 页面上不再出现密钥(泄漏面更小), 用户只需复制一行。
+//
+// 安全边界(2026-09-27 起):
+//  1. 匿名可访问(用户要求, 登录页提供下载入口): 页面/脚本内含节点密钥, 该接口面向
+//     内网部署场景 —— 拿到页面的人本来就能访问这台中心端;
 //  2. 不把 token 放进 URL: 密钥进浏览器历史/代理日志/Referer 是实打实的泄漏面,
 //     所以由服务端在渲染时注入, 而不是让页面自己再请求一次;
-//  3. Referrer-Policy: no-referrer + 页面内禁止外链(见模板注释)。
+//  3. Referrer-Policy: no-referrer + 页面内禁止外链(见模板注释);
+//  4. install.sh 里注入的值必须防 shell 注入: 密钥用单引号包裹(shellQuote),
+//     Host 头只允许安全字符集(isSafeHost), 否则配置里的 $(...) 会被目标机器执行。
 package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -54,8 +63,8 @@ func agentInstallTemplate() (string, error) {
 //
 // 同时支持两种用法:
 //   - 浏览器直接打开(/api/v2/probe/agent/install) —— 中心端使用者把链接发给操作者;
-//   - 目标机器浏览器打开同一个 URL(需先用 http://<中心端IP>:端口/app/ 登录过,
-//     会话 cookie 在同一浏览器才有效; 未登录会得到 401, 这正是期望行为)。
+//   - 目标机器浏览器打开同一个 URL(2026-09-27 起匿名可访问, 无需登录 ——
+//     登录页"探针安装包下载"入口即指向本页)。
 //
 // 渲染失败(模板缺失且内嵌也读不到)时降级为纯文本指引: 页面坏了不该让用户完全
 // 拿不到部署方法(规则 4: 失败降级不崩溃)。
@@ -85,6 +94,131 @@ func loadAgentInstallTemplate() (string, error) {
 	return agentInstallTemplate()
 }
 
+// ===== Linux 一键安装脚本(curl | bash) =====
+
+// agentInstallScriptTemplatePath 一键安装脚本模板路径(exe 同目录 res/web/agent_install.sh,
+// 与 HTML 落地页同一覆盖约定: 运维改脚本不用重编译)。
+var agentInstallScriptTemplatePath = func() string {
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Join(filepath.Dir(exe), "res", "web", "agent_install.sh")
+	}
+	return ""
+}
+
+// agentInstallScriptTemplate 内嵌兜底脚本模板(web/agent_install.sh, 构建时嵌入)
+func agentInstallScriptTemplate() (string, error) {
+	data, err := uiFS.ReadFile("web/agent_install.sh")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func loadAgentInstallScriptTemplate() (string, error) {
+	if p := agentInstallScriptTemplatePath(); p != "" {
+		if data, err := os.ReadFile(p); err == nil && len(data) > 0 {
+			return string(data), nil
+		}
+	}
+	return agentInstallScriptTemplate()
+}
+
+// hAgentInstallScript GET /api/v2/probe/agent/install.sh
+// 返回由中心端渲染好的一键安装脚本(Linux + systemd), 用法:
+//
+//	curl -fsSLk https://<中心端IP>:<Web端口>/api/v2/probe/agent/install.sh | bash
+//
+// 与 /install 同一安全口径: 匿名可访问(内网部署, 脚本内含节点密钥, 服务端注入)。
+// 模板缺失(磁盘与内嵌都不可用)时降级为纯文本指引, 与 /install 一致。
+func hAgentInstallScript(w http.ResponseWriter, r *http.Request) {
+	tpl, err := loadAgentInstallScriptTemplate()
+	if err != nil {
+		logLine("探针安装脚本模板加载失败, 降级为纯文本指引: " + err.Error())
+		hAgentGuide(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(renderAgentInstallScript(tpl, r)))
+}
+
+// renderAgentInstallScript 把下载源/探针通信地址/密钥注入脚本模板。
+//
+// 占位符与 HTML 落地页的注入值同源(agentAdvertiseAddr/probeCfg/uiPort),
+// 唯一差别是下载源: 优先用**请求实际到达的 origin**(r.Host) —— 用户此刻能用
+// 这个地址访问中心端, 目标机器再按它下载必然可达; 校验不通过才回落到广播地址。
+func renderAgentInstallScript(tpl string, r *http.Request) string {
+	webHost, webPort := "", fmt.Sprint(uiPort)
+	if h := r.Host; h != "" {
+		// r.Host 形如 "host:port" 或 "host"(Go 缺省补 :80/:443 的情况不会出现,
+		// 但两种形态都要认)。
+		if ph, pp, err := net.SplitHostPort(h); err == nil {
+			ph = strings.Trim(ph, "[]")
+			if ph != "" {
+				webHost, webPort = ph, pp
+			}
+		} else if strings.TrimSpace(h) != "" {
+			webHost = strings.Trim(h, "[]")
+		}
+	}
+	if webHost == "" || !isSafeHost(webHost) {
+		// Host 头来自请求方, 不满足安全字符集就不注入(防脚本注入), 回落到广播地址
+		addr := agentAdvertiseAddr()
+		if i := strings.LastIndex(addr, ":"); i >= 0 {
+			webHost = addr[:i]
+		} else {
+			webHost = "<中心端IP>"
+		}
+	}
+
+	caddr := agentAdvertiseAddr()
+	if caddr == "" {
+		caddr = "<中心端IP>:8600" // 与落地页同口径: 未配置时给占位符, 探针连不上会明确报错
+	}
+	centerHost, centerPort := caddr, "8600"
+	if i := strings.LastIndex(caddr, ":"); i >= 0 {
+		centerHost, centerPort = caddr[:i], caddr[i+1:]
+	}
+
+	token := probeCfg.Center.Token
+	if token == "" {
+		token = "<节点密钥, 见中心端探针配置>"
+	}
+
+	out := tpl
+	out = strings.ReplaceAll(out, "{{WEB_HOST}}", webHost)
+	out = strings.ReplaceAll(out, "{{WEB_PORT}}", webPort)
+	out = strings.ReplaceAll(out, "{{CENTER_HOST}}", centerHost)
+	out = strings.ReplaceAll(out, "{{CENTER_PORT}}", centerPort)
+	out = strings.ReplaceAll(out, "{{TOKEN}}", shellQuote(token))
+	return out
+}
+
+// isSafeHost 主机只允许字母/数字/下划线/点/连字符 —— Host 头是请求方可控字符串,
+// 原样注入 bash 脚本会让空格、引号、$() 等破坏脚本(甚至形成注入面)。
+func isSafeHost(h string) bool {
+	if h == "" {
+		return false
+	}
+	for _, c := range h {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '_' || c == '.' || c == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// shellQuote 单引号包裹 + 单引号转义: bash 单引号内**没有任何转义**, 唯一特殊
+// 字符是单引号本身, 标准写法是闭引号-转义引号-开引号 ('\'' )。密钥来自配置文件,
+// 可能含任意字符(含 $(cmd) / 反引号), 不包裹会在目标机器上被当命令执行。
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // renderAgentInstallPage 把地址/密钥/平台按钮注入模板。
 //
 // 用简单字符串替换而不是 html/template: 模板里含 CSS/JS 的大量 `{{ }}` 类写法与
@@ -95,12 +229,20 @@ func renderAgentInstallPage(tpl, hostOS, hostArch string) string {
 	if addr == "" {
 		addr = "<中心端IP>:8600"
 	}
+	// ADDRHOST: 去掉端口后的纯主机地址, 供下载命令里的 https://<主机>:<Web端口> 拼装
+	// (下载走中心端 Web 端口 HTTPS, 与探针 TCP 协议端口 8600 不是一回事)。
+	// 脚本内 curl 已带 -k: 中心端使用自签证书, 不 -k 会被 curl 以证书不受信任拒绝。
+	addrHost := addr
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		addrHost = addr[:i]
+	}
 	token := probeCfg.Center.Token
 	if token == "" {
 		token = "<节点密钥, 见 probe.json 的 center.token>"
 	}
 	out := tpl
 	out = strings.ReplaceAll(out, "{{ADDR}}", htmlEscape(addr))
+	out = strings.ReplaceAll(out, "{{ADDRHOST}}", htmlEscape(addrHost))
 	out = strings.ReplaceAll(out, "{{TOKEN}}", htmlEscape(token))
 	out = strings.ReplaceAll(out, "{{PROTO}}", fmt.Sprint(agentProtocolVersion()))
 	out = strings.ReplaceAll(out, "{{VER}}", appVersion)

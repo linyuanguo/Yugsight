@@ -13,11 +13,14 @@
 //
 // 边界(用户口径): 本页只管配置 —— AI 分析触发按钮保留在各业务页面
 // (实时抓包/扫描作业/弱口令/节点监控), 不在本页触发分析。
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../api/http'
 import { fmtDT } from '../utils'
 import PageHeader from '../components/PageHeader.vue'
 import AiPromptEditor from '../components/AiPromptEditor.vue'
+
+// 2026-09-26 AI 配置并入授权管理: embedded=true 时隐藏自身 PageHeader(由父页统一管理标题)
+const props = defineProps({ embedded: { type: Boolean, default: false } })
 
 const tab = ref('api')
 const st = ref(null) // /api/ai 全量状态
@@ -67,6 +70,7 @@ function fillFromStatus() {
 onMounted(async () => {
   await loadStatus()
   fillFromStatus() // 状态就绪后再回填表单(单入口, 避免两个 onMounted 竞态)
+  await loadAssistant() // 小 Y 配置(2026-09-27)
   await loadTemplates()
   await loadRAG()
   await loadMemory()
@@ -78,11 +82,12 @@ async function saveBasic() {
       method: 'POST',
       body: JSON.stringify({
         apiBase: basic.apiBase, apiKey: basic.apiKey, model: basic.model,
+        enabled: true,
         timeoutSec: +basic.timeoutSec, maxContext: +basic.maxContext,
         maxTokens: +basic.maxTokens, temperature: +basic.temperature, topP: +basic.topP
       })
     })
-    say(true, '基础参数已保存')
+    say(true, '基础参数已保存并启用(关闭状态下不发起任何 LLM 调用)')
     await loadStatus()
   } catch (e) { say(false, e.message) }
 }
@@ -98,8 +103,9 @@ async function saveModules() {
   } catch (e) { say(false, e.message) }
 }
 
-// 测试并保存: 连通通过才落盘(与经典页/旧 Capture 页同口径, /api/ai/test)
-async function testAndSave() {
+// 测试连通: 只验证地址/Key/模型是否可达, 不落盘(落盘交给"保存"按钮)。
+// 后端 /api/ai/test 返回 {ok, error, models, modelMsg} —— 直接读顶层 ok 即可判定。
+async function testConn() {
   testing.value = true
   testInfo.value = ''
   try {
@@ -109,15 +115,86 @@ async function testAndSave() {
         apiBase: basic.apiBase, apiKey: basic.apiKey, model: basic.model
       })
     })
-    testInfo.value = d.ok
-      ? `连通成功, 已保存启用 (模型: ${d.model || basic.model})`
-      : `连通失败: ${d.error || '未知错误'}`
+    if (d.ok) {
+      const samples = (d.models && d.models.length)
+        ? `；可用模型示例: ${d.models.slice(0, 5).join(', ')}${d.models.length > 5 ? '…' : ''}`
+        : ''
+      testInfo.value = `连通成功${samples}`
+      if (d.modelMsg) testInfo.value += `（${d.modelMsg}）`
+    } else {
+      testInfo.value = `连通失败: ${d.error || '未知错误'}`
+    }
     say(!!d.ok, testInfo.value)
-    if (d.ok) await loadStatus()
   } catch (e) {
     say(false, e.message)
   } finally {
     testing.value = false
+  }
+}
+
+// ===== 小 Y 助手(2026-09-27): 配置项自上而下 = ①总开关 ②模型基础配置 ③系统提示词 =====
+//
+// 模型地址/Key/模型名称与下方"AI 接口"卡共用同一数据源(basic.*), 小 Y 卡内
+// 编辑后随"保存小 Y 配置"一并落盘 —— 不做第二套模型配置(会漂移)。
+// prompt 回显的是"生效提示词"(自定义或内置默认), 编辑保存后即成为自定义;
+// "恢复默认"= 提交空串, 后端回退内置默认 PROMPT。
+const assistant = reactive({ enabled: false, prompt: '' })
+const assistantSaving = ref(false)
+const assistantInfo = ref(null) // /api/v1/ai/assistant 状态(effective/hasCustomPrompt)
+const assistantEff = computed(() => !!(assistantInfo.value && assistantInfo.value.effective))
+
+async function loadAssistant() {
+  try {
+    const d = await api('/api/v1/ai/assistant')
+    assistant.enabled = !!d.enabled
+    assistant.prompt = d.prompt || ''
+    assistantInfo.value = d
+  } catch {
+    assistantInfo.value = null
+  }
+}
+
+// 保存小 Y 配置(总开关 + PROMPT + 模型三字段, 即时生效无需重启)
+async function saveAssistant() {
+  assistantSaving.value = true
+  try {
+    await api('/api/v1/ai/assistant', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: assistant.enabled,
+        prompt: assistant.prompt,
+        apiBase: basic.apiBase,
+        apiKey: basic.apiKey,
+        model: basic.model
+      })
+    })
+    say(true, assistant.enabled
+      ? '小 Y 已启用(各页面右下角出现助手入口, 即时生效)'
+      : '小 Y 已关闭(助手入口全局隐藏, 问答接口返回未启用)')
+    await Promise.all([loadAssistant(), loadStatus()])
+  } catch (e) {
+    say(false, e.message)
+  } finally {
+    assistantSaving.value = false
+  }
+}
+
+// 恢复默认 PROMPT: 提交空串 = 后端回退内置默认
+async function resetAssistantPrompt() {
+  if (!confirm('恢复系统提示词为内置默认? 当前自定义内容将丢弃。')) return
+  assistant.prompt = ''
+  assistantSaving.value = true
+  try {
+    await api('/api/v1/ai/assistant', {
+      method: 'POST',
+      body: JSON.stringify({ prompt: '' })
+    })
+    say(true, '系统提示词已恢复为内置默认')
+    await loadAssistant()
+  } catch (e) {
+    say(false, e.message)
+  } finally {
+    assistantSaving.value = false
   }
 }
 
@@ -342,7 +419,7 @@ async function saveMem() {
 
 <template>
   <div>
-    <PageHeader title="AI 配置" desc="全局参数 / Prompt 模板 / RAG 文档库 / 结构化记忆库 —— 分析触发入口在各业务页面(抓包/扫描/弱口令/节点监控)">
+    <PageHeader v-if="!props.embedded" title="AI 配置" desc="全局参数 / Prompt 模板 / RAG 文档库 / 结构化记忆库 —— 分析触发入口在各业务页面(抓包/扫描/弱口令/节点监控)">
       <div class="chip" :class="st && st.enabled ? 'on' : 'off'">
         {{ st && st.enabled ? 'AI 已启用' : 'AI 未启用' }}
       </div>
@@ -361,21 +438,58 @@ async function saveMem() {
 
     <!-- ① 接口基础配置 -->
     <div v-if="tab === 'api'">
+      <!-- 小 Y 助手(2026-09-27): 配置项自上而下 = ①总开关 ②模型基础配置 ③系统提示词(PROMPT) -->
       <div class="card">
-        <div class="card-title">AI 接口(OpenAI 兼容协议, 支持 Ollama / vLLM / OpenAI 等)</div>
-        <div class="form-grid">
+        <div class="card-title">
+          小 Y 助手(页面问答)
+          <span class="sub">各页面右下角悬浮入口, 基于「系统 PROMPT + 当前页面数据」回答运维问题</span>
+          <div class="spacer"></div>
+          <span class="chip" :class="assistantEff ? 'on' : 'off'">{{ assistantEff ? '助手已启用' : '助手未启用' }}</span>
+          <label class="chk"><input type="checkbox" v-model="assistant.enabled" @change="saveAssistant"> 小 Y 总开关</label>
+        </div>
+        <p class="muted small" style="margin:0 0 10px">
+          关闭时: 下方配置项全部置灰不可编辑, 问答接口返回「未启用」, 各页面右下角助手入口全局隐藏;
+          开启时联动启用 AI 全局开关(小 Y 依赖 LLM 调用), 关闭小 Y 不影响抓包/扫描/监控的 AI 分析。
+        </p>
+        <!-- ② AI 模型基础配置: 与下方"AI 接口基础参数"卡共用数据源(basic.*), 随"保存小 Y 配置"落盘 -->
+        <div class="form-grid" :class="{ dimmed: !assistant.enabled }">
           <div class="field">
-            <label class="label">API 地址</label>
-            <input class="input mono" v-model.trim="basic.apiBase" placeholder="http://127.0.0.1:11434/v1">
+            <label class="label">模型接口地址</label>
+            <input class="input mono" :disabled="!assistant.enabled" v-model.trim="basic.apiBase" placeholder="http://127.0.0.1:11434/v1">
           </div>
           <div class="field">
-            <label class="label">API Key(本地模型可留空)</label>
-            <input class="input mono" :type="showKey ? 'text' : 'password'" v-model.trim="basic.apiKey" placeholder="本地 Ollama 可留空">
+            <label class="label">认证密钥(本地模型可留空)</label>
+            <input class="input mono" :type="showKey ? 'text' : 'password'" :disabled="!assistant.enabled" v-model.trim="basic.apiKey" placeholder="本地 Ollama 可留空">
+            <label class="checkbox" style="margin-top:6px"><input type="checkbox" :checked="showKey" :disabled="!assistant.enabled" @change="showKey = !showKey"> 显示密钥</label>
           </div>
           <div class="field">
             <label class="label">模型名称</label>
-            <input class="input mono" v-model.trim="basic.model" placeholder="qwen2.5:7b">
+            <input class="input mono" :disabled="!assistant.enabled" v-model.trim="basic.model" placeholder="qwen2.5:7b">
           </div>
+        </div>
+        <!-- ③ 系统提示词(PROMPT): 自定义小 Y 的人设/回答规则/输出约束/安全边界 -->
+        <div style="margin-top:12px">
+          <div class="form-row" style="margin-bottom:8px; align-items:center">
+            <label class="label" style="margin:0">系统提示词(PROMPT)</label>
+            <span class="muted small">
+              {{ assistantInfo && assistantInfo.hasCustomPrompt ? '当前为自定义' : '当前为内置默认' }} —— 保存后即时生效, 无需重启
+            </span>
+            <div class="spacer"></div>
+            <button class="btn sm" :disabled="!assistant.enabled" @click="resetAssistantPrompt">恢复默认</button>
+            <button class="btn sm primary" :disabled="!assistant.enabled || assistantSaving" @click="saveAssistant">
+              <span class="spinner" v-if="assistantSaving"></span> 保存小 Y 配置
+            </button>
+          </div>
+          <AiPromptEditor v-model="assistant.prompt" :vars="[]" :disabled="!assistant.enabled" height="200px" />
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          AI 接口基础参数
+          <span class="sub">小 Y 与全链路 AI 分析共用(地址/密钥/模型在上方小 Y 卡配置)</span>
+        </div>
+        <div class="form-grid">
           <div class="field">
             <label class="label">请求超时(秒)</label>
             <input class="input" type="number" min="5" v-model.number="basic.timeoutSec">
@@ -398,16 +512,13 @@ async function saveMem() {
           </div>
         </div>
         <div class="form-row" style="margin-top:12px">
-          <label class="checkbox" style="max-width:130px"><input type="checkbox" :checked="showKey" @change="showKey = !showKey"> 显示 Key</label>
           <div class="spacer"></div>
           <span class="muted small" v-if="testInfo">{{ testInfo }}</span>
-          <button class="btn" :disabled="testing" @click="saveBasic"><span class="spinner" v-if="testing"></span> 保存参数</button>
-          <button class="btn primary" :disabled="testing" @click="testAndSave">
-            <span class="spinner" v-if="testing"></span> 测试并保存
-          </button>
+          <button class="btn" :disabled="testing" @click="testConn"><span class="spinner" v-if="testing"></span> 测试连通</button>
+          <button class="btn primary" @click="saveBasic"> 保存</button>
         </div>
         <p class="muted small" style="margin:8px 0 0">
-          测试通过才落盘启用(settings.json 的 ai 节, 热生效免重启)。关闭状态下不发起任何 LLM 调用。
+          「测试连通」只验证地址/密钥/模型是否可达, 不落盘; 点「保存」即写入并启用(settings.json 的 ai 节, 热生效免重启)。
         </p>
       </div>
 

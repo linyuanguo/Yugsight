@@ -134,6 +134,35 @@ func TestFilterExcludeFalsePositive(t *testing.T) {
 	}
 }
 
+// TestFilterDropsEmptyOfflineAssets 空资产剔除(2026-09-25 用户: 报告资产清单里
+// 一堆离线的、没端口没服务没漏洞的 IP 没有意义)。四象限各留一条, 只有
+// "离线+无端口+无服务+无漏洞" 被剔除, 其余(在线/有端口/有漏洞)必须保留。
+func TestFilterDropsEmptyOfflineAssets(t *testing.T) {
+	empty := mkAsset("10.0.0.9", nil, "") // 离线占位(存活探测记的最小资产)
+	online := mkAsset("10.0.0.1", nil, "")
+	online.Alive = true // 在线但没扫出端口 → 真实资产, 保留
+	withPort := mkAsset("10.0.0.2", []int{22}, "22/ssh")
+	withPort.Alive = false // 离线但有历史端口/服务 → 保留
+	withVuln := mkAsset("10.0.0.3", nil, "")
+	withVuln.Alive = false // 离线但挂过漏洞 → 保留
+	snap := &Snapshot{
+		Assets: []*models.Asset{empty, online, withPort, withVuln},
+		Vulns:  []*models.Vuln{mkVuln("10.0.0.3", "离线机漏洞", models.SeverityMedium, 0)},
+	}
+	out, st := Filter{}.Apply(snap)
+	if len(out.Assets) != 3 {
+		t.Fatalf("应剔除 1 台空离线机保留 3 台, 实际 %d", len(out.Assets))
+	}
+	if st.AssetTotal != 3 {
+		t.Fatalf("统计口径应与清单一致(3), 实际 %d", st.AssetTotal)
+	}
+	for _, a := range out.Assets {
+		if a.IP == "10.0.0.9" {
+			t.Fatal("空离线资产不应出现在报告资产清单")
+		}
+	}
+}
+
 func TestParseSeverityList(t *testing.T) {
 	if got := ParseSeverityList(""); got != nil {
 		t.Fatalf("空串应返回 nil, 实际 %v", got)

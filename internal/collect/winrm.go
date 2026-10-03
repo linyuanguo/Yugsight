@@ -55,8 +55,14 @@ const winRMPowerShell =
 	"memUsed=[int64](($cs.TotalVisibleMemorySize-$cs.FreePhysicalMemory)*1KB);" +
 	"boot=$h.LastBootUpTime.ToString('yyyy-MM-dd HH:mm:ss');" +
 	"procs=@($ps|%{[pscustomobject]@{pid=$_.ProcessId;name=$_.Name;cpuTime=[math]::Round($_.CPU,1);mem=[math]::Round($_.WorkingSetSize/1MB,1)}});" +
-	"disks=@($d|%{[pscustomobject]@{letter=$_.DeviceID;totalGB=[math]::Round($_.Size/1GB,1);usedGB=[math]::Round(($_.Size-$_.FreeSpace)/1GB,1)}})" +
-	"}|ConvertTo-Json -Compress -Depth 4"
+	"disks=@($d|%{[pscustomobject]@{letter=$_.DeviceID;totalGB=[math]::Round($_.Size/1GB,1);usedGB=[math]::Round(($_.Size-$_.FreeSpace)/1GB,1)}});" +
+		// 2026-10-02: 网卡端口(名称/状态/MAC/带宽 + 累计收发字节), 见 nic.go。
+		// 脚本内只能出现单引号(整条命令由 -Command 的双引号包裹, 内部双引号会切碎命令)。
+		"$n=Get-NetAdapter|%{$s=Get-NetAdapterStatistics -Name $_.Name -ErrorAction SilentlyContinue;" +
+		"[pscustomobject]@{name=$_.Name;state=$_.Status.ToString();mac=$_.MacAddress;speed=$_.LinkSpeed;" +
+		"rx=[int64]$s.ReceivedBytes;tx=[int64]$s.SentBytes}};" +
+		"nics=@($n)" +
+		"}|ConvertTo-Json -Compress -Depth 4"
 
 type wsmanEnvelope struct {
 	XMLName xml.Name `xml:"Envelope"`
@@ -204,7 +210,9 @@ func collectWinRM(ctx context.Context, e *Engine, t Task) *Round {
 			TotalGB float64 `json:"totalGB"`
 			UsedGB  float64 `json:"usedGB"`
 		} `json:"disks"`
-	}
+		// 2026-10-02: 网卡端口(nic.go 的 nicWin; 老脚本没有该字段时为空, 不影响其它指标)
+		Nics []nicWin `json:"nics"`
+		}
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		r.OK = false
 		r.Err = "输出解析失败: " + err.Error()
@@ -235,6 +243,8 @@ func collectWinRM(ctx context.Context, e *Engine, t Task) *Round {
 			Metric{Name: "disk_used", Value: d.UsedGB * 1024, Unit: "MB", Labels: map[string]string{"disk": d.Letter}},
 		)
 	}
+	// 网卡端口(每网卡一条 nic 指标, 累计字节由展示层差分算速率)
+	nicMetricsFromWindows(r, parsed.Nics)
 	return r
 }
 

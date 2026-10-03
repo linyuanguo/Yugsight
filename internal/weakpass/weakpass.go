@@ -131,21 +131,27 @@ func (t Target) Key() string { return t.Addr() }
 type Result struct {
 	Target
 	// OK 是否发现弱口令 / 未授权访问
-	OK bool
+	//
+	// JSON 键名必须小写驼峰(ok/emptyPass/...): 前端 Weakpass.vue 与报告中心
+	// 原始报告详情(Reports.vue)都按 r.ok 读取。2026-09-25 曾漏写 tag, Go 按
+	// 字段名原样输出大写 "OK" → 命中的行在前端恒显示"未命中", 只有摘要计数
+	// (后端算的) 是对的 —— 表现为"1 个命中但明细全未命中"。TestResultJSONKeys
+	// 守着这条契约。
+	OK bool `json:"ok"`
 	// Password 命中的口令(未命中为空串)。空串口令命中时此处也是空串,
 	// 需结合 EmptyPass 判定 —— 见下方字段。
-	Password string
+	Password string `json:"password,omitempty"`
 	// EmptyPass 命中的是"空口令 / 免认证"(比弱口令更严重)
-	EmptyPass bool
+	EmptyPass bool `json:"emptyPass,omitempty"`
 	// Attempts 实际尝试次数
-	Attempts int
+	Attempts int `json:"attempts"`
 	// Stopped 结束原因: disabled / not-allowed / unsupported / found /
 	// maxtry / canceled / error
-	Stopped string
+	Stopped string `json:"stopped,omitempty"`
 	// Unsupported 协议未支持(不伪造结果)
-	Unsupported bool
+	Unsupported bool `json:"unsupported,omitempty"`
 	// Error 错误说明(成功且无异常时为空)
-	Error string
+	Error string `json:"error,omitempty"`
 }
 
 // Engine 弱口令检测引擎(配置 + 限速器 + 审计缓冲)。

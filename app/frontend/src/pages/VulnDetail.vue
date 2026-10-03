@@ -1,7 +1,10 @@
 <template>
   <div v-if="v">
     <PageHeader :title="v.title">
-      <button class="btn sm" @click="$router.push('/vulns')">返回列表</button>
+      <!-- 2026-09-27: 返回按钮 —— 优先 history.back() 回到"带 query 的精确列表 URL"
+           (列表筛选条件/分页/排序状态持久化在 URL, 见 Vulns.vue); 无历史时(深链
+           直接打开详情页)回退到默认列表。 -->
+      <button class="btn sm" @click="goBack()">返回</button>
       <button class="btn sm green" v-if="vulnStatus(v.status) !== 'fixed'" @click="setStatus('fixed')">标记已修复</button>
       <button class="btn sm" v-else @click="setStatus('open')">恢复为开放</button>
       <button class="btn sm" v-if="!v.falsePositive" @click="showFP = true">标记误报</button>
@@ -94,10 +97,13 @@ import Empty from '../components/Empty.vue'
 import { v2 } from '../api/http'
 import { fmtDT, vulnStatus } from '../utils'
 import { isAdmin } from '../auth'
+import { setPageData } from '../assistant/context'
 
 const route = useRoute()
 const router = useRouter()
 const v = ref(null)
+// 小 Y 助手(2026-09-27): 注册"正在查看的详情项"(当前漏洞全字段, 脱敏由后端做)
+setPageData('vulndetail', () => (v.value ? { vuln: v.value } : null))
 const loading = ref(true)
 const busy = ref(false)
 const showFP = ref(false)
@@ -121,6 +127,17 @@ function pentaLevelName(s) {
 // 深链 ?import=<vulnId>: 工作台打开即预选本条漏洞, 用户点一下确认就完成导入
 function sendToPenta() {
   router.push('/penta?import=' + encodeURIComponent(route.params.id))
+}
+
+// 返回漏洞列表(2026-09-27): 列表状态(筛选/分页)持久化在 URL query 上,
+// back() 回到精确的列表 URL 即原样保留; 无上一条历史(深链/刷新后直开详情)
+// 时退回默认列表, 不出现"按了返回没反应"。
+function goBack() {
+  if (window.history.state && window.history.state.back) {
+    router.back()
+  } else {
+    router.push('/vulns')
+  }
 }
 
 async function load() {
@@ -169,7 +186,7 @@ async function del() {
   if (!confirm('确认删除该漏洞记录?')) return
   try {
     await v2('/vulns/' + v.value.id, { method: 'DELETE' })
-    router.push('/vulns')
+    goBack() // 同"返回": 保留列表原有筛选/分页状态
   } catch (e) { alert(e.message) }
 }
 

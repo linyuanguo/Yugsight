@@ -101,13 +101,20 @@ func (d *ProbeTaskDAO) MarkSent(id string) (*ProbeTask, error) {
 }
 
 // MarkRunning 标记执行中(探针首次回进度/确认执行时调用)。
+//
+// 2026-09-27 守契约: 只允许从 pending/sent 切入 running。取消场景存在"结果先于
+// 收尾进度到达"的竞争 —— 探针 runTask 的 select 走 cancelCh 分支先把"已取消"
+// 结果发出去, 扫描 goroutine 才 Emit 最后一条"任务中断"进度(晚约 25ms 到),
+// 若这里无条件置 running, 已落库的终态(成功/失败)会被迟到进度翻回 running,
+// 历史页状态失真。此时只更新进度文本, 不动状态。
 func (d *ProbeTaskDAO) MarkRunning(id, progress string) (*ProbeTask, error) {
 	t, err := d.Get(id)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
-	if t.Status != ProbeTaskRunning {
+	switch t.Status {
+	case ProbeTaskPending, ProbeTaskSent:
 		t.Status = ProbeTaskRunning
 		t.StartedAt = &now
 	}

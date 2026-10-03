@@ -88,7 +88,7 @@ type updaterFileConfig struct {
 // loadUpdaterConfig 读取 updater 配置(settings.json 的 updater 节, 回退旧 updater.json;
 // 可选, 缺失/非法 = 默认配置, 不报错)。同时装配"直连官方模板仓库"通道(未配置
 // direct 段时按开箱即用策略默认开启, 理由见 applyUpdaterDefaults 的说明;
-// 现成示例见 settings.example.json)。
+// 完整默认值见 settings_defaults.go 的 buildDefaultSettings, 首次启动自动生成)。
 func loadUpdaterConfig() {
 	data, ok := section(secUpdater, "")
 	if !ok {

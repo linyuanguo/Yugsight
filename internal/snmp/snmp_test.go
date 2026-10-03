@@ -199,19 +199,39 @@ func TestParseResponseCommunityMismatch(t *testing.T) {
 }
 
 func TestDecodeValueSpecialOctets(t *testing.T) {
-	typ, text, _, err := decodeValue(tagOctetStr, []byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})
+	// MAC 只在"物理地址"OID 上下文按 MAC 格式化
+	typ, text, _, err := decodeValue(tagOctetStr, []byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "1.3.6.1.2.1.2.2.1.6.1")
 	if err != nil || typ != "octetstring" || text != "aa:bb:cc:dd:ee:ff" {
 		t.Fatalf("MAC 格式: %s %s %v", typ, text, err)
 	}
-	typ2, text2, _, _ := decodeValue(tagIPAddress, []byte{172, 16, 199, 1})
+	typ2, text2, _, _ := decodeValue(tagIPAddress, []byte{172, 16, 199, 1}, "")
 	if typ2 != "ipaddress" || text2 != "172.16.199.1" {
 		t.Fatalf("IP 格式: %s %s", typ2, text2)
 	}
 	// 长度 4 的 OctetString 是合法字符串, 绝不能与 Counter32 混淆
 	// (旧实现靠长度消歧, 真机 Counter32 走的是专属 tag 0x41)。
-	typ3, _, _, err3 := decodeValue(tagOctetStr, []byte{0, 0, 0, 7})
+	typ3, _, _, err3 := decodeValue(tagOctetStr, []byte{0, 0, 0, 7}, "")
 	if err3 != nil || typ3 != "octetstring" {
 		t.Fatalf("4 字节 OctetString 应为字符串, got %s (%v)", typ3, err3)
+	}
+}
+
+// TestDecodeIfDescrNotMAC 守 2026-10-01 真机 bug: 6 字节的 ifDescr("Null 0"/
+// "Mgmt 0", 锐捷交换机的逻辑口)曾被"6 字节=MAC"规则格式化成 4e:75:6c:6c:20:30,
+// 端口名变成一串十六进制。判定只能看 OID, 不能看长度。
+func TestDecodeIfDescrNotMAC(t *testing.T) {
+	cases := map[string]string{
+		"Null 0": "4e:75:6c:6c:20:30",
+		"Mgmt 0": "4d:67:6d:74:20:30",
+	}
+	for want, wrongHex := range cases {
+		_, got, _, err := decodeValue(tagOctetStr, []byte(want), "1.3.6.1.2.1.2.2.1.2.53")
+		if err != nil {
+			t.Fatalf("%s 解码失败: %v", want, err)
+		}
+		if got != want {
+			t.Fatalf("ifDescr %q 应原样显示, got %q(旧 bug 形态 %s)", want, got, wrongHex)
+		}
 	}
 }
 

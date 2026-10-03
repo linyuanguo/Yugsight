@@ -101,6 +101,9 @@
               </label>
             </div>
             <div class="spacer"></div>
+            <!-- 2026-09-25 命名扫描: 控制台"下一步弱口令"带任务名时显示关联, 本批次
+                 结果按它打进原始报告(报告中心按任务名分类) -->
+            <span class="chip blue" v-if="jobName" title="本批次结果将按此任务名分类到原始报告(报告中心按任务名生成/分类)">关联任务: {{ jobName }}</span>
             <span class="chip" :class="parsed.length ? 'on' : 'warn'">解析到 {{ parsed.length }} 个目标</span>
             <button class="btn primary" v-if="!running" :disabled="!parsed.length" @click="start">启动检测</button>
             <button class="btn danger" v-else @click="stop">停止检测</button>
@@ -356,6 +359,9 @@ function applyQueryTargets() {
     lines.push(s ? `${host}:${port}:${s}` : `${host}:${port}`)
   }
   if (lines.length) targetsText.value = lines.join('\n')
+  // 2026-09-25 命名扫描: 控制台"下一步弱口令"带任务名(job) —— 本批次结果按任务名
+  // 打进原始报告, 报告中心按任务名分类/生成报告时能归到同一任务下
+  jobName.value = String(route.query.job || '').trim()
 }
 
 // ===== 检测任务(原有逻辑) =====
@@ -369,6 +375,8 @@ const targetsText = ref('')
 const user = ref('')
 // 仅使用内置字典开关(默认 false = 全量"内置 + 自定义")
 const builtinOnly = ref(false)
+// 关联的扫描任务名(控制台"下一步弱口令"带过来; 提交时随批次下发, 原始报告按它分类)
+const jobName = ref('')
 let pollTimer = null
 
 // 逐行解析 host:port[:service[:user]]。
@@ -440,6 +448,7 @@ async function start() {
   const body = { targets }
   if (user.value) body.user = user.value
   if (builtinOnly.value) body.builtinOnly = true
+  if (jobName.value) body.job = jobName.value // 关联扫描任务名(原始报告按任务名分类)
   try {
     await api('/api/authcheck/start', { method: 'POST', body })
     setRunning(true)

@@ -36,7 +36,11 @@ const sshRemoteCommand =
 	"echo MARK-UPTIME; awk '{print int($1)}' /proc/uptime;" +
 	"echo MARK-DISK; df -P -B1 2>/dev/null | tail -n +2;" +
 	"echo MARK-PROC; ps -eo pid,comm,%cpu,%mem --sort=-%mem 2>/dev/null | head -11;" +
-	"echo MARK-EVENTS; (journalctl -p warning -n 5 --no-pager -q 2>/dev/null || dmesg 2>/dev/null | tail -n 5));"
+	"echo MARK-EVENTS; (journalctl -p warning -n 5 --no-pager -q 2>/dev/null || dmesg 2>/dev/null | tail -n 5);" +
+		// 2026-10-02: 网卡端口(累计收发字节 + 状态/MAC/带宽 + IPv4), 见 nic.go
+		"echo MARK-NIC; cat /proc/net/dev 2>/dev/null;" +
+		"echo MARK-NICINFO; for f in /sys/class/net/*; do echo $(basename $f)|$(cat $f/operstate 2>/dev/null)|$(cat $f/address 2>/dev/null)|$(cat $f/speed 2>/dev/null); done;" +
+		"echo MARK-NICIP; ip -4 -o addr 2>/dev/null | awk '{print $2, $4}');"
 
 func collectSSH(ctx context.Context, e *Engine, t Task) *Round {
 	r := newRound(t, time.Now())
@@ -142,6 +146,8 @@ func parseSSHOutput(r *Round, out string) {
 	if v, ok := cpuFromStat(sections["MARK-STAT"]); ok {
 		r.Metrics = append(r.Metrics, Metric{Name: "cpu", Value: v, Unit: "%"})
 	}
+	// 2026-10-02: 网卡端口(每网卡一条 nic 指标, 累计字节由展示层差分算速率)
+	nicMetricFromLinux(r, sections["MARK-NIC"], sections["MARK-NICINFO"], sections["MARK-NICIP"])
 	// 内存: MemTotal/MemAvailable(kB)
 	var memTotal, memAvail int64
 	for _, line := range strings.Split(sections["MARK-MEM"], "\n") {

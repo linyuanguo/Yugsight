@@ -56,6 +56,7 @@ type scanSink struct {
 type aliveRecord struct {
 	alive bool
 	mac   string
+	icmp  bool // 是否回 ICMP(代理 ARP 幽灵判定用: 真身回 ICMP, 幽灵只有 ARP, 见 arp_ghost.go)
 }
 
 // portOpenRec 一条开放端口明细(源: port 事件, 仅 state=open)。
@@ -134,13 +135,14 @@ func (s *scanSink) observe(event string, data any) {
 			IP               string `json:"ip"`
 			Alive            bool   `json:"alive"`
 			MAC              string `json:"mac"`
+			ICMP             bool   `json:"icmp"` // 代答幽灵判定证据(见 arp_ghost.go)
 			ExcludedByStrict bool   `json:"excludedByStrict"`
 		}
 		if json.Unmarshal(b, &ev) != nil || strings.TrimSpace(ev.IP) == "" {
 			return
 		}
 		s.mu.Lock()
-		s.alive[models.NormIP(ev.IP)] = aliveRecord{alive: ev.Alive && !ev.ExcludedByStrict, mac: ev.MAC}
+		s.alive[models.NormIP(ev.IP)] = aliveRecord{alive: ev.Alive && !ev.ExcludedByStrict, mac: ev.MAC, icmp: ev.ICMP}
 		s.mu.Unlock()
 	case "port":
 		var ev struct {
@@ -245,36 +247,90 @@ func (s *scanSink) addModelAssets(as []*models.Asset) {
 	s.mu.Unlock()
 }
 
+// mergedAlive 本轮的存活判定合并结果:
+//
+//  1. ip 事件记录(存活扫描/统一扫描产出)是**权威**口径 —— 严格模式下
+//     "仅端口开放不计存活" 的判定结论优先, 端口证据不能翻案;
+//  2. 没有 ip 事件记录、但有开放端口/服务响应的 IP, 直接计存活 ——
+//     主机/Web 单点扫描不跑存活探测(无 ip 事件), 但 TCP 握手成功+拿到
+//     banner 本身就是"主机活着"的硬证据。2026-09-25 修: 此前这类扫描
+//     的原始报告恒显示"0 台存活"、资产表 Alive 恒 false, 用户看到"明明
+//     存活却显示未存活"。
+func (s *scanSink) mergedAlive() map[string]aliveRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]aliveRecord, len(s.alive))
+	for ip, rec := range s.alive {
+		out[ip] = rec
+	}
+	portAlive := func(ip string) {
+		if ip == "" {
+			return
+		}
+		ip = models.NormIP(ip)
+		if _, ok := out[ip]; ok {
+			return // 有 ip 事件记录时以记录为准(含严格模式排除)
+		}
+		out[ip] = aliveRecord{alive: true}
+	}
+	for ip, recs := range s.ports {
+		if len(recs) > 0 {
+			portAlive(ip)
+		}
+	}
+	for _, a := range s.assets {
+		if len(a.Ports) > 0 {
+			portAlive(a.IP)
+		}
+	}
+	return out
+}
+
+// fallbacks finding 未自带 host/port 时的兜底目标(与 normalize 的 rawVuln 同口径)。
+func (s *scanSink) fallbacks() (ip string, port int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ip, s.port
+}
+
 // rawPayload 本轮收集的原始结果快照(报告中心"原始报告"的数据源)。
 //
 // 口径与落库一致: 只含已过白名单过滤 / 已标误报的 finding —— 报告中心存的是
 // "这次扫描真实产出的结构化结果", 不是被过滤掉的全过程。切片整体复制,
 // 调用方持有期间即使扫描侧再收数据也不会串改。
 func (s *scanSink) rawPayload() map[string]any {
+	// 显式 Unlock(不用 defer): 尾部调用 mergedAlive 需要重新取锁,
+	// defer 会二次解锁 panic(sync: unlock of unlocked mutex)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	finds := make([]scanFindingJSON, 0, len(s.finds))
 	for _, f := range s.finds {
 		finds = append(finds, f.raw)
 	}
 	assets := make([]normalizer.RawAsset, len(s.assets))
 	copy(assets, s.assets)
-	alive := make(map[string]aliveRecord, len(s.alive))
-	for k, v := range s.alive {
-		alive[k] = v
-	}
 	ports := make(map[string][]portOpenRec, len(s.ports))
 	for k, v := range s.ports {
 		cp := make([]portOpenRec, len(v))
 		copy(cp, v)
 		ports[k] = cp
 	}
+	s.mu.Unlock()
 	return map[string]any{
 		"findings": finds,
 		"assets":   assets,
-		"alive":    alive,
+		"alive":    s.mergedAlive(),
 		"ports":    ports,
 	}
+}
+
+// sinkScanID 本轮批次标记: 作业内扫描带 "job-<id>"(报告中心按作业过滤的
+// 关联键, 漏洞 ScanTaskID / 资产 Jobs 都用它), 普通扫描保持 "local-<时间戳>"
+// (行为不变)。同一作业的多阶段(host/web)共享同一标记 → 一个作业的结果可整体关联。
+func (s *scanSink) sinkScanID() string {
+	if id := strings.TrimSpace(s.req.JobID); id != "" {
+		return "job-" + id
+	}
+	return "local-" + time.Now().UTC().Format("20060102-150405")
 }
 
 // normalize 收集到的 finding + 资产 → 统一归一化结果(纯函数, 便于单测)。
@@ -288,7 +344,7 @@ func (s *scanSink) normalize() *normalizer.Result {
 	if len(finds) == 0 && len(assets) == 0 {
 		return nil
 	}
-	scanID := "local-" + time.Now().UTC().Format("20060102-150405")
+	scanID := s.sinkScanID()
 	defSrc := localScanSource(s.req.Type)
 	// 资产一批; 漏洞按来源分批(finding 自带 nuclei/engine 来源时保留, 否则按扫描类型兜底)
 	batches := []*normalizer.RawBatch{{Source: defSrc, ScanID: scanID, Assets: assets}}
@@ -363,18 +419,13 @@ func (s *scanSink) mergePortEvents() {
 //
 // 只判定的 IP 集为空时原样返回(纯 web/host 单点扫描无 ip 事件, 零影响)。
 func (s *scanSink) applyAliveState(res *normalizer.Result) *normalizer.Result {
-	s.mu.Lock()
-	alive := make(map[string]aliveRecord, len(s.alive))
-	for ip, rec := range s.alive {
-		alive[ip] = rec
-	}
-	s.mu.Unlock()
+	alive := s.mergedAlive() // ip 事件权威 + 开放端口/服务响应证据(见 mergedAlive)
 	if len(alive) == 0 {
 		return res
 	}
 	if res == nil {
 		res = &normalizer.Result{
-			ScanID: "local-" + time.Now().UTC().Format("20060102-150405"),
+			ScanID: s.sinkScanID(),
 			Assets: []*models.Asset{},
 		}
 	}
@@ -398,6 +449,13 @@ func (s *scanSink) applyAliveState(res *normalizer.Result) *normalizer.Result {
 		if covered[ip] {
 			continue
 		}
+		// 2026-09-26 用户口径: 无响应/未存活的 IP 不入资产表。此前所有被探测的
+		// IP(含无响应)都以 Alive=false 入账, 导致扫 /24 得到 256 个"资产"(其中
+		// 250 个根本没有主机), /16 更会得 65536 个。只有综合判定存活(有 ICMP/ARP/
+		// 开放端口任一证据, 见 mergedAlive)的 IP 才是真实资产。
+		if !rec.alive {
+			continue
+		}
 		a := &models.Asset{
 			IP:      ip,
 			MAC:     rec.mac,
@@ -415,6 +473,7 @@ func (s *scanSink) flush() {
 	s.mergePortEvents()
 	res := s.normalize()
 	res = s.applyAliveState(res)
+	res = s.reportArpGhosts(res) // 代理 ARP 幽灵剔除(开关默认开, 见 arp_ghost.go)
 	if res == nil {
 		return
 	}
@@ -507,9 +566,18 @@ func persistScanResult(d *db.Database, res *normalizer.Result) (assets, vulns, f
 	}
 	// 复用探针链路的幂等 upsert(同为"同资产/同漏洞跨扫描不重复增长");
 	// probeID 传空 = 本机扫描(资产不归属任何探针节点), ScanTaskID 用本轮 scanID。
+	// 作业标记: 作业内扫描的资产带上作业 ID(报告中心按作业过滤资产维度的关联键);
+	// 普通扫描无标记, 行为不变。
+	jobID := ""
+	if strings.HasPrefix(res.ScanID, "job-") {
+		jobID = strings.TrimPrefix(res.ScanID, "job-")
+	}
 	for _, a := range res.Assets {
 		if a == nil || strings.TrimSpace(a.IP) == "" {
 			continue
+		}
+		if jobID != "" {
+			a.Jobs = append(a.Jobs, jobID)
 		}
 		if err := upsertProbeAsset(assetDAO, "", a); err != nil {
 			failed++

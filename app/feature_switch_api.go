@@ -39,10 +39,8 @@ type featureSwitchView struct {
 		Note      string `json:"note,omitempty"`
 	} `json:"dashboard"`
 	Report struct {
-		Enabled            bool `json:"enabled"`
-		TemplateManagement bool `json:"templateManagement"`
-		PDFExternal        bool `json:"pdfExternal"`
-		AutoGenerate       bool `json:"autoGenerate"`
+		Enabled      bool `json:"enabled"`
+		AutoGenerate bool `json:"autoGenerate"`
 	} `json:"report"`
 }
 
@@ -63,8 +61,6 @@ func hFeatureSwitchList(w http.ResponseWriter, r *http.Request) {
 	v.Dashboard.TopCities = d.TopCities
 	rc := loadReportConfig()
 	v.Report.Enabled = rc.Enabled
-	v.Report.TemplateManagement = packManagementEnabled()
-	v.Report.PDFExternal = pdfExternalEnabled()
 	v.Report.AutoGenerate = rc.AutoGenerate != nil && *rc.AutoGenerate
 	server.OK(w, v)
 }
@@ -113,14 +109,12 @@ func hSaveDashboardSwitch(w http.ResponseWriter, r *http.Request) {
 }
 
 // hSaveReportSwitch POST /api/v2/config/report
-// body: {enabled, templateManagement, pdfExternal, autoGenerate, maxArchive}
+// body: {enabled, autoGenerate, maxArchive}
 func hSaveReportSwitch(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Enabled            *bool `json:"enabled"`
-		TemplateManagement *bool `json:"templateManagement"`
-		PDFExternal        *bool `json:"pdfExternal"`
-		AutoGenerate       *bool `json:"autoGenerate"`
-		MaxArchive         *int  `json:"maxArchive"`
+		Enabled      *bool `json:"enabled"`
+		AutoGenerate *bool `json:"autoGenerate"`
+		MaxArchive   *int  `json:"maxArchive"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		server.FailBadRequest(w, "请求格式错误: "+err.Error())
@@ -129,12 +123,6 @@ func hSaveReportSwitch(w http.ResponseWriter, r *http.Request) {
 	cfg := loadReportConfig()
 	if in.Enabled != nil {
 		cfg.Enabled = *in.Enabled
-	}
-	if in.TemplateManagement != nil {
-		cfg.TemplateManagement = in.TemplateManagement
-	}
-	if in.PDFExternal != nil {
-		cfg.PDFExternal = in.PDFExternal
 	}
 	if in.AutoGenerate != nil {
 		cfg.AutoGenerate = in.AutoGenerate
@@ -150,13 +138,11 @@ func hSaveReportSwitch(w http.ResponseWriter, r *http.Request) {
 	}
 	ReloadSettings("功能开关保存(报告)")
 	logAudit(v2GetDB(), r, "config.report", "",
-		"enabled="+boolText(cfg.Enabled)+" tplMgmt="+boolText(packManagementEnabled()))
+		"enabled="+boolText(cfg.Enabled))
 	server.OK(w, map[string]any{
-		"enabled":            cfg.Enabled,
-		"templateManagement": packManagementEnabled(),
-		"pdfExternal":        pdfExternalEnabled(),
-		"autoGenerate":       cfg.AutoGenerate != nil && *cfg.AutoGenerate,
-		"maxArchive":         cfg.MaxArchive,
+		"enabled":      cfg.Enabled,
+		"autoGenerate": cfg.AutoGenerate != nil && *cfg.AutoGenerate,
+		"maxArchive":   cfg.MaxArchive,
 	})
 }
 

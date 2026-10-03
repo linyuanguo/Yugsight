@@ -133,7 +133,7 @@ func (e *Engine) Run(ctx context.Context, t *Task, tpl *Template, emit EventFunc
 		emit("penta.step", map[string]any{
 			"index": i, "name": spec.Name, "type": spec.Type,
 			"phase": "done", "hit": res.Hit, "err": res.Err,
-			"output": res.Output, "durationMs": res.DurationMs,
+			"output": res.Output, "risk": res.Risk, "durationMs": res.DurationMs,
 		})
 	}
 
@@ -159,8 +159,68 @@ func (e *Engine) Run(ctx context.Context, t *Task, tpl *Template, emit EventFunc
 		out.Exploitability = Partial
 		out.Summary = fmt.Sprintf("部分命中: %d/%d 步命中(用时 %s)", hitCount, len(out.Steps), dur.Round(time.Millisecond))
 	}
+
+	// ===== 渗透深度与隐患总结 =====
+	// 用户口径: 日志要能看出"渗透到什么程度、有什么隐患", 不能只有一行命中数。
+	// 深度 = 各步骤实际到达的交互层(连接层 < 服务响应层 < 登录层);
+	// 隐患 = 每个命中步骤的 Risk 文案(weakpass 命中时由引擎按口令结果动态生成)。
+	line("=== 验证结论 ===")
+	line("渗透深度: " + depthSummary(out.Steps))
+	if hitCount > 0 {
+		line("发现隐患:")
+		for _, s := range out.Steps {
+			if s.Hit {
+				line("  - [" + s.Name + "] " + orDash(s.Risk))
+			}
+		}
+	} else if out.OK {
+		line("隐患: 未观测到本模板覆盖的漏洞行为(步骤均正常执行但未命中; " +
+			"这不等于目标没有问题, 只代表本轮验证项未确认)")
+	} else {
+		line("隐患: 无法评估 —— 目标不可达, 未进入任何验证环节")
+	}
 	out.Log = logBuf.String()
 	return out
+}
+
+// stepLayer 步骤类型 -> 到达的交互层(Err 非空 = 连服务都没到, 返回连接层)。
+func stepLayer(t string, err string) string {
+	if err != "" {
+		return "连接层"
+	}
+	switch t {
+	case StepWeakPass:
+		return "登录层"
+	case StepHTTP, StepTCP:
+		return "服务响应层"
+	case StepExternal:
+		return "外部引擎层"
+	}
+	return "服务响应层"
+}
+
+var layerRank = map[string]int{"连接层": 0, "服务响应层": 1, "外部引擎层": 1, "登录层": 2}
+
+// depthSummary 一句话描述渗透深度: 多少步真正到达服务、最深到了哪一层。
+func depthSummary(steps []StepResult) string {
+	total, reached, failed := len(steps), 0, 0
+	deepest := "连接层"
+	for _, s := range steps {
+		if s.Err != "" {
+			failed++
+			continue
+		}
+		reached++
+		l := stepLayer(s.Type, "")
+		if layerRank[l] > layerRank[deepest] {
+			deepest = l
+		}
+	}
+	base := fmt.Sprintf("共 %d 步, %d 步到达目标服务并完成探测, %d 步未连通", total, reached, failed)
+	if reached == 0 {
+		return base + "; 验证停留在连接层(目标不可达或服务未运行, 无法得出更深层结论)"
+	}
+	return base + "; 最深到达「" + deepest + "」"
 }
 
 func errSuffix(err string) string {
@@ -292,6 +352,12 @@ func (e *Engine) runHTTP(ctx context.Context, t *Task, s StepSpec, line func(str
 		hit = hit && anyMatch
 	}
 	res.Hit = hit
+	if res.Hit {
+		res.Risk = s.Risk
+		if res.Risk == "" {
+			res.Risk = "目标服务响应命中验证项: 对应漏洞行为已被观测到"
+		}
+	}
 	line(fmt.Sprintf("[步骤 %s] %s %s -> %s 命中=%v", s.Name, method, url, resp.Status, res.Hit))
 	return res
 }
@@ -355,6 +421,12 @@ func (e *Engine) runTCP(ctx context.Context, t *Task, s StepSpec, line func(stri
 		}
 		res.Hit = re.Match(data)
 	}
+	if res.Hit {
+		res.Risk = s.Risk
+		if res.Risk == "" {
+			res.Risk = "目标端口开放且有响应: 服务对外暴露, 可被进一步探测"
+		}
+	}
 	line(fmt.Sprintf("[步骤 %s] %s 响应 %d 字节 命中=%v%s",
 		s.Name, addr, n, res.Hit, errSuffix(res.Err)))
 	return res
@@ -407,8 +479,12 @@ func (e *Engine) runWeakPass(ctx context.Context, t *Task, s StepSpec, line func
 		res.Hit = true
 		if wres.EmptyPass {
 			res.Evidence = "空口令/免认证: 未提供口令即登录成功"
+			res.Risk = fmt.Sprintf("%s:%d 免口令登录(空口令/未认证): 任何能到达该端口的人可直接使用该服务的权限, 比弱口令更严重",
+				host, port)
 		} else {
 			res.Evidence = fmt.Sprintf("弱口令命中: user=%s password=%s(口令仅在命中时展示, 与弱口令模块审计口径一致)", user, wres.Password)
+			res.Risk = fmt.Sprintf("%s:%d 存在可用弱口令(user=%s, password=%s): 攻击者拿到该凭据即可直接使用该服务权限",
+				host, port, orDash(user), wres.Password)
 		}
 	case wres.Stopped == "canceled":
 		res.Err = "执行被取消: " + orDash(wres.Error)
@@ -472,6 +548,12 @@ func (e *Engine) runExternal(ctx context.Context, t *Task, s StepSpec, line func
 			return res
 		}
 		res.Hit = re.MatchString(r.Stdout)
+	}
+	if res.Hit {
+		res.Risk = s.Risk
+		if res.Risk == "" {
+			res.Risk = "外部引擎验证命中(引擎语义由部署者自行定义, 详见其输出)"
+		}
 	}
 	return res
 }

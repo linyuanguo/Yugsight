@@ -90,9 +90,14 @@ func decodeInt(b []byte) (int64, error) {
 	return v, nil
 }
 
-// formatOctets 展示层格式化: 6 字节当 MAC, 可打印当字符串, 否则 hex。
-func formatOctets(b []byte) string {
-	if len(b) == 6 {
+// formatOctets 展示层格式化: MAC 上下文的 6 字节按 MAC, 可打印当字符串, 否则 hex。
+//
+// asMAC 必须由调用方按 OID 判定(见 snmp.isMACOID), 不能只看长度:
+// 2026-10-01 真机(锐捷 S7805C)踩到 —— ifDescr 里的 "Null 0" / "Mgmt 0" 恰好
+// 6 字节, 被"6 字节=MAC"规则格式化成 4e:75:6c:6c:20:30, 端口名变成一串十六进制。
+// 字符串型 OID(ifDescr/ifName 等)一律走可打印优先。
+func formatOctets(b []byte, asMAC bool) string {
+	if asMAC && len(b) == 6 {
 		return macString(b)
 	}
 	printable := len(b) > 0

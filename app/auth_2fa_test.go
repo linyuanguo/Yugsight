@@ -328,7 +328,7 @@ func Test2FACodeNoGhostUsers(t *testing.T) {
 //
 // 场景: 旧账号在 authStore(settings.json) 里, v2 用户表没有该用户行(全新安装/
 // 表数据缺失)。登录页拉码值触发懒创建 —— 旧实现 db.NewUser 默认 auditor 且
-// 无人修正, 用户首次登录即被 NormalizeRole 落成只读: 写接口全 403 + 授权管理
+// 无人修正, 用户首次登录即被 NormalizeRole 落成只读: 写接口全 403 + 授权与模型
 // 菜单消失, 用户与前端都无从排查根因。
 //
 // 守两个契约: ① 懒创建行的角色必须是 admin(旧账号=全权限, 与注册路径同口径);

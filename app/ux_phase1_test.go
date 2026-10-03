@@ -40,6 +40,10 @@ func TestScanSinkAliveWriteback(t *testing.T) {
 	sink.observe("ip", map[string]any{"ip": "10.0.0.4", "alive": false})
 	sink.observe("port", map[string]any{"ip": "10.0.0.1", "port": 80, "state": "open", "service": "http"})
 	sink.observe("port", map[string]any{"ip": "10.0.0.1", "port": 81, "state": "closed"})
+	// 2026-09-26: 给 excludedByStrict 的 10.0.0.3 一个开放端口 —— "仅端口推断"的存活证据,
+	// 端口应入账(资产保留但 Alive=false); 这才是 excludedByStrict 的真实形态, 与
+	// "无响应且无端口不入资产"的新口径不冲突。
+	sink.observe("port", map[string]any{"ip": "10.0.0.3", "port": 22, "state": "open", "service": "ssh"})
 	sink.observe("status", map[string]any{"msg": "非目标事件应忽略"})
 
 	sink.flush()
@@ -48,8 +52,10 @@ func TestScanSinkAliveWriteback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读资产失败: %v", err)
 	}
-	if len(assets) != 4 {
-		t.Fatalf("应有 4 台资产, 实际 %d: %+v", len(assets), assets)
+	// 2026-09-26 口径: 无响应且无端口的 IP 不入资产(否则 /24 会虚增 256 个);
+	// 存活(10.0.0.1/2) + 有开放端口的 10.0.0.3 才入, 共 3 台
+	if len(assets) != 3 {
+		t.Fatalf("应有 3 台资产(存活或有开放端口), 实际 %d: %+v", len(assets), assets)
 	}
 	byIP := map[string]*db.Asset{}
 	for _, a := range assets {
@@ -71,11 +77,13 @@ func TestScanSinkAliveWriteback(t *testing.T) {
 	if a2 := byIP["10.0.0.2"]; a2 == nil || !a2.Alive {
 		t.Error("10.0.0.2 存活但无端口, 仍应生成最小资产并标记存活")
 	}
-	if a3 := byIP["10.0.0.3"]; a3 == nil || a3.Alive {
-		t.Error("excludedByStrict(严格模式仅端口推断)不应计入存活")
+	// 2026-09-26: excludedByStrict + 有开放端口 → 入资产但 Alive=false(端口入账)
+	if a3 := byIP["10.0.0.3"]; a3 == nil || a3.Alive || len(a3.Ports) != 1 {
+		t.Errorf("10.0.0.3 excludedByStrict 但有开放端口: 应入资产且 Alive=false 且端口入账, 实际 %+v", a3)
 	}
-	if a4 := byIP["10.0.0.4"]; a4 == nil || a4.Alive {
-		t.Error("alive=false 不应被写成存活")
+	// 2026-09-26: 无响应且无端口 → 不入资产(不再"探到就入账", 否则 /24 会虚增 256 个)
+	if _, ok := byIP["10.0.0.4"]; ok {
+		t.Error("10.0.0.4 无响应且无端口, 不应入资产")
 	}
 }
 

@@ -281,10 +281,21 @@ func TestSectionBlocks(t *testing.T) {
 	if distTable == nil || distTable.Rows[1].Cells[1].Text() != "1" {
 		t.Errorf("等级分布严重数错误: %+v", distTable)
 	}
-	// 免责声明末段
-	last := blocks[len(blocks)-1]
-	if !strings.Contains(last.Text(), "免责: 样例") {
-		t.Errorf("免责声明缺失: %q", last.Text())
+	// 免责声明(2026-09-25 起不再是最末段: 版权信息强制压尾)
+	var disclaimerOK, copyrightOK bool
+	for _, b := range blocks {
+		if strings.Contains(b.Text(), "免责: 样例") {
+			disclaimerOK = true
+		}
+		if strings.Contains(b.Text(), "yugo") {
+			copyrightOK = true
+		}
+	}
+	if !disclaimerOK {
+		t.Errorf("免责声明缺失")
+	}
+	if !copyrightOK {
+		t.Errorf("版权章节缺失(应强制压尾)")
 	}
 }
 

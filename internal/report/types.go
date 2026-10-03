@@ -94,6 +94,10 @@ type Archive struct {
 	// Filter 生成时的筛选条件(回显与"按同条件重新生成")
 	Filter Filter `json:"filter"`
 
+	// JobIDs 生成时选中的扫描任务名(多选; 空=全量)。存档对比按此重建快照 ——
+	// Filter.JobID 单值在多任务时是"、"拼接串, 不能直接当任务名, 故另存一份。
+	JobIDs []string `json:"jobIds,omitempty"`
+
 	// Stats 汇总统计(列表页直接展示, 无需解析 Content)
 	Stats SnapshotStats `json:"stats"`
 
@@ -182,6 +186,14 @@ type Filter struct {
 	ExcludeFalsePositive *bool `json:"excludeFalsePositive,omitempty"`
 	// Keywords 标题关键字(包含匹配, 大小写不敏感)
 	Keywords string `json:"keywords,omitempty"`
+	// JobID 按扫描任务名过滤(空 = 全量, 行为不变; 2026-09-25 四轮换口径后
+	// ID = 任务名)。匹配口径: 资产 Jobs 含该任务名、漏洞 ScanTaskID=
+	// "job-<任务名>"、渗透任务 Job=<任务名>。实际过滤在装配层
+	// buildReportSnapshot(持有 DB 才能读 db.Vuln.ScanTaskID), 这里仅作为
+	// 快照的自描述字段(存档可回溯报告来自哪个任务名)。
+	JobID string `json:"jobId,omitempty"`
+	// JobName 扫描任务名(与 JobID 成对, 展示用)
+	JobName string `json:"jobName,omitempty"`
 }
 
 // LocalNode 本地执行的标识(非探针下发)。
@@ -421,7 +433,7 @@ type Template struct {
 
 	Header Header `json:"header"`
 
-	// Accent 主题色(十六进制, 如 #4f46e5); 为空用内置默认
+	// Accent 主题色(十六进制, 如 #1f3a5f); 为空用内置默认
 	Accent string `json:"accent,omitempty"`
 	// LogoText 封面品牌文案
 	LogoText string `json:"logoText,omitempty"`

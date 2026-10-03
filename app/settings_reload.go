@@ -89,6 +89,12 @@ func ReloadSettings(reason string) (int, []string) {
 	var errs []string
 	n := 0
 
+	// 2026-09-29 修: 重载前先清 settings 内存缓存 —— loadSettings 是一次性缓存,
+	// 不清则本次重载读到的仍是旧快照, "用户手改 settings.json 5 秒后生效"
+	// 整体失效(2026-09-29 实机: 手改文件后热重载日志显示"4 组生效"但值没变)。
+	// API 写路径(saveXxxConfig)各自也会 reset, 这里覆盖"直接改文件"的路径。
+	resetSettingsCache()
+
 	// 报告配置(开关/存档上限/自动触发/模板管理)
 	reportCfgMu.Lock()
 	reportCfgDone = false

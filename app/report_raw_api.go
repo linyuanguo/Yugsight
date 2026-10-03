@@ -37,6 +37,7 @@ import (
 	"yugsight/internal/collect"
 	"yugsight/internal/db"
 	"yugsight/internal/normalizer"
+	"yugsight/internal/penta"
 	"yugsight/internal/probe"
 	"yugsight/internal/report"
 	"yugsight/internal/server"
@@ -207,6 +208,19 @@ func buildRawScanReport(req scanReq, sink *scanSink, startedAt time.Time) *repor
 	assets, _ := pl["assets"].([]normalizer.RawAsset)
 	alive, _ := pl["alive"].(map[string]aliveRecord)
 
+	// 资产/端口列兜底(与落库 normalize 的 rawVuln 同口径): finding 事件未自带
+	// host/port 时用扫描目标兜底 —— 否则原始报告表格里"资产/端口"两列恒为 "-"
+	// (2026-09-25 用户反馈)。findings 是 rawPayload 的副本, 就地填安全。
+	fbIP, fbPort := sink.fallbacks()
+	for i := range findings {
+		if strings.TrimSpace(findings[i].Host) == "" {
+			findings[i].Host = fbIP
+		}
+		if findings[i].Port == 0 {
+			findings[i].Port = fbPort
+		}
+	}
+
 	// 资产 IP 汇总(finding 的 host + 资产表 + 存活判定)
 	ipSet := map[string]bool{}
 	var ips []string
@@ -230,7 +244,7 @@ func buildRawScanReport(req scanReq, sink *scanSink, startedAt time.Time) *repor
 
 	target := scanTargetOf(req)
 	var engine string
-	if req.UseEngine {
+	if engineScanActive(req) {
 		engine = "engine"
 	}
 	payload := map[string]any{
@@ -258,6 +272,7 @@ func buildRawScanReport(req scanReq, sink *scanSink, startedAt time.Time) *repor
 		CreatedAt:  time.Now(),
 		Tags:       []string{"扫描", scanTypeLabel(req.Type)},
 		Target:     target,
+		Job:        req.JobName, // 作业内扫描按任务名分类(2026-09-25 三轮)
 		Assets:     ips,
 		DurationMs: time.Since(startedAt).Milliseconds(),
 		Summary:    fmt.Sprintf("%d 个漏洞 / %d 个资产 / %d 台存活", nVuln, nAsset, len(alive)),
@@ -347,13 +362,22 @@ func buildRawWeakpassReport(run *authCheckRun) *report.RawReport {
 		"results": snap.Results,
 		"audit":   snap.Audit,
 	}
+	title := fmt.Sprintf("弱口令报告 %s", time.Now().Format("2006-01-02 15:04"))
+	if snap.Job != "" {
+		title = fmt.Sprintf("弱口令报告 %s · %s", snap.Job, time.Now().Format("15:04"))
+	}
+	tags := []string{"弱口令"}
+	if snap.Job != "" {
+		tags = append(tags, "扫描任务")
+	}
 	return &report.RawReport{
 		Module:    report.RawModWeakPass,
-		Title:     fmt.Sprintf("弱口令报告 %s", time.Now().Format("2006-01-02 15:04")),
+		Title:     title,
 		Source:    "local",
 		Operator:  currentUser(),
 		CreatedAt: time.Now(),
-		Tags:      []string{"弱口令"},
+		Tags:      tags,
+		Job:       snap.Job, // 扫描任务名(原始报告按任务名分类; 空 = 独立检测)
 		Assets:    ips,
 		Summary:   fmt.Sprintf("%d 个目标, %d 个命中", len(snap.Results), found),
 		Stats: report.RawStats{
@@ -362,6 +386,56 @@ func buildRawWeakpassReport(run *authCheckRun) *report.RawReport {
 		},
 		Payload: rawJSON(payload),
 	}
+}
+
+// savePentaRawReport 渗透任务执行完成 → 原始报告(module=penta, job=任务名)。
+// 2026-09-25 起工作台的渗透执行也按任务名自动存档(原先只有被删掉的作业编排
+// 存渗透原始报告) —— "原始报告按任务名分类"对渗透同样成立。
+// autoSaveRawReport 内部已检查开关/空 payload; 失败只记日志, 不影响执行结果。
+func savePentaRawReport(d *db.Database, task *penta.Task) {
+	if task == nil {
+		return
+	}
+	hits := 0
+	for _, s := range task.Evidence {
+		if s.Hit {
+			hits++
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"task": map[string]any{
+			"id": task.ID, "name": task.Name, "target": task.Target, "port": task.Port,
+			"protocol": task.Protocol, "templateId": task.TemplateID,
+			"exploitability": task.Exploitability, "summary": task.Summary,
+			"riskLevel": task.RiskLevel, "job": task.Job,
+		},
+		"steps": task.Evidence,
+		"log":   task.RunLog,
+	})
+	createdAt := time.Now()
+	if !task.FinishedAt.IsZero() {
+		createdAt = task.FinishedAt
+	}
+	title := fmt.Sprintf("渗透验证 %s:%d", task.Target, task.Port)
+	if task.Job != "" {
+		title = fmt.Sprintf("渗透验证 %s · %s", task.Job, task.Target)
+	}
+	autoSaveRawReport(d, &report.RawReport{
+		Module:    report.RawModPenta,
+		Title:     title,
+		Source:    "local",
+		Operator:  task.Operator,
+		CreatedAt: createdAt,
+		Tags:      []string{"渗透"},
+		Job:       task.Job,
+		Assets:    []string{task.Target},
+		Summary:   fmt.Sprintf("可利用性: %s; %s (命中 %d/%d 步)", orEmpty(task.Exploitability), task.Summary, hits, len(task.Evidence)),
+		Stats: report.RawStats{
+			Items: len(task.Evidence),
+			Extra: map[string]int{"hits": hits},
+		},
+		Payload: rawJSON(payload),
+	})
 }
 
 // buildRawMonitorReport 节点监控(SNMP) → 原始报告。
@@ -597,6 +671,7 @@ func hRawList(w http.ResponseWriter, r *http.Request) {
 	tag := strings.TrimSpace(q.Get("tag"))
 	asset := strings.ToLower(strings.TrimSpace(q.Get("asset")))
 	keyword := strings.ToLower(strings.TrimSpace(q.Get("keyword")))
+	job := strings.TrimSpace(q.Get("job")) // 2026-09-25 三轮: 按扫描作业名分类
 	var from, to time.Time
 	if s := q.Get("from"); s != "" {
 		from, _ = time.ParseInLocation("2006-01-02", s, time.Local)
@@ -619,6 +694,9 @@ func hRawList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if module != "" && rr.Module != module {
+			continue
+		}
+		if job != "" && rr.Job != job {
 			continue
 		}
 		if tag != "" && !containsStr(rr.Tags, tag) {
@@ -683,6 +761,43 @@ func hRawDelete(w http.ResponseWriter, r *http.Request) {
 	server.OK(w, map[string]any{"deleted": id})
 }
 
+// hRawBatchDelete POST /api/v2/raw/batch-delete {ids} 批量删除选中的原始报告。
+//
+// 与 hRawDelete 同权限(adminOrOperator); 上限 500(与 penta/assets 批量删除同口径)。
+// 逐条删、单条失败不阻断其余; 审计一条汇总留痕(批量"删了哪些"可追溯)。
+func hRawBatchDelete(w http.ResponseWriter, r *http.Request) {
+	d := v2DB()
+	if d == nil || d.RawReports() == nil {
+		server.Fail(w, http.StatusServiceUnavailable, server.CodeDBUnavailable, "报告中心未启用")
+		return
+	}
+	var in struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || len(in.IDs) == 0 {
+		server.FailBadRequest(w, "ids 不能为空")
+		return
+	}
+	if len(in.IDs) > 500 {
+		server.FailBadRequest(w, "单次批量上限 500 条")
+		return
+	}
+	seen := make(map[string]bool, len(in.IDs))
+	n := 0
+	for _, id := range in.IDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		if ok, err := d.RawReports().Delete(id); err == nil && ok {
+			n++
+		}
+	}
+	logAudit(d, r, "rawreport.batch_delete", "", fmt.Sprintf("批量删除 %d/%d 条", n, len(seen)))
+	server.OK(w, map[string]any{"ok": true, "deleted": n})
+}
+
 // hRawMerge POST /api/v2/raw/merge —— 多选合并为一份汇总报告。
 //
 // 合并口径见 report.MergeRawReports: 按模块分组 + 原文照搬 + 资产/标签并集 +
@@ -724,45 +839,6 @@ func hRawMerge(w http.ResponseWriter, r *http.Request) {
 	server.OK(w, map[string]any{"id": merged.ID, "report": d.RawReports().ReleasePayload(merged)})
 }
 
-// hRawSnapshot POST /api/v2/raw/snapshot —— 手动存快照。
-//
-// 服务连续采样类模块: 周期性轮询不自动存档(60s 一轮会刷屏), 用户按需
-// 在节点监控页点"存快照到报告中心"。module 只接受 monitor(SNMP 监控) /
-// collect(节点采集) 两类 —— 其余模块的原始报告由各自的执行完成钩子产出,
-// 不开放客户端直接投递(防伪造"扫描报告"进入报告中心)。
-func hRawSnapshot(w http.ResponseWriter, r *http.Request) {
-	d := v2DB()
-	if d == nil || d.RawReports() == nil {
-		server.Fail(w, http.StatusServiceUnavailable, server.CodeDBUnavailable, "报告中心未启用")
-		return
-	}
-	var in struct {
-		Module string `json:"module"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
-	in.Module = strings.TrimSpace(in.Module)
-	var rr *report.RawReport
-	switch in.Module {
-	case report.RawModMonitor:
-		rr = buildRawMonitorReport(currentUser())
-	case "collect":
-		rr = buildRawCollectReport(currentUser())
-	default:
-		server.FailBadRequest(w, "快照仅支持 monitor / collect 两类连续采样模块")
-		return
-	}
-	if rr == nil {
-		server.Fail(w, http.StatusConflict, server.CodeConflict, "当前无可保存的快照(未配置目标或尚无采集数据)")
-		return
-	}
-	if err := saveRawReport(d, rr); err != nil {
-		server.FailInternal(w, "快照保存失败: "+err.Error())
-		return
-	}
-	logAudit(d, r, "rawreport.snapshot", rr.ID, in.Module)
-	server.OK(w, map[string]any{"id": rr.ID, "report": d.RawReports().ReleasePayload(rr)})
-}
-
 // hRawOptions GET /api/v2/raw/options —— 筛选选项与模块计数。
 func hRawOptions(w http.ResponseWriter, r *http.Request) {
 	d := v2DB()
@@ -778,6 +854,7 @@ func hRawOptions(w http.ResponseWriter, r *http.Request) {
 	modCount := map[string]int{}
 	tagSet := map[string]bool{}
 	assetSet := map[string]bool{}
+	jobSet := map[string]bool{}
 	var oldest, newest time.Time
 	for _, rr := range list {
 		if rr == nil {
@@ -790,6 +867,9 @@ func hRawOptions(w http.ResponseWriter, r *http.Request) {
 		for _, a := range rr.Assets {
 			assetSet[a] = true
 		}
+		if rr.Job != "" {
+			jobSet[rr.Job] = true // 2026-09-25 三轮: 原始报告按作业名分类
+		}
 		if oldest.IsZero() || rr.CreatedAt.Before(oldest) {
 			oldest = rr.CreatedAt
 		}
@@ -797,14 +877,20 @@ func hRawOptions(w http.ResponseWriter, r *http.Request) {
 			newest = rr.CreatedAt
 		}
 	}
-	modules := make([]map[string]any, 0, len(report.RawModules))
+	// 2026-10-02 用户口径: 筛选选项基于当前数据里存在的才出现 —— 全量模块里
+	// 没数据的(如用户删光了某类原始报告)不进选项, 后期有了再出现。
+	// (tags/assets/jobs 本就由存量报告聚合, 天然动态, 只有 modules 曾是固定全量)
+	modules := make([]map[string]any, 0)
 	for _, m := range report.RawModules {
-		modules = append(modules, map[string]any{"id": m, "label": report.RawModuleLabel(m), "count": modCount[m]})
+		if modCount[m] > 0 {
+			modules = append(modules, map[string]any{"id": m, "label": report.RawModuleLabel(m), "count": modCount[m]})
+		}
 	}
 	server.OK(w, map[string]any{
 		"modules": modules,
 		"tags":    setToSorted(tagSet),
 		"assets":  setToSorted(assetSet),
+		"jobs":    setToSorted(jobSet),
 		"dateRange": map[string]any{
 			"from": fmtT(oldest),
 			"to":   fmtT(newest),
@@ -869,6 +955,9 @@ func registerRawReportRoutes(srv *server.Server) {
 	srv.Get("/api/v2/raw/options", raw(hRawOptions))
 	srv.Get("/api/v2/raw/{id}", raw(hRawGet))
 	srv.Delete("/api/v2/raw/{id}", raw(hRawDelete))
+	// 批量删除选中(前端"删除选中"按钮): 精确路径优先于 {id} 模式, 无冲突
+	// 2026-10-02 用户口径: 节点监控(monitor/collect)不生成原始报告(只记日志),
+	// 原 POST /api/v2/raw/snapshot "存快照"端点随口径删除; 存量历史报告不受影响。
+	srv.Post("/api/v2/raw/batch-delete", raw(hRawBatchDelete))
 	srv.Post("/api/v2/raw/merge", raw(hRawMerge))
-	srv.Post("/api/v2/raw/snapshot", raw(hRawSnapshot))
 }

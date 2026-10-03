@@ -103,12 +103,15 @@ func TestAnalyzeFullPipeline(t *testing.T) {
 		t.Fatalf("analyze: %v", err)
 	}
 
-	// system 边界恒定
-	if !strings.Contains(cap.system, "不生成或执行任何 POC") {
+	// system 边界恒定(2026-09-27: 断言对齐 analyze.go 现行文案
+	// "不生成/执行任何 POC" —— 旧断言写"或", 与常量 "/" 分叉导致恒失败)
+	if !strings.Contains(cap.system, "不生成/执行任何 POC") {
 		t.Fatalf("system 边界缺失: %s", cap.system)
 	}
-	// 模板渲染: 默认抓包模板的标题 + 时间 + 资产
-	if !strings.Contains(cap.user, "实时抓包结果") || !strings.Contains(cap.user, "10.0.0.1") {
+	// 模板渲染: 默认抓包模板的数据段标题 + 时间 + 资产
+	// (2026-09-27: 旧断言"实时抓包结果"随模板文案重调失效, 改锚定现行
+	// 稳定段标"抓包数据" —— 守"数据确实注入"的契约, 不锁死具体措辞)
+	if !strings.Contains(cap.user, "抓包数据") || !strings.Contains(cap.user, "10.0.0.1") {
 		t.Fatalf("模板渲染缺失: %s", cap.user)
 	}
 	if !strings.Contains(cap.user, "2026-09-23 10:00:00") {

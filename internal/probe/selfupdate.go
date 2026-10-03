@@ -20,6 +20,7 @@ package probe
 
 import (
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -60,7 +61,18 @@ func (u *SelfUpdater) client() *http.Client {
 		return u.Client
 	}
 	// 更新包 6-7MB, 内网传输够用; 超时设 60s 避免大包或慢网被误断。
-	return &http.Client{Timeout: 60 * time.Second}
+	//
+	// InsecureSkipVerify: 中心端启用自签 HTTPS 后, 探针按 GetUIURL(https://) 下载
+	// 更新包, 自签证书无法通过系统根链校验 —— 若不跳过, 下载必失败("自动更新
+	// 失败: x509: certificate signed by unknown authority"), 探针自动更新整体
+	// 失效。这与扫描器访问目标站点同一口径(内网自签是既定部署形态)。中心端仍是
+	// 明文 HTTP 时该配置无副作用(不触发 TLS 握手), 行为零变化。
+	return &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
 }
 
 // Apply 执行更新指令: 下载 → 校验 → 替换当前可执行文件。

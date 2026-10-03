@@ -211,6 +211,9 @@ type Config struct {
 	Memory    MemoryConfig               `json:"memory"`
 	Embedding EmbeddingConfig            `json:"embedding"`
 	Reranker  RerankerConfig             `json:"reranker"`
+	// Assistant 小 Y 问答助手(2026-09-27): 独立于模块开关的助手级配置。
+	// 旧配置无 assistant 键 → 零值 = 关闭 + 默认 PROMPT, 升级零影响。
+	Assistant AssistantConfig `json:"assistant"`
 }
 
 // 默认值(先填这些, 再被 JSON 覆盖)。

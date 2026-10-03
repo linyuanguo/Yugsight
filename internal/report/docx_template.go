@@ -21,21 +21,29 @@ import (
 // BuiltinWordTemplateName 内置 Word 模板的名称(模板下拉框固定项)。
 const BuiltinWordTemplateName = "builtin"
 
+// DefaultWordTemplateName 内置默认模板的磁盘名(启动自动生成, 受保护: 不可编辑/删除)。
+// 它是 BuiltinWordTemplate 的落盘副本, 在模板管理里作为"内置默认"展示; 报告生成直接用 builtin。
+const DefaultWordTemplateName = "default"
+
 // ContentMarker 章节注入标记。
 const ContentMarker = "{{content}}"
 
 // BuiltinWordTemplate 内置 Word 模板: 封面(标题/副标题/报告人/工具/时间/风险)
-// + {{content}} 章节注入位。用户不上传任何模板时的默认来源。
+// + 分页 + {{content}} 章节注入位。用户不上传任何模板时的默认来源。
+//
+// 2026-09-25 改版(用户反馈"Word 好难看"): 封面标题用主题色大字, 封面与正文
+// 分页(此前封面与章节挤在同一页, 首屏像未排版); 章节侧的表头底纹/等级着色
+// 见 docx_sections.go。
 func BuiltinWordTemplate() []Block {
 	return []Block{
-		{Kind: "p", Style: "Title", Align: "center", Runs: []Run{{Text: "{{title}}", Size: 44}}},
-		{Kind: "p", Align: "center", Runs: []Run{{Text: "{{subtitle}}", Color: "6B7280"}}},
+		{Kind: "p", Align: "center", Runs: []Run{{Text: "{{title}}", Size: 44, Bold: true, Color: "1F3A5F"}}},
+		{Kind: "p", Align: "center", Runs: []Run{{Text: "{{subtitle}}", Size: 24, Color: "6B7280"}}},
 		{Kind: "p", Runs: []Run{}},
-		{Kind: "p", Align: "center", Runs: []Run{{Text: "报告人: {{operator}}"}}},
-		{Kind: "p", Align: "center", Runs: []Run{{Text: "检测工具: {{tool}}"}}},
-		{Kind: "p", Align: "center", Runs: []Run{{Text: "生成时间: {{time}}"}}},
-		{Kind: "p", Align: "center", Runs: []Run{{Text: "整体风险: {{risk}} (评分 {{score}}/100)", Bold: true}}},
-		{Kind: "p", Runs: []Run{}},
+		{Kind: "p", Align: "center", Runs: []Run{{Text: "报告人: {{operator}}", Size: 24}}},
+		{Kind: "p", Align: "center", Runs: []Run{{Text: "检测工具: {{tool}}", Size: 24}}},
+		{Kind: "p", Align: "center", Runs: []Run{{Text: "生成时间: {{time}}", Size: 24}}},
+		{Kind: "p", Align: "center", Runs: []Run{{Text: "整体风险: {{risk}} (评分 {{score}}/100)", Size: 24, Bold: true, Color: "B91C1C"}}},
+		{Kind: "p", Runs: []Run{{PageBreak: true}}},
 		{Kind: "p", Runs: []Run{{Text: ContentMarker, Color: "9CA3AF"}}},
 	}
 }
@@ -54,7 +62,10 @@ func ReplacePlaceholders(blocks []Block, values map[string]string) []Block {
 			for i, row := range b.Rows {
 				cells := make([]Cell, len(row.Cells))
 				for j, c := range row.Cells {
-					cells[j] = Cell{Width: c.Width, Runs: replaceRuns(c.Runs, values)}
+					// 2026-09-25 修: 重建单元格时漏抄 Shd —— 报告生成必过本函数
+					// (封面占位符替换), 章节表格的表头底纹(如漏洞明细 F3F4F6)
+					// 在这里被整个洗掉, 用户看到的 Word 表格全是无底纹的
+					cells[j] = Cell{Width: c.Width, Shd: c.Shd, Runs: replaceRuns(c.Runs, values)}
 				}
 				rows[i] = Row{Cells: cells}
 			}
@@ -168,7 +179,8 @@ func tableBlock(header []string, rows [][]string) Block {
 	if len(header) > 0 {
 		var hr Row
 		for _, h := range header {
-			hr.Cells = append(hr.Cells, Cell{Runs: []Run{{Text: h, Bold: true}}})
+			// 表头底纹: 纯文字表格在 Word 里全白一片, 表头是唯一的结构线索
+			hr.Cells = append(hr.Cells, Cell{Runs: []Run{{Text: h, Bold: true}}, Shd: "F3F4F6"})
 		}
 		b.Rows = append(b.Rows, hr)
 	}

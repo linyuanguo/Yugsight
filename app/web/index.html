@@ -156,6 +156,15 @@
     box-shadow: 0 0 14px rgba(99, 102, 241, .22);
   }
 
+  /* ===== 手机端(2026-09-27): 顶栏 chip 全是 nowrap 且 header 不 wrap, 窄屏直接
+     横向溢出/截断 —— 允许顶栏换行 + 收紧内边距; 标签页本身已 flex-wrap。 */
+  @media (max-width: 768px) {
+    header { flex-wrap: wrap; padding: 10px 14px; }
+    .h-right { flex-wrap: wrap; gap: 6px; }
+    .wrap { padding: 14px 12px 40px; }
+    .tab { padding: 8px 12px; font-size: 12.5px; }
+  }
+
   .card {
     background: linear-gradient(180deg, rgba(22, 32, 56, .55), rgba(13, 20, 36, .55)), var(--panel);
     border: 1px solid var(--border); border-radius: 12px;
@@ -866,7 +875,13 @@
     </div>
   </div>
 
-  <div class="footer" id="verInfo">Yugsight · 开源协议 MIT</div>
+  <!-- 品牌自定义(2026-09-28): 主行 = brand 节 copyright(缺省 = 原始项目版权,
+       JS 用 /api/info.brandCopyright 覆盖); 下方极小字 = 原始项目署名, 固定
+       不可配置(合规保留, 见 brand.go originalName) -->
+  <div class="footer">
+    <div id="brandFoot">Copyright © 2026 Yugsight</div>
+    <div id="brandFootSub" style="font-size:11px;opacity:.65">基于 Yugsight 御视 引擎构建</div>
+  </div>
 </div>
 
 <!-- 报告弹窗 -->
@@ -2645,9 +2660,12 @@ async function loadLocal() {
       lt.style.display = '';
     }
     if (d.version) {
-      $('verInfo').textContent = 'Yugsight v' + d.version + ' · 开源协议 MIT';
       $('verBadge').textContent = 'v' + d.version;
     }
+    // 品牌自定义(2026-09-28): 标签页标题 = 系统名称; 页脚主行 = 版权文字
+    // (brand 节缺省时后端返回原始项目默认值, 与静态兜底一致)
+    if (d.brandName) document.title = d.brandName;
+    if (d.brandCopyright) $('brandFoot').textContent = d.brandCopyright;
     if (d.vulnRules) $('vulnHint').textContent = '漏洞库: 已加载 ' + d.vulnRules + ' 条规则(内置 + vuln/ 目录)';
     // Nuclei 模板状态: 默认启用(带 -no-nuclei 启动时关闭); 展示内置/外部分量
     if (d.nucleiEnabled) {

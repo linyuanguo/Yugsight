@@ -156,8 +156,8 @@ func TestSettingsFallbackToLegacy(t *testing.T) {
 	// settings.json 存在但不含 capture 节
 	writeTestSettings(t, `{"screen":{"metrics":true}}`)
 
-	// 旧文件里有 capture 配置
-	legacy := filepath.Join(filepath.Dir(settingsFilePath()), "capture.json")
+	// 旧文件里有 capture 配置(生产实际落在 exe 同目录, 而非 settings 所在的 data/)
+	legacy := filepath.Join(exeDir(), "capture.json")
 	if err := os.WriteFile(legacy, []byte(`{"capture":{"loopDetect":true}}`), 0o600); err != nil {
 		t.Fatalf("写 capture.json 失败: %v", err)
 	}
@@ -180,8 +180,8 @@ func TestSettingsPriority(t *testing.T) {
 	withTempExeDir(t)
 	writeTestSettings(t, `{"screen":{"metrics":true}}`)
 
-	// 旧文件里放相反的值
-	legacy := filepath.Join(filepath.Dir(settingsFilePath()), "screen.json")
+	// 旧文件里放相反的值(生产实际落在 exe 同目录, 而非 settings 所在的 data/)
+	legacy := filepath.Join(exeDir(), "screen.json")
 	if err := os.WriteFile(legacy, []byte(`{"metrics":false}`), 0o600); err != nil {
 		t.Fatalf("写 screen.json 失败: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestEngineConfigFromSettings(t *testing.T) {
 	writeTestSettings(t, `{"engine":{"enabled":true,"engines":["nmap"],"downloads":{"autoInstall":true}}}`)
 
 	cfg := loadEngineConfig()
-	if !cfg.Enabled {
+	if !engineOn(cfg) {
 		t.Fatal("engine.enabled 未生效")
 	}
 	if len(cfg.Engines) != 1 || cfg.Engines[0] != "nmap" {

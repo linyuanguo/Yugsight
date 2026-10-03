@@ -134,6 +134,10 @@ type Params struct {
 	IP      string `json:"ip,omitempty"`      // port/host 类型的单 IP
 	CIDR    string `json:"cidr,omitempty"`    // ip/alive 类型的网段
 	URL     string `json:"url,omitempty"`     // web 类型的目标 URL
+	// JobID/JobName 扫描任务名(2026-09-25: 控制台的命名扫描排队后仍带标记,
+	// 派发执行时由 runScanPipeline 统一登记/打标记, 调度层只透传不解释)。
+	JobID   string `json:"jobId,omitempty"`
+	JobName string `json:"jobName,omitempty"`
 	Ports   string `json:"ports,omitempty"`   // 端口范围 "22,80,443" / "1-1024"
 	Timeout int    `json:"timeoutMs,omitempty"`
 	// Concurrency 单任务并发度(连接数)。注意与"发包速率"是两个维度:
@@ -163,6 +167,13 @@ type Params struct {
 	// WebDeep Web 深度扫描(仅 web 类型有效): 开启后追加同源爬虫 + POST +
 	// 多类型注入探测。默认 false —— 请求量远大于单 URL 扫描, 需显式开启。
 	WebDeep bool `json:"webdeep,omitempty"`
+
+	// TrivyTarget/TrivyArgs trivy SCA(仅 image/fs/container 类型有效, 2026-09-27
+	// 补齐排队链路: 此前排队任务的 trivy 目标根本传不到执行层 —— 中心本地执行
+	// 报"任务目标为空", 下发探针同样失败)。留空 = 自动枚举本机 Docker 镜像/
+	// 容器(中心本地在中心枚举, 下发探针在探针主机枚举, 见 app 层自动枚举逻辑)。
+	TrivyTarget string `json:"trivyTarget,omitempty"`
+	TrivyArgs   string `json:"trivyArgs,omitempty"`
 }
 
 // ===== 事件 =====

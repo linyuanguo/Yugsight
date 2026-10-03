@@ -56,6 +56,13 @@ func OptionsFromArgs(args map[string]any, base Config) Config {
 	// SYN 扫描默认关闭(项目规则 5): 它依赖管理员权限与系统策略, 默认开启会让
 	// "不支持的环境"每次都多走一遍失败的原始套接字创建。必须中心端显式下发。
 	cfg.EnableSynScan = boolArg(args, "synscan", false)
+	// 2026-09-27: ARP 异常监测时长(kind=arp; 上限 600s 防误操作挂死探针)
+	if n, ok := intArg(args, "arpDuration"); ok && n > 0 {
+		if n > arpWatchMaxSec {
+			n = arpWatchMaxSec
+		}
+		cfg.ArpDurationSec = n
+	}
 	if s, ok := strArg(args, "nucleiTags"); ok {
 		cfg.NucleiTags = splitCSV(s)
 	}

@@ -89,15 +89,20 @@ func syncAuthStore(username, plainPass string, enabled bool) {
 	authSaveFunc()
 }
 
-// kickUserSessions 吊销某用户的全部内存会话(authStore 侧; db 侧由 KickUser 负责)。
-func kickUserSessions(username string) {
+// kickUserSessions 吊销某用户的全部内存会话(authStore 侧; db 侧由 KickUser 负责),
+// 返回被吊销的个数。两类调用方: ①用户删除/改密码(个数忽略); ②登录成功时的
+// 单会话限制(auth.go, 用个数写审计"挤下线 N 个旧会话")。
+func kickUserSessions(username string) int {
 	authMu.Lock()
 	defer authMu.Unlock()
+	n := 0
 	for tok, rec := range sessions {
 		if rec.user == username {
 			delete(sessions, tok)
+			n++
 		}
 	}
+	return n
 }
 
 // handleUsersCollection 同路径 GET(列表) / POST(创建) 按方法分发。

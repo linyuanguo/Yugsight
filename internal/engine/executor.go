@@ -451,6 +451,16 @@ func (e *Executor) killTree(id string) {
 	}
 }
 
+// BinPath 同步探测引擎二进制的可执行路径(与 Run 内部 findBin 同一套查找: bin/ →
+// 套装子目录 → 系统 PATH)。
+//
+// 导出给 main 扫描管线在执行前预判引擎是否可用: 引擎缺失时直接走内置引擎,
+// 避免 orchestrator 降级先跑一遍兜底端口探测、再由内置流程重扫的重复。
+// 返回错误 = 引擎未安装(可选外部资源, 调用方降级即可, 不 panic)。
+func (e *Executor) BinPath(name string) (string, error) {
+	return e.findBin(name)
+}
+
 // findBin 按 envdetect 约定在 bin/ 目录查找引擎二进制:
 // 精确匹配 <前缀>[.exe] 优先, 否则取任意以 <前缀> 开头的可执行文件
 // (nmapcore / nmapcore.exe / nmap-7.94.exe 均可命中)。

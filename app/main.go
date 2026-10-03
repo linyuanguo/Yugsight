@@ -23,6 +23,8 @@ import (
 	"text/template"
 	"time"
 
+	"yugsight/internal/db"
+	"yugsight/internal/dockerlist"
 	"yugsight/internal/engine"
 	"yugsight/internal/envdetect"
 	"yugsight/internal/pathrel"
@@ -42,7 +44,7 @@ const (
 	displayCnName = "御视 (Yugsight)"
 )
 
-// appVersion 当前构建的版本号(形如 1.0.0, 展示在 UI / 报告 / 探针上报里)。
+// appVersion 当前构建的版本号(纯数字, 形如 106, 展示时各显示点自行拼 v 前缀 = v106)。
 //
 // 【为什么是 var 而不是 const】构建脚本通过
 // `-ldflags "-X main.appVersion=<ver>"` 注入, 而 ldflags 只能改写**变量**。
@@ -51,8 +53,8 @@ const (
 // 【默认值的作用】直接用 `go build`(不经过 scripts/build.ps1)时拿到的就是这个
 // 兜底值, 保证任何构建方式都能编译出可运行程序, 只是版本号不随构建自增。
 //
-// 自增规则见 version.go: 末位 +1, 到 9 则进位(1.0.0.9 -> 1.0.1.0), 由构建脚本落盘。
-var appVersion = "1.0.0"
+// 自增规则见 scripts/version.ps1: 纯数字 +1(106 -> 107), 由构建脚本落盘。
+var appVersion = "106"
 
 var (
 	// logOut 日志文件写入器(带轮转)。nil 表示日志只走控制台 —— 文件打开失败时
@@ -170,7 +172,8 @@ func dirIsDir(p string) bool {
 //	   res/           内置数据资源(geoip/ globe/ report_templates/ web/, build.ps1 镜像)
 //	② 配置与扫描过的信息(分发时删除):
 //	   settings.json + data/(含 scanctl/ cache/) + logs/
-//	另有用户自管的可选目录: bin/(外部引擎) agents/(探针包) —— 不属于以上两类, 位置不变。
+//	另有用户自管的可选目录: bin/(外部引擎) 与 data/agents/(探针包, 2026-09-29 起
+//	随 data/ 归拢; cert/ 同理在 data/cert/) —— 分发时按需取舍。
 //
 // 迁移规则: 旧目录存在且新目录不存在 → rename(新旧同属 exe 目录, 同卷原子操作);
 // 新旧并存 → 跳过并提示人工处理(绝不自动删除任何用户数据)。
@@ -253,6 +256,10 @@ func main() {
 	// dist 目录整理: 旧布局的散落目录一次性迁进新布局(vuln/ res/ data/), 必须在
 	// CPE/Nuclei 等按新路径读盘的模块之前执行
 	migrateLegacyDirs()
+	// 2026-09-28 品牌自定义配套: settings.json 不存在时自动生成全模块完整
+	// 默认配置。必须在 loadAuth/initDefaultAccount 之前 —— 后者写 auth 节
+	// 会创建 settings.json, 导致完整配置生成被跳过(见 settings_defaults.go)。
+	ensureSettingsDefaults()
 	// 默认自动提权到管理员(ICMP ping 等探测需要), -no-admin 或已提权(-elevated)跳过。
 	// 必须先提权再做单实例检查: 否则 UAC re-exec 时, 新(管理员)进程会读到原进程
 	// 尚未释放的互斥量, 误判"已在运行"而退出; 原进程随后也退出 => 双击后无进程存活(闪退)
@@ -346,6 +353,10 @@ func main() {
 	// "启动时打印是否启用"口径一致)。
 	instanceCaptureConfig()
 
+	// 报告 Word 模板目录(data/outp): 启动即确保存在, 缺失时生成默认模板
+	// (2026-09-25 用户口径)。纯本地文件操作, 失败只记日志不阻塞启动。
+	ensureWordTplDir()
+
 	// 引擎自动补装(可选, 默认关闭): engine.json 的 downloads.autoInstall=true 时,
 	// 启动后后台把"缺失且当前平台可下载"的引擎自动装进 ./bin/。异步执行不阻塞启动;
 	// 关闭时不发任何请求(项目规则 5)。
@@ -416,14 +427,17 @@ func main() {
 	mux.HandleFunc("/api/auth/2fa/disable", handle2FADisable)
 	mux.HandleFunc("/api/whoami", handleWhoami)
 	mux.HandleFunc("/api/logout", handleLogout)
-	mux.HandleFunc("/api/quit", handleQuit) // 免登录: 登录页底部与授权管理页"服务管理"卡各有一个停止入口
+	mux.HandleFunc("/api/quit", handleQuit) // 免登录: 登录页底部与授权与模型页"服务管理"卡各有一个停止入口
 	// 用户管理(RBAC): 除 /me 外全部 adminOnly —— 账号体系是"提权红线",
 	// operator/auditor 都不能碰: 否则可自建 admin 账号自我提权。
-	// 前端授权管理页(/license)对非 admin 隐藏 + 路由守卫, 这里是不依赖前端的兜底。
+	// 前端授权与模型页(/license)对非 admin 隐藏 + 路由守卫, 这里是不依赖前端的兜底。
 	mux.HandleFunc("/api/v2/users", requireAuth(adminOnly(handleUsersCollection)))
 	mux.HandleFunc("/api/v2/users/me", requireAuth(handleUsersMe))
 	// {name} 同路径承载 PUT(更新)与 DELETE(删除), 按方法分发
 	mux.HandleFunc("/api/v2/users/{name}", requireAuth(adminOnly(handleUsersManage)))
+	// HTTPS 访问白名单(授权与模型页): 空 = 不限制, 配 IP/网段 = 只放行列表内来源。
+	// GET 读(requireAuth), POST 写(adminOnly); 同路径按方法分发; 保存即热加载(见 https_api.go)。
+	mux.HandleFunc("/api/v2/https", requireAuth(hHttps))
 	mux.HandleFunc("/api/scan", requireAuth(adminOrOperator(handleScan))) // 触发扫描=写操作
 	mux.HandleFunc("/api/nuclei/reload", requireAuth(adminOrOperator(handleNucleiReload)))
 	mux.HandleFunc("/api/rules/update/status", requireAuth(handleRulesUpdateStatus))
@@ -511,8 +525,17 @@ func main() {
 	mux.HandleFunc("/app/", handleVueApp)
 	// 任务 10d: 3D 地球 IP 流向 + globe 静态资源(走根 mux, 不在 /api/v2/ 子树下)
 	registerDashboardRoutes(mux)
+	// 节点告警推送(2026-09-28): /api/node/push/* 走根 mux(前端 v2dash 不带 /api/v2 前缀)
+	registerNodePushRoutes(mux)
+
+	// /static/ 静态下载(证书信任工具 YugsightCertTool.exe / 根证书 rootCA.crt):
+	// 登录页"安装证书/手动导入"的下载目标。放根 mux(与 /api/v2/ 等平级)。
+	mux.HandleFunc("/static/", handleStatic)
 
 	localIP := scanner.LocalIP()
+	// rootHandler 是对外服务的最终封装: 安全兜底(panic 恢复) + HSTS(仅 HTTPS 请求)。
+	// HSTS 挂在最外层, 所有接口响应统一带上, 不漏任何路由。
+	rootHandler := hstsHandler(safeHandler(mux))
 	// 默认绑定 0.0.0.0(全部网卡): 监听范围不再取决于启动瞬间探测到的那个 IP。
 	// 【为什么不绑单个 IP】实测机器 DHCP 换租 / VPN 插拔导致地址变化后, 进程还活着、端口
 	// 也还"在听", 但当初绑定的地址已不属于本机 → 浏览器与 curl 一律超时, 只能重启进程,
@@ -527,26 +550,35 @@ func main() {
 	scheme := "http"
 	addr, p, err := "", 0, error(nil)
 	if tlsCfg.Enabled {
-		addr, p, err = startTLSServer(safeHandler(mux), *port, bindHost, tlsCfg)
-		if err != nil {
-			// 配置了 TLS 但证书缺失/损坏/不配对: 降级 HTTP 继续跑(规则 3),
-			// 明文凭据风险记日志提醒修证书, 而不是让服务直接起不来。
-			logLine("TLS 启动失败, 降级为 HTTP(凭据为明文传输): " + err.Error())
-			addr, p, err = startServer(safeHandler(mux), *port, bindHost)
+		// 启动前确认证书就绪: 走默认路径且缺失时自动签发根 CA + 服务端证书, 根证书
+		// 落 data/cert/rootCA.crt(登录页"手动导入/安装证书"的下载来源, 见 static_api.go)。
+		// 用户显式指定证书而缺失 → 不可用, 走下方降级 HTTP(不覆盖用户证书)。
+		if ready, msg := ensureTLSAssets(tlsCfg); !ready {
+			logLine("TLS 不可用, 降级为 HTTP(凭据为明文传输): " + msg)
+			addr, p, err = startServer(rootHandler, *port, bindHost)
 		} else {
-			scheme = "https"
-			logLine("TLS 已启用: 证书 " + tlsCfg.Cert + " (自签证书浏览器会提示不受信任, 点继续即可)")
-			// HTTP 强制跳转(功能审计 1b): 旧书签/文档里的 http:// 地址访问时
-			// 301 到 https 主服务, 而不是让浏览器报"连接错误"。
-			if raddr, _, rerr := startHTTPRedirectServer(p, *port, bindHost); rerr == nil {
-				logLine(fmt.Sprintf("HTTP %s 已启用 301 强制跳转至 HTTPS %s", raddr, addr))
+			logLine("TLS 证书就绪: " + msg)
+			// 记录是否自签证书(登录页据此引导"安装根证书"; 用户自带 CA 证书不引导)。
+			// 2026-09-29: 改解析证书本身判定 —— 此前靠 msg 含"自签"两字, 证书已存在时
+			// (每次重启)文案是"已有证书"标志恒 false, 登录页引导丢失(实机复现)。
+			tlsSelfSignedActive = certIsSelfSigned(tlsCfg.effectiveCert())
+			addr, p, err = startTLSServer(rootHandler, *port, bindHost, tlsCfg)
+			if err != nil {
+				// 证书加载/端口监听失败: 降级 HTTP 继续跑(规则 3), 明文凭据风险记日志
+				// 提醒修证书, 而不是让服务直接起不来。
+				logLine("TLS 启动失败, 降级为 HTTP(凭据为明文传输): " + err.Error())
+				addr, p, err = startServer(rootHandler, *port, bindHost)
 			} else {
-				logLine("HTTP 跳转服务启动失败(不影响 HTTPS 直接访问): " + rerr.Error())
+				scheme = "https"
+				logLine("TLS 已启用: 证书 " + tlsCfg.effectiveCert() + " (自签证书浏览器会提示不受信任, 登录页将引导安装根证书)")
+				// 2026-09-29 用户要求: 彻底去掉 HTTP —— 不再起 HTTP 301 跳转监听,
+				// 只保留 HTTPS 一个端口, http:// 访问直接协议不匹配失败。
+				// startHTTPRedirectServer 保留在 tls.go, 需要时恢复调用即可。
 			}
 		}
 	}
 	if err == nil && addr == "" {
-		addr, p, err = startServer(safeHandler(mux), *port, bindHost)
+		addr, p, err = startServer(rootHandler, *port, bindHost)
 	}
 	if err != nil {
 		logLine("启动失败: " + err.Error())
@@ -560,6 +592,8 @@ func main() {
 	// 保存天数裁剪循环(启动清一次老数据, 之后每小时一次)。
 	logAudit(v2DB(), nil, "system.startup", displayCnName, fmt.Sprintf("version=%s port=%d bind=%s", appVersion, p, addr))
 	startAuditRetentionLoop()
+	// 重启残留任务清理: 上次运行中/待执行的扫描任务统一置失败(详见 scan_history.go 注释)
+	cleanupStaleRunningScanTasks()
 	// 地址常显: 上面这行会在后续日志里被顶出可视区, 关掉网页后就找不回来了。
 	// 把地址写进控制台标题栏(常驻不滚屏)并在 quitCh 建好后启动 O 键快捷打开。
 	// 必须在 startServer 成功之后调: 端口顺延后的真实端口此刻才确定。
@@ -570,7 +604,7 @@ func main() {
 	}
 	// 控制台窗口只显示日志, 启动即最小化: 双击部署的用户习惯"等页面弹出就关黑窗口",
 	// 若关窗即停服务, 页面会莫名空白(实测高频发生)。关窗=服务留后台;
-	// 停服务走网页"停止服务"(免登录, 入口在登录页底部链接与授权管理页"服务管理"卡片 ——
+	// 停服务走网页"停止服务"(免登录, 入口在登录页底部链接与授权与模型页"服务管理"卡片 ——
 	// 2026-09-21 从顶栏移入该页降低误触)或恢复窗口后 Ctrl+C。
 	logLine("提示: 关闭此窗口不停止服务(后台继续); 停止服务用网页\"停止服务\"或恢复窗口后 Ctrl+C")
 	minimizeConsoleWindow()
@@ -613,10 +647,13 @@ func handleInfo(w http.ResponseWriter, r *http.Request) {
 			list = append(list, x)
 		}
 	}
+	brand := loadBrand() // 品牌自定义: 页面标题/页脚展示用(缺省 = 原始项目品牌)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"name":                 appName,
 		"version":              appVersion,
+		"brandName":            brand.SystemName,
+		"brandCopyright":       brand.Copyright,
 		"localIP":              ip,
 		"ipList":               list,
 		"hostname":             hostname,
@@ -779,7 +816,7 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleQuit 从 Web 界面停止整个服务(POST /api/quit, 免登录;
-// 入口是登录页底部链接与授权管理页"服务管理"卡片)
+// 入口是登录页底部链接与授权与模型页"服务管理"卡片)
 func handleQuit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -910,12 +947,34 @@ func scanTarget(req scanReq) string {
 	return strings.TrimSpace(req.IP)
 }
 
+// splitMultiTarget 多目标字段(逗号/空格分隔)切分成目标列表(2026-09-25:
+// 控制台命名扫描支持一次输入多个 IP/子网/域名)。
+func splitMultiTarget(s string) []string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == ';'
+	})
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 type scanReq struct {
 	Type        string `json:"type"` // ip | port | web | host
 	IP          string `json:"ip"`
 	CIDR        string `json:"cidr"`
 	Ports       string `json:"ports"`
 	URL         string `json:"url"`
+	// trivy SCA(2026-09-26): image/fs/container 类型的扫描目标 —— Docker 镜像名
+	// (如 nginx:1.25) 或 本地文件/目录路径(如 ./myapp)。网络扫描类型此字段为空。
+	TrivyTarget string `json:"trivyTarget,omitempty"`
+	// trivy 额外参数(2026-09-26): 透传给 trivy(探针下发 + 本地执行), 空格分隔。
+	// 典型: --scanners misconfig,secret(只跑配置+密钥, 无需漏洞 DB —— 内网/受限
+	// 环境拉不下 100MB+ 的 trivy-db 时仍能扫) / --severity CRITICAL,HIGH。
+	TrivyArgs   string `json:"trivyArgs,omitempty"`
 	TimeoutMs   int    `json:"timeoutMs"`
 	Concurrency int    `json:"concurrency"`
 	// Nuclei 外部模板扫描(仅 host 类型有效, 需全局开关 -nuclei 同时开启):
@@ -959,10 +1018,19 @@ type scanReq struct {
 	// 入队, 由调度器按并发/限速/节点派发。
 	Queue bool `json:"queue"`
 
-	// 外部引擎编排(默认 false): 为 true 且 engine 总开关 enabled=true 时,
-	// host/port/web 交给 engine/parsers 编排器执行, 失败自动回落内置流程。
-	// 默认关闭 → 零行为变化(见 scan_engine.go)。
-	UseEngine bool `json:"useEngine"`
+	// 引擎选择(2026-09-26): 按扫描类型让用户自选"探测/主引擎"(scan_engine.go 的
+	// resolveScanEngine 解析)。取值:
+	//   host/port: "builtin"(默认) / "nmap"  |  web: "builtin"(默认) / "zap"  |  image/fs: "trivy"
+	// 空值 = 内置(默认, 快); 显式传 "nmap"/"zap"/"trivy" 才走对应外部引擎。
+	// 与 UseEngine 的关系: Engine 优先; UseEngine 是老布尔覆盖(兼容脚本); 都未指定=内置。
+	Engine    string `json:"engine,omitempty"`
+	UseEngine *bool  `json:"useEngine,omitempty"`
+	// 引擎多选(2026-09-26): 前端"内置 + 外部引擎"同时勾选时传该列表(如
+	// ["builtin","nmap"] / ["builtin","zap"])。每个引擎独立跑完整流程, 结果并入
+	// 同一 sink —— 落库时 normalizer 稳定合并键天然去重(同资产+同漏洞不重复增长)。
+	// 与 Engine 的关系: Engines 有 2+ 有效项 = 多引擎模式(无跨引擎回落);
+	// 恰好 1 项或空 = 回退老语义(Engine/UseEngine/默认内置, 含外部失败回落内置)。
+	Engines []string `json:"engines,omitempty"`
 	// 调度参数(仅 queue=true 时有效): 策略模板 / 执行节点 / 优先级 / 自动重试。
 	Strategy  string `json:"strategy"`
 	QueueNode string `json:"queueNode"`
@@ -974,6 +1042,18 @@ type scanReq struct {
 	// 探测(scanner.WebScanDeep)。默认关闭 —— 爬取会发起数十倍于单 URL 的请求,
 	// 时间盲注还要等服务端延时, 必须显式开启(项目规则 5)。
 	WebDeep bool `json:"webdeep"`
+
+	// 扫描作业(2026-09-25 三轮): 作业编排的每个阶段扫描带这两个字段 ——
+	// JobID 让落库结果带 "job-<id>" 批次标记(漏洞 ScanTaskID / 资产 Jobs),
+	// 报告中心按作业过滤时据此关联; JobName 让原始报告按作业名分类。
+	// 普通 /api/scan 请求两字段为空, 行为与之前完全一致。
+	JobID   string `json:"jobId"`
+	JobName string `json:"jobName"`
+
+	// noHistory 内部标记(无 json tag, 前端不可见): 调度器本地执行路径
+	// (execOnLocal)置 true —— 该路径的记录已由 persistSchedTask 按调度器任务 ID
+	// 落库, runScanPipeline 再登记会产生同一次扫描两条历史。
+	noHistory bool
 }
 
 const defaultHostPorts = "21,22,23,25,53,80,110,135,139,143,443,445,465,587,993,995,1433,1521,3306,3389,5432,5900,6379,8080,8443,9200,27017"
@@ -1072,6 +1152,15 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 	// 扫描结束入审计(与 handleScan 的 scan.start 配对): 耗时 + 是否被取消。
 	// 无 HTTP 上下文(调度器派发路径) r=nil, 来源 IP 留空。
 	scanStartAt := time.Now()
+	// 2026-09-26: 扫描历史登记(用户口径"扫描记忆, 便于查看和重新扫描")——
+	// 此前只有调度器直提交/探针下发两条路径落 scan_tasks 表, 控制台立即扫描
+	// 从不登记, 历史全靠原始报告(报告一删就没了)。现在每次立即扫描都登记:
+	// Params 存完整 scanReq JSON("重扫"直接按原参数重放), 状态收尾时回写。
+	var scanHistID string
+	scanFailed := false
+	if !req.noHistory {
+		scanHistID = registerScanHistory(req)
+	}
 	defer func() {
 		extra := ""
 		if ctx.Err() != nil {
@@ -1079,7 +1168,45 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 		}
 		logAudit(v2DB(), nil, "scan.finish", scanTarget(req),
 			fmt.Sprintf("type=%s elapsed=%s%s", req.Type, time.Since(scanStartAt).Round(time.Second), extra))
+		if scanHistID != "" {
+			st := db.TaskSuccess
+			if ctx.Err() != nil {
+				st = db.TaskCancelled
+			} else if scanFailed {
+				st = db.TaskFailed
+			}
+			finishScanHistory(scanHistID, st, "")
+		}
 	}()
+	// 2026-09-27: 本地扫描取消入口(用户口径: 扫描历史页"取消"按钮, 见 scan_history.go
+	// 的 hV2ScanCancel)。派生 ctx 的取消函数登记到注册表(键=历史 ID), 取消 API 即可
+	// 从外部中断本次扫描(ctx 已下传扫描引擎, 停得掉)。
+	// 调度器路径(noHistory=true)不包: 它的 ctx 归调度器所有(调度器自带取消/超时),
+	// 这里包一层会切断那套语义。
+	// defer 顺序: 本 defer 后注册先执行 —— 先取消/摘除登记, 上面回写状态的 defer
+	// 再观察到 ctx.Err() != nil 落 cancelled, 顺序正确。
+	if scanHistID != "" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		registerScanCancel(scanHistID, cancel)
+		defer func() {
+			cancel()
+			unregisterScanCancel(scanHistID)
+		}()
+	}
+
+	// 任务名(2026-09-25 用户口径: 扫描任务基于控制台的立即扫描, 先输入任务名):
+	// 带任务名的扫描统一打标记 —— 漏洞 ScanTaskID="job-<任务名>"、资产 Jobs 含
+	// <任务名>、原始报告 Job=<任务名>, 报告中心据此"按任务名生成报告/按任务名
+	// 分类原始报告"。同名任务的多个步骤(快速发现→主机漏扫→web漏扫)共享同一标记,
+	// 结果可整体关联。登记(幂等 upsert)失败只记日志不阻断扫描(登记簿是索引不是
+	// 执行依赖)。扫描控制台/调度排队两条路径都经本函数, 口径一致。
+	if name := strings.TrimSpace(req.JobName); name != "" && validTaskName(name) {
+		req.JobID = name
+		if _, err := registerScanTask(name, scanTarget(req)); err != nil {
+			logLine("任务名登记失败(不影响扫描): " + err.Error())
+		}
+	}
 
 	// AI 后置分析(可选): 开启时顺带收集 finding 事件, 任务结束后做批量风险汇总。
 	var aiVulnMu sync.Mutex
@@ -1094,15 +1221,19 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 	case "host":
 		targetIP = strings.TrimSpace(req.IP)
 	case "web":
-		if u, uerr := url.Parse(strings.TrimSpace(req.URL)); uerr == nil {
-			targetIP = u.Hostname()
-			targetPort = 80
-			if u.Scheme == "https" {
-				targetPort = 443
-			}
-			if _, p, perr := net.SplitHostPort(u.Host); perr == nil {
-				if n, aerr := strconv.Atoi(p); aerr == nil {
-					targetPort = n
+		// 2026-09-25 用户口径: web 漏扫支持多个域名(逗号/空格分隔), 控制台
+		// "下一步 web 漏扫"会一次带多台主机。targetIP 只取第一个(审计/sink 兜底用)。
+		if ws := splitMultiTarget(req.URL); len(ws) > 0 {
+			if u, uerr := url.Parse(ws[0]); uerr == nil {
+				targetIP = u.Hostname()
+				targetPort = 80
+				if u.Scheme == "https" {
+					targetPort = 443
+				}
+				if _, p, perr := net.SplitHostPort(u.Host); perr == nil {
+					if n, aerr := strconv.Atoi(p); aerr == nil {
+						targetPort = n
+					}
 				}
 			}
 		}
@@ -1116,7 +1247,14 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 			if port == 0 {
 				port = targetPort
 			}
-			if wlHit, wlEntry, fpsRule := ctl.CheckFinding(targetIP, port, cve, title); wlHit {
+			// IP 归属: 优先 finding 自带的 host(多目标主机漏扫时 targetIP 是
+			// 拼接串, 直接拿去匹配白名单 IP 规则必不命中 → 白名单静默失效),
+			// 无 host 才回退扫描目标 IP(单目标时两者等价, 行为不变)。
+			fip := findingHost(data)
+			if fip == "" {
+				fip = targetIP
+			}
+			if wlHit, wlEntry, fpsRule := ctl.CheckFinding(fip, port, cve, title); wlHit {
 				logLine(fmt.Sprintf("白名单命中, 自动过滤: %s (类型 %s / %s)", title, wlEntry.Type, wlEntry.Match))
 				emit("status", map[string]any{"msg": "白名单命中, 已自动过滤: " + title})
 				return
@@ -1159,32 +1297,187 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 	}
 
 	fail := func(msg string) {
+		scanFailed = true // 扫描历史登记口径: 中途失败如实落 failed(不静默记成功)
 		emit("status", map[string]any{"msg": "错误: " + msg})
 		emit("done", map[string]any{"msg": "扫描终止"})
 	}
 
-	// 引擎编排(scan_engine.go, 默认关闭): useEngine 且 engine.enabled 同时为真时
-	// host/port/web 走外部引擎; 降级时返回 false, 继续走下方内置流程。
-	if req.UseEngine && engineEnabled() && engineScanType(req.Type) {
-		if runEngineScan(ctx, req, sink, emitAI) {
-			sink.flush()
-			// 报告中心二期: 原始报告自动存档(best-effort 异步, 不拖慢 SSE 收尾)
-			if rr := buildRawScanReport(req, sink, scanStartAt); rr != nil {
-				autoSaveRawReport(v2DB(), rr)
-			}
-			emit("done", map[string]any{"msg": "全部完成"})
+	// trivy SCA(2026-09-26): image/fs/container 的目标 = Docker 镜像名 / 本地路径 /
+	// 容器名。2026-09-27 口径放宽: image/container 允许留空 = 自动枚举本机全部
+	// Docker 镜像/运行中容器逐个扫描(用户不知道本机有哪些镜像时也能扫, 见下方
+	// SCA 自动枚举); fs 仍必须显式给路径("扫所有目录"没有意义), 缺失提前报错。
+	if req.Type == "fs" && strings.TrimSpace(req.TrivyTarget) == "" {
+		fail("文件扫描需要指定目标: 本地文件/目录路径(如 ./myapp、/opt/repo)")
+		return
+	}
+
+	// SCA 自动枚举(2026-09-27): image/container 目标留空 = 本机 docker images /
+	// docker ps 全部枚举, 逐个扫描。只在中心本地执行时展开(docker 就在中心本机);
+	// 下发探针时不展开 —— probeTarget 传"自动枚举"占位, 探针收到任务后在自己主机上
+	// 枚举(trivy 与 docker 都在探针主机, 无需跨机查询通道)。
+	var scaAuto []string
+	if (req.Type == "image" || req.Type == "container") && strings.TrimSpace(req.TrivyTarget) == "" &&
+		strings.TrimSpace(req.ExecAt) != "probe" {
+		label, sub := "Docker 镜像", "images"
+		if req.Type == "container" {
+			label, sub = "运行中容器", "ps"
+		}
+		emit("status", map[string]any{"msg": "未指定目标, 自动枚举本机" + label + "(docker " + sub + ")..."})
+		var err error
+		if req.Type == "image" {
+			scaAuto, err = dockerlist.ListImages(ctx)
+		} else {
+			scaAuto, err = dockerlist.ListContainers(ctx)
+		}
+		if err != nil {
+			fail("自动枚举" + label + "失败: " + err.Error() + " —— 可手动指定目标后重扫")
 			return
 		}
+		if len(scaAuto) == 0 {
+			fail("本机没有可扫的" + label + "(docker " + sub + " 为空) —— 可手动指定目标后重扫")
+			return
+		}
+		emit("status", map[string]any{"msg": fmt.Sprintf("检测到 %d 个%s, 将逐个扫描: %s", len(scaAuto), label, strings.Join(scaAuto, ", "))})
+	}
+
+	// 引擎编排(scan_engine.go): 单引擎模式保持老语义(显式 Engine / 老 UseEngine /
+	// 默认内置; 外部引擎失败回落内置); 多引擎模式(前端"内置+外部"同时勾选,
+	// Engines 2+ 项)各引擎独立按序执行、互不回落, 结果并入同一 sink ——
+	// 落库经 normalizer 稳定合并键去重(同资产+同漏洞跨引擎不重复增长)。
+	// SCA 自动枚举(2026-09-27)时按目标逐个执行本段: 每目标一次完整引擎流程,
+	// 结果并入同一 sink; 收尾(flush/报告/done)统一放到目标循环之后, 不在段内 return。
+	engineHandled := false
+	runBuiltin := true // 内置 switch 是否执行: 单引擎=老逻辑(外部处理完已收尾); 多引擎=用户是否勾选内置
+	multi := false
+	runEngineSection := func(r scanReq) {
+		engList := resolveScanEngineList(r)
+		multi = len(engList) > 1
+		runBuiltin = !multi
+		if multi {
+			for _, eng := range engList {
+				if eng == "" {
+					runBuiltin = true // 内置由下方 switch 承担, 顺序保持用户勾选顺序
+					continue
+				}
+				if ctx.Err() != nil {
+					break
+				}
+				// 分引擎进度: status 事件带 engine 字段(前端按引擎着色/标记),
+				// msg 内也带 [引擎名] 前缀(经典页等只读文本的客户端同样可辨认)。
+				engEmit := func(event string, data any) {
+					if m, ok := data.(map[string]any); ok {
+						m["engine"] = eng
+					}
+					emitAI(event, data)
+				}
+				emit("status", map[string]any{"msg": "[" + eng + "] 开始外部引擎扫描: " + engineTarget(r), "engine": eng})
+				c := r
+				c.Engine = eng
+				runEngineScan(ctx, c, sink, engEmit) // 多引擎模式: 独立执行, 失败只记日志(不跨引擎回落)
+				if ctx.Err() == nil {
+					emit("status", map[string]any{"msg": "[" + eng + "] 外部引擎执行结束", "engine": eng})
+				}
+			}
+			if ctx.Err() != nil {
+				emit("status", map[string]any{"msg": "扫描已取消, 跳过剩余引擎"})
+				runBuiltin = false
+			}
+		} else if engineScanActive(r) {
+			// 单引擎: 外部引擎(含老回落语义), 行为与改造前一致
+			if runEngineScan(ctx, r, sink, emitAI) {
+				engineHandled = true
+				runBuiltin = false
+			}
+		}
+	}
+	if len(scaAuto) > 0 {
+		for i, tgt := range scaAuto {
+			if ctx.Err() != nil {
+				emit("status", map[string]any{"msg": "扫描已取消, 跳过剩余目标"})
+				runBuiltin = false
+				break
+			}
+			emit("status", map[string]any{"msg": fmt.Sprintf("[%d/%d] 扫描目标: %s", i+1, len(scaAuto), tgt)})
+			r := req
+			r.TrivyTarget = tgt
+			runEngineSection(r)
+		}
+	} else {
+		runEngineSection(req)
+	}
+	if engineHandled {
+		sink.flush()
+		// 报告中心二期: 原始报告自动存档(best-effort 异步, 不拖慢 SSE 收尾)
+		if rr := buildRawScanReport(req, sink, scanStartAt); rr != nil {
+			autoSaveRawReport(v2DB(), rr)
+		}
+		emit("done", map[string]any{"msg": "全部完成"})
+		return
+	}
+
+	// 收尾(单/多引擎共用): AI 批量汇总 → 落库 → 原始报告存档 → done。
+	// 闭包捕获本轮状态(hostAssets/aiVulns/scanStartAt), 单引擎路径行为与改造前完全一致。
+	finishScan := func() {
+		// AI 批量风险汇总(可选, host/web 类型): 复用扫描 SSE 推送 "ai" 事件(流式),
+		// 失败只提示不阻断, 结果不改动任何漏洞判定
+		if aiAn.Enabled() && (req.Type == "host" || req.Type == "web") &&
+			(len(hostAssets) > 0 || len(aiVulns) > 0) {
+			emit("status", map[string]any{"msg": "AI 批量风险汇总中(可能需要数十秒)..."})
+			if _, err := aiAn.AnalyzeScanBatchStream(toPtrs(hostAssets), toPtrs(aiVulns), emit); err != nil {
+				emit("status", map[string]any{"msg": "AI 汇总失败: " + err.Error()})
+			}
+		}
+		sink.flush() // 扫描结果落 v2 库(失败只记日志, 不影响既有 SSE 流程)
+		// 报告中心二期: 原始报告自动存档(best-effort 异步, 不拖慢 SSE 收尾)
+		if rr := buildRawScanReport(req, sink, scanStartAt); rr != nil {
+			autoSaveRawReport(v2DB(), rr)
+		}
+		emit("done", map[string]any{"msg": "全部完成"})
+		// 报告引擎 autoGenerate 开关打开时, 扫描结束自动归档一份报告(异步, 默认关闭)
+		scanTarget := req.IP
+		if req.CIDR != "" {
+			scanTarget = req.CIDR
+		}
+		if req.URL != "" {
+			scanTarget = req.URL
+		}
+		maybeAutoGenerateReport(req.Type, scanTarget)
+	}
+
+	// 多引擎模式下用户未勾内置(当前 UI 多选必含内置, 仅 API 直调 Engines 可能
+	// 组合出纯外部): 跳过内置流程直接收尾 —— 外部引擎结果照常落库/存档。
+	if !runBuiltin {
+		finishScan()
+		return
+	}
+
+	// 多引擎模式: 内置分支打 [内置] 边界标记, 与外部引擎的 [nmap]/[zap] 标记
+	// 配套, 前端按 engine 字段着色 —— "分引擎进度"在日志流里一眼可分。
+	if multi {
+		emit("status", map[string]any{"msg": "[内置] 开始内置引擎扫描: " + engineTarget(req), "engine": "builtin"})
 	}
 
 	switch req.Type {
 	case "ip", "alive":
 		// "alive" 是 "ip" 的别名(与探针下发口径一致): 两者都支持网段与单 IP,
 		// 区别只在探测范围的默认值, 见下方补默认端口的判定
-		hosts, err := scanner.ParseHosts(req.CIDR)
-		if err != nil {
-			fail(err.Error())
-			return
+		// 2026-09-27 全扫(any): 目标填 any 时不指定网段, 自动探测执行节点
+		// 本地网络环境的全部网段(本地执行=中心端网卡, 见 scan_any.go)
+		var hosts []string
+		var err error
+		if IsAnyAliveTarget(req.CIDR) {
+			hosts, _, err = ExpandAnyAliveHosts()
+			if err != nil {
+				fail(err.Error())
+				return
+			}
+			emit("status", map[string]any{"msg": "全扫: 已自动探测本地网段 " + strings.Join(AnyAliveCIDRs(), ", ")})
+		} else {
+			hosts, err = scanner.ParseHosts(req.CIDR)
+			if err != nil {
+				fail(err.Error())
+				return
+			}
 		}
 		probe, perr := scanner.ParsePorts(req.Ports)
 		inferredPorts := false // 端口由"目标形态"推断而非用户显式指定
@@ -1205,7 +1498,10 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 			msg += "(默认端口)"
 		}
 		emit("status", map[string]any{"msg": msg})
-		alive, excluded := scanner.ScanIPsWithDetail(ctx, hosts, probe, conc, timeout, strict, emit)
+		// 2026-09-25 修"明明存活却显示未存活": 存活扫描的 ip 事件必须走
+		// emitAI(带 sink 收集) —— 此前传裸 emit, 事件只推 SSE 不落库,
+		// 资产表 Alive 与原始报告"X 台存活"永远拿不到存活扫描的结果
+		alive, excluded := scanner.ScanIPsWithDetail(ctx, hosts, probe, conc, timeout, strict, emitAI)
 		summary := fmt.Sprintf("扫描结束: 存活 %d / %d", alive, len(hosts))
 		if excluded > 0 {
 			summary += fmt.Sprintf(" (另有 %d 台仅探测端口开放, 按严格判定未计入)", excluded)
@@ -1237,7 +1533,8 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 			msg += "(默认端口)"
 		}
 		emit("status", map[string]any{"msg": msg})
-		alive, excluded, openPorts, elapsed := scanner.UnifiedScan(ctx, hosts, probe, mode, conc, timeout, emit)
+		// 同 ip 分支: 走 emitAI 让 ip/port 事件进 sink(存活回写资产表)
+		alive, excluded, openPorts, elapsed := scanner.UnifiedScan(ctx, hosts, probe, mode, conc, timeout, emitAI)
 		var summary string
 		if mode == scanner.AliveModeNone {
 			summary = fmt.Sprintf("统一扫描结束: 开放端口 %d 个, 耗时 %s", openPorts, elapsed)
@@ -1260,7 +1557,8 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 			return
 		}
 		emit("status", map[string]any{"msg": fmt.Sprintf("开始扫描 %s 的 %d 个端口", ip, len(ports))})
-		results := scanner.ScanPorts(ctx, ip, ports, timeout, conc, emit)
+		// 同 ip 分支: port 事件进 sink(开放端口 = 存活证据, 回写资产表)
+		results := scanner.ScanPorts(ctx, ip, ports, timeout, conc, emitAI)
 		open := 0
 		for _, r := range results {
 			if r.State == "open" {
@@ -1282,71 +1580,98 @@ func runScanPipeline(ctx context.Context, req scanReq, emit func(string, any)) {
 				}
 			}
 		}
-		scanner.WebScan(req.URL, emitAI, ruleFilter)
-		// 深度扫描(开关 webdeep, 默认关): 关闭时上面一行就是全部行为, 零变化
-		if req.WebDeep {
-			scanner.WebScanDeep(req.URL, emitAI, ruleFilter)
-		}
-		// Web 扫描不返回资产指纹, 从 URL 补一个(供 AI 批量汇总)
-		if u, err := url.Parse(strings.TrimSpace(req.URL)); err == nil && u.Host != "" {
-			port := 80
-			if u.Scheme == "https" {
-				port = 443
+		// 2026-09-25 用户口径: 多域名逐个串行扫(WebScan 是单站点语义, 并发会让
+		// 不同站点的 finding 交错, host 归属补不回来)。
+		for _, u := range splitMultiTarget(req.URL) {
+			if ctx.Err() != nil {
+				break
 			}
-			if _, p, err := net.SplitHostPort(u.Host); err == nil {
-				if n, aerr := strconv.Atoi(p); aerr == nil {
-					port = n
+			// host 补全: web 扫描的 finding 不带 host(NewFinding 无 host 参数),
+			// 多域名时不补全会让第 2 个域名起的 finding 落库全归到第一个域名
+			// (sink 兜底用扫描目标 IP = 第一个域名)。
+			hostname := ""
+			if pu, perr := url.Parse(u); perr == nil {
+				hostname = pu.Hostname()
+			}
+			webEmit := func(event string, data any) {
+				if event == "finding" {
+					if f, ok := data.(scanner.Finding); ok && f.Host == "" {
+						f.Host = hostname
+						data = f
+					}
 				}
+				emitAI(event, data)
 			}
-			hostAssets = append(hostAssets, scanner.ServiceAsset{IP: u.Hostname(), Port: port, Scheme: u.Scheme, Product: "web"})
-			sink.addServiceAssets(hostAssets)
+			scanner.WebScan(u, webEmit, ruleFilter)
+			// 深度扫描(开关 webdeep, 默认关): 关闭时上一行就是全部行为, 零变化
+			if req.WebDeep {
+				scanner.WebScanDeep(u, webEmit, ruleFilter)
+			}
+			// Web 扫描不返回资产指纹, 从 URL 补一个(供 AI 批量汇总)
+			if pu, perr := url.Parse(u); perr == nil && pu.Host != "" {
+				port := 80
+				if pu.Scheme == "https" {
+					port = 443
+				}
+				if _, p, perr := net.SplitHostPort(pu.Host); perr == nil {
+					if n, aerr := strconv.Atoi(p); aerr == nil {
+						port = n
+					}
+				}
+				hostAssets = append(hostAssets, scanner.ServiceAsset{IP: pu.Hostname(), Port: port, Scheme: pu.Scheme, Product: "web"})
+			}
 		}
+		sink.addServiceAssets(hostAssets)
 	case "host":
-		ip := strings.TrimSpace(req.IP)
-		if net.ParseIP(ip) == nil {
-			fail("目标 IP 无效: " + req.IP)
+		// 2026-09-25 用户口径: 主机漏扫支持单 IP 或多 IP(逗号/空格分隔)。
+		// HostScan 是单机语义: 多 IP 逐台串行扫并聚合服务资产(并发会让不同
+		// 主机的 finding 交错, host 归属补不回来)。
+		hostIPs, herr := scanner.ParseHosts(req.IP)
+		if herr != nil {
+			fail(herr.Error())
 			return
 		}
 		ports, err := scanner.ParsePorts(req.Ports)
 		if err != nil {
 			ports, _ = scanner.ParsePorts(defaultHostPorts)
 		}
-		assets := scanner.HostScan(ctx, ip, ports, timeout, conc, emitAI)
-		hostAssets = assets
-		sink.addServiceAssets(assets)
+		for _, ip := range hostIPs {
+			if ctx.Err() != nil {
+				break
+			}
+			// host 补全: HostScan 的 finding 很多不带 host(EOL/组件漏洞等),
+			// 补当前扫描目标 —— 白名单 IP 匹配与落库资产归属都靠它。
+			hostEmit := func(event string, data any) {
+				if event == "finding" {
+					if f, ok := data.(scanner.Finding); ok && f.Host == "" {
+						f.Host = ip
+						data = f
+					}
+				}
+				emitAI(event, data)
+			}
+			assets := scanner.HostScan(ctx, ip, ports, timeout, conc, hostEmit)
+			hostAssets = append(hostAssets, assets...)
+		}
+		sink.addServiceAssets(hostAssets)
 		// Nuclei 外部模板扫描(可选插件): 全局开关 + 任务开关同时开启,
 		// 复用 HostScan 输出的服务资产(产品+版本指纹), 不重复探测端口
-		if nucleiOn && req.EnableNuclei && len(assets) > 0 {
-			runNucleiScan(assets, req, emitAI)
+		if nucleiOn && req.EnableNuclei && len(hostAssets) > 0 {
+			runNucleiScan(hostAssets, req, emitAI)
 		}
+	case "image", "fs", "container":
+		// 走到这里 = 上方 runEngineScan 已失败(trivy 未装或执行失败) —— 给明确报错。
+		// trivy 成功时已在上方 engineScanActive 分支 return, 不会落到这里。
+		fail("trivy 引擎不可用或执行失败: 请确认「引擎与规则」页已安装 trivycore, 且目标(镜像名/本地路径)有效")
+		return
 	default:
 		fail("未知扫描类型: " + req.Type)
 		return
 	}
-	// AI 批量风险汇总(可选, host/web 类型): 复用扫描 SSE 推送 "ai" 事件(流式),
-	// 失败只提示不阻断, 结果不改动任何漏洞判定
-	if aiAn.Enabled() && (req.Type == "host" || req.Type == "web") &&
-		(len(hostAssets) > 0 || len(aiVulns) > 0) {
-		emit("status", map[string]any{"msg": "AI 批量风险汇总中(可能需要数十秒)..."})
-		if _, err := aiAn.AnalyzeScanBatchStream(toPtrs(hostAssets), toPtrs(aiVulns), emit); err != nil {
-			emit("status", map[string]any{"msg": "AI 汇总失败: " + err.Error()})
-		}
+	if multi && ctx.Err() == nil {
+		emit("status", map[string]any{"msg": "[内置] 内置引擎执行结束", "engine": "builtin"})
 	}
-	sink.flush() // 扫描结果落 v2 库(失败只记日志, 不影响既有 SSE 流程)
-	// 报告中心二期: 原始报告自动存档(best-effort 异步, 不拖慢 SSE 收尾)
-	if rr := buildRawScanReport(req, sink, scanStartAt); rr != nil {
-		autoSaveRawReport(v2DB(), rr)
-	}
-	emit("done", map[string]any{"msg": "全部完成"})
-	// 报告引擎 autoGenerate 开关打开时, 扫描结束自动归档一份报告(异步, 默认关闭)
-	scanTarget := req.IP
-	if req.CIDR != "" {
-		scanTarget = req.CIDR
-	}
-	if req.URL != "" {
-		scanTarget = req.URL
-	}
-	maybeAutoGenerateReport(req.Type, scanTarget)
+	finishScan()
 }
 
 // toPtrs 值切片转指针切片(scanner AI 接口按指针接收)
@@ -1372,6 +1697,21 @@ func findingKeyInfo(data any) (title, cve string, port int) {
 	default:
 		return "", "", 0
 	}
+}
+
+// findingHost finding 自带的归属主机(白名单/落库 IP 维度用); 无则空串。
+func findingHost(data any) string {
+	switch f := data.(type) {
+	case scanner.Finding:
+		return f.Host
+	case scanner.NucleiFinding:
+		return f.Host
+	case map[string]any:
+		if h, ok := f["host"].(string); ok {
+			return h
+		}
+	}
+	return ""
 }
 
 // withFPFlag 给 finding 事件附加误报标记字段(保留原字段, 前端展示标记用)

@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"net"
 	"strings"
 	"time"
 
@@ -91,6 +92,30 @@ type AssetDAO struct {
 // CountWhere 单遍计数不构造切片(大屏 15s 轮询, 只为一个数字拷贝全表不划算)。
 func (d *AssetDAO) CountAlive() (int, error) {
 	return d.CountWhere(func(a *Asset) bool { return a.Alive })
+}
+
+// CountHosts 主机维度资产数: 只统计 IP 字段是合法 IP 的条目。
+//
+// 为什么需要单独的口径: 资产表是"资产台账"而非纯主机表 —— Trivy 镜像/文件
+// 扫描的工件(镜像名/路径, 见 engine/parsers/trivy.go)也按工件标识入账, 它们是
+// 合法资产(SCA 漏洞挂在它上面), 但不是主机。"资产总数(主机维度)"这类统计
+// 若用 Count() 会把 nginx:1.25-alpine 之类工件数进主机数, 与资产页"共 N 台
+// 主机"对不上, 用户会认为是数据错误。
+func (d *AssetDAO) CountHosts() (int, error) {
+	return d.CountWhere(func(a *Asset) bool { return net.ParseIP(a.IP) != nil })
+}
+
+// DeleteDead 删除所有未存活(Alive=false)资产, 返回删除条数(一次落盘)。
+//
+// 口径: 存活过的资产 Alive 永不翻案 —— upsertProbeAsset 合并时只有
+// `if a.Alive { cur.Alive = true }`(false 不覆盖历史 true), 所以 Alive=false
+// 恰好全是"从未存活过"的探测 IP(网段扫描探出来、从没响应过), 批量清理不会
+// 误删"扫描时上线、后来下线"的主机(它们 Alive 一直是 true)。
+//
+// 用 Purge 一次落盘而非逐条 Delete: 未存活动辄上百台, 逐条删 = 上百次全量
+// 写盘(O(N^2) IO)。
+func (d *AssetDAO) DeleteDead() (int, error) {
+	return d.Purge(func(a *Asset) bool { return !a.Alive })
 }
 
 // GetMany 按 IP 集合精确取资产(单遍遍历, 找齐即早退)。

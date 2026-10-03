@@ -38,6 +38,7 @@ type probeIngestStat struct {
 	Duplicates  int `json:"duplicates"`
 	FilteredWL  int `json:"filteredWl"` // 被白名单过滤的条数
 	FilteredFP  int `json:"filteredFp"` // 被误报规则过滤的条数
+	Ghosts      int `json:"ghosts"`     // 被代答幽灵判定剔除的资产数(见 arp_ghost.go)
 	PersistFail int `json:"persistFail"`
 }
 
@@ -81,6 +82,30 @@ func ingestProbeResult(probeID string, res *probe.TaskResult) *probeIngestStat {
 	nres := normalizer.NormalizeWithOptions(normalizer.Options{ScanID: report.ScanID}, batch)
 	if nres == nil {
 		return stat
+	}
+
+	// ---- 代答幽灵剔除(与本地扫描同口径; 探针无 ICMP 证据, 按开放端口判, 见 arp_ghost.go) ----
+	if arpGhostExcludeEnabled() {
+		kept, ghosts := filterProbeGhostAssets(nres.Assets)
+		nres.Assets = kept
+		stat.Ghosts = len(ghosts)
+		if len(ghosts) > 0 {
+			probeFlowLine(fmt.Sprintf("探针 %s 结果剔除 ARP 代答幽灵 %d 个: %s",
+				probeID, len(ghosts), joinIPsShort(ghosts)))
+		}
+	}
+
+	// ---- arp-watch 自我噪声剔除 ----
+	// 探针 ARP 监测把本地网段观测到的 IP+MAC 登记为资产(tag=arp-watch), 其中
+	// 探针自己的 IP 与默认网关是永久噪声: 网关是 proxy ARP 应答方永远 ping 不通,
+	// 探针自己观测到自己同样无意义 —— 不剔除, 资产表会常驻"永远不存活"的条目
+	// (2026-09-27 用户反馈: 仪表盘资产数与资产页对不上, 差值即此类噪声)。
+	// 剔除集来自探针注册上报的节点信息(LocalIPs/Gateway), 已落库; 取不到时
+	// 原样放行(降级为不剔除, 规则 4)。
+	if kept, dropped := filterArpWatchSelfAssets(probeID, nres.Assets); len(dropped) > 0 {
+		nres.Assets = kept
+		probeFlowLine(fmt.Sprintf("探针 %s 结果剔除 arp-watch 自我噪声 %d 个: %s",
+			probeID, len(dropped), joinIPsShort(dropped)))
 	}
 
 	// ---- 白名单 / 误报过滤(scanctl 本地规则, 与经典页扫描口径一致) ----
@@ -191,6 +216,73 @@ func filterProbeVulns(assets []*models.Asset, vulns []*models.Vuln, stat *probeI
 	return kept
 }
 
+// filterArpWatchSelfAssets 剔除带 arp-watch 标签且 IP 命中探针自身
+// (本机 IP / 默认网关) 的资产, 返回 (保留集, 剔除的 IP 列表)。
+//
+// 只动 arp-watch 标签的条目: 探针主动扫自己(如端口扫描目标填了自己)产出的
+// 资产是有意义的, 不能一并删。
+func filterArpWatchSelfAssets(probeID string, assets []*models.Asset) ([]*models.Asset, []string) {
+	self := probeSelfIPs(probeID)
+	if len(self) == 0 {
+		return assets, nil
+	}
+	out := make([]*models.Asset, 0, len(assets))
+	dropped := make([]string, 0)
+	for _, a := range assets {
+		if a == nil {
+			continue
+		}
+		if hasTag(a.Tags, "arp-watch") && self[models.NormIP(a.IP)] {
+			dropped = append(dropped, a.IP)
+			continue
+		}
+		out = append(out, a)
+	}
+	return out, dropped
+}
+
+// probeSelfIPs 探针自身 IP 集合(本机 IP + 默认网关), 来源: 探针注册时上报的
+// 节点信息(db 探针表 NodeInfo 字段)。任何一步取不到都返回空集 —— 调用方把空集
+// 解释为"不剔除"(降级, 规则 4)。
+func probeSelfIPs(probeID string) map[string]bool {
+	out := make(map[string]bool)
+	d := v2DB()
+	if d == nil {
+		return out
+	}
+	dao := d.Probes()
+	if dao == nil {
+		return out
+	}
+	p, err := dao.Get(probeID)
+	if err != nil || p == nil || p.NodeInfo == nil {
+		return out
+	}
+	// NodeInfo 声明为 any(保持 db 包对 probe 包零依赖), 这里按 JSON 形态取
+	// 需要的两个字段; 用中间结构体而非整体 Unmarshal 到 probe.NodeInfo,
+	// 避免 db 包与 probe 包的类型耦合。
+	var ni struct {
+		LocalIPs []string `json:"localIps"`
+		Gateway  string   `json:"gateway"`
+	}
+	b, err := json.Marshal(p.NodeInfo)
+	if err != nil {
+		return out
+	}
+	if json.Unmarshal(b, &ni) != nil {
+		return out
+	}
+	for _, ip := range ni.LocalIPs {
+		if ip = strings.TrimSpace(ip); ip != "" {
+			out[models.NormIP(ip)] = true
+		}
+	}
+	if gw := strings.TrimSpace(ni.Gateway); gw != "" {
+		out[models.NormIP(gw)] = true
+	}
+	return out
+}
+
 // persistProbeFindings 把归一化后的资产/漏洞写入 v2 数据库。
 //
 // 落库失败只记日志并计数(不阻断): 中心端可能未启用 v2 db(纯探针模式),
@@ -243,6 +335,9 @@ func upsertProbeAsset(dao *db.AssetDAO, probeID string, a *models.Asset) error {
 	if existing, err := dao.FindByIP(a.IP); err == nil && len(existing) > 0 {
 		cur := existing[0]
 		cur.AddTags(a.Tags...)
+		// 作业标记并集(2026-09-25 三轮: 一台机器被多个作业扫过 → Jobs 累积,
+		// 报告按作业过滤时才能把"历史被扫过"的资产也算进该作业范围)
+		cur.Jobs = mergeStrings(cur.Jobs, a.Jobs)
 		cur.Hostname = firstNonEmpty(cur.Hostname, a.Hostname)
 		cur.OS = firstNonEmpty(cur.OS, a.OS)
 		cur.MAC = firstNonEmpty(cur.MAC, a.MAC)
@@ -250,6 +345,14 @@ func upsertProbeAsset(dao *db.AssetDAO, probeID string, a *models.Asset) error {
 		cur.Service = firstNonEmpty(cur.Service, a.Service)
 		cur.Version = firstNonEmpty(cur.Version, a.Version)
 		cur.Banner = firstNonEmpty(cur.Banner, a.Banner)
+		// 2026-09-25 修"明明存活却显示未存活": 原合并漏了 Alive 字段, 既有资产行
+		// 的存活状态永远不更新(本轮确认存活也写不进去)。存活取"最近观测优先":
+		// 本轮确认存活(存活扫描/开放端口证据) → 置 true; 本轮为 false 时含义
+		// 有二义(确认下线 / 未观测存活), 不覆盖历史 true —— 资产表徽章表达
+		// "曾观测到存活", 当前实时状态看存活扫描报告/控制台。
+		if a.Alive {
+			cur.Alive = true
+		}
 		cur.ProbeNode = probeID
 		_, err = dao.Upsert(cur)
 		return err
@@ -292,6 +395,13 @@ func upsertProbeVuln(dao *db.VulnDAO, probeID string, v *models.Vuln) error {
 		if v.Confidence > cur.Confidence {
 			cur.Confidence = v.Confidence
 		}
+		// 最新批次归属: 再命中时把 ScanTaskID 更新为本轮批次(job-<id> / local-<ts> /
+		// 探针 ID)。否则"报告按作业生成"时, 作业复扫命中的既有漏洞仍挂着旧批次的
+		// ScanTaskID, 会被作业过滤漏掉(报告缺洞)。取最新归属与"作业刚扫完即出报告"
+		// 的用法一致; 旧作业的报告在其完成时已生成(已存档), 不受后续再扫影响。
+		if strings.TrimSpace(probeID) != "" {
+			cur.ScanTaskID = probeID
+		}
 		_, err = dao.Upsert(cur)
 		return err
 	}
@@ -323,6 +433,22 @@ func mergeInts(a, b []int) []int {
 				seen[v] = true
 				out = append(out, v)
 			}
+		}
+	}
+	return out
+}
+
+// mergeStrings 字符串切片并集(保持原顺序, 去重) —— 资产 Jobs 标记合并用。
+func mergeStrings(a, b []string) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, list := range [][]string{a, b} {
+		for _, v := range list {
+			if v == "" || seen[v] {
+				continue
+			}
+			seen[v] = true
+			out = append(out, v)
 		}
 	}
 	return out

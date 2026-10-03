@@ -31,8 +31,11 @@ type eventState struct {
 
 // DetectRound 一轮采集完成后判定事件, 返回要输出的事件(可能为空)。
 // st 是调用方(引擎)持有的该任务状态机。
+//
+// 阈值口径: cfg.AlertsFor(r.TaskID) —— 节点级覆盖(PerNode)优先, 0 值回落
+// 全局; 未配置 PerNode 时与旧行为完全一致。
 func DetectRound(st *eventState, cfg Config, r *Round) []Event {
-	cfg = cfg.WithDefaults()
+	a := cfg.AlertsFor(r.TaskID)
 	out := make([]Event, 0, 2)
 	emit := func(level, typ, msg string) {
 		out = append(out, Event{
@@ -45,7 +48,7 @@ func DetectRound(st *eventState, cfg Config, r *Round) []Event {
 	// ---- 在线状态 ----
 	if !r.OK {
 		st.failStreak++
-		if !st.offline && st.everOnline && st.failStreak >= cfg.Alerts.FailStreak {
+		if !st.offline && st.everOnline && st.failStreak >= a.FailStreak {
 			st.offline = true
 			emit(EvtCritical, EvtOffline, r.Err)
 		}
@@ -61,20 +64,20 @@ func DetectRound(st *eventState, cfg Config, r *Round) []Event {
 	// ---- 阈值(仅成功轮判定; 失败轮的指标不可信) ----
 	if r.OK {
 		if m := metricValue(r, "cpu"); m >= 0 && st.hadPrev &&
-			st.prevCPU < float64(cfg.Alerts.CPUPct) && m >= float64(cfg.Alerts.CPUPct) {
-			emit(EvtWarn, EvtHighCPU, fmt.Sprintf("CPU %.1f%% 超过阈值 %d%%", m, cfg.Alerts.CPUPct))
+			st.prevCPU < float64(a.CPUPct) && m >= float64(a.CPUPct) {
+			emit(EvtWarn, EvtHighCPU, fmt.Sprintf("CPU %.1f%% 超过阈值 %d%%", m, a.CPUPct))
 		}
 		if m := metricValue(r, "mem_used_pct"); m >= 0 && st.hadPrev &&
-			st.prevMem < float64(cfg.Alerts.MemPct) && m >= float64(cfg.Alerts.MemPct) {
-			emit(EvtWarn, EvtHighMem, fmt.Sprintf("内存 %.1f%% 超过阈值 %d%%", m, cfg.Alerts.MemPct))
+			st.prevMem < float64(a.MemPct) && m >= float64(a.MemPct) {
+			emit(EvtWarn, EvtHighMem, fmt.Sprintf("内存 %.1f%% 超过阈值 %d%%", m, a.MemPct))
 		}
-		if m := metricValue(r, "rtt_avg_ms"); m >= 0 && st.hadPrev && cfg.Alerts.RTTMs > 0 &&
-			st.prevRTT < float64(cfg.Alerts.RTTMs) && m >= float64(cfg.Alerts.RTTMs) {
-			emit(EvtWarn, EvtHighRTT, fmt.Sprintf("平均时延 %.0fms 超过阈值 %dms", m, cfg.Alerts.RTTMs))
+		if m := metricValue(r, "rtt_avg_ms"); m >= 0 && st.hadPrev && a.RTTMs > 0 &&
+			st.prevRTT < float64(a.RTTMs) && m >= float64(a.RTTMs) {
+			emit(EvtWarn, EvtHighRTT, fmt.Sprintf("平均时延 %.0fms 超过阈值 %dms", m, a.RTTMs))
 		}
-		if m := metricValue(r, "loss_pct"); m >= 0 && st.hadPrev && cfg.Alerts.LossPct > 0 &&
-			st.prevLoss < float64(cfg.Alerts.LossPct) && m >= float64(cfg.Alerts.LossPct) {
-			emit(EvtWarn, EvtHighLoss, fmt.Sprintf("丢包率 %.1f%% 超过阈值 %d%%", m, cfg.Alerts.LossPct))
+		if m := metricValue(r, "loss_pct"); m >= 0 && st.hadPrev && a.LossPct > 0 &&
+			st.prevLoss < float64(a.LossPct) && m >= float64(a.LossPct) {
+			emit(EvtWarn, EvtHighLoss, fmt.Sprintf("丢包率 %.1f%% 超过阈值 %d%%", m, a.LossPct))
 		}
 	}
 
@@ -94,3 +97,7 @@ func metricValue(r *Round, name string) float64 {
 	}
 	return -1
 }
+
+// MetricValue metricValue 的导出版(供装配层聚合用, 如拓扑链路严重度判定
+// 读最新样本的 CPU/内存)。无该指标返回 -1。
+func MetricValue(r *Round, name string) float64 { return metricValue(r, name) }

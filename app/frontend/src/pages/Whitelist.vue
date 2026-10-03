@@ -1,6 +1,6 @@
 <template>
   <div>
-    <PageHeader title="漏扫管控" desc="白名单 / 误报 / 置信度评分">
+    <PageHeader v-if="!props.embedded" title="漏扫管控" desc="白名单 / 误报 / 置信度评分">
       <span class="chip" :class="status && status.enabled ? 'on' : 'off'">
         {{ status && status.enabled ? '白名单已启用' : '白名单未启用(添加条目时自动开启)' }}
       </span>
@@ -174,6 +174,9 @@ import PageHeader from '../components/PageHeader.vue'
 import Empty from '../components/Empty.vue'
 import { api } from '../api/http'
 import { fmtDT, localToISO } from '../utils'
+
+// 2026-09-26 漏扫管控并入漏洞管理: embedded=true 时隐藏自身 PageHeader(由父页统一管理标题)
+const props = defineProps({ embedded: { type: Boolean, default: false } })
 
 const TYPE_NAME = { ip: 'IP', cidr: 'CIDR', port: '端口', cve: 'CVE', tag: '标签' }
 

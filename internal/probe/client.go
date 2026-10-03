@@ -2,6 +2,7 @@ package probe
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +25,13 @@ import (
 
 // ExecFunc 任务执行函数: 由上层注入(通常是"以探针身份跑一次本地扫描")。
 // 返回值 Result 为归一化后的结果; error 表示执行失败(仍会回传 failed 结果)。
-type ExecFunc func(t *TaskAssign, progress func(string)) (*TaskResult, error)
+//
+// ctx 契约(2026-09-27 修): 中心端取消(MsgTaskCancel)时 runTask 会取消该
+// context, 执行器必须尊重它 —— 扫描循环检查 ctx.Err() 提前返回, 外部引擎子进程
+// 经 exec.CommandContext 一并杀掉。此前签名无 ctx, 取消只让 runTask 的 select
+// 提前返回"已取消", 真正的扫描 goroutine 带着永不取消的 Background context 跑
+// 到底(用户点取消, 远端 trivy 还在一个镜像一个镜像地扫, 只能重启探针进程才停)。
+type ExecFunc func(ctx context.Context, t *TaskAssign, progress func(string)) (*TaskResult, error)
 
 // ProbeConfig 探针端配置(exe 同目录 probe.json 的 client 段)。
 type ProbeConfig struct {
@@ -35,6 +42,11 @@ type ProbeConfig struct {
 	Name         string `json:"name"`         // 节点别名(默认 hostname)
 	HeartbeatSec int    `json:"heartbeatSec"` // 心跳间隔(秒), 默认 15
 	ReconnectSec int    `json:"reconnectSec"` // 初始重连等待(秒), 默认 5
+	// 2026-09-26: 性能指标上报周期(秒), 默认 30 —— 心跳保持 HeartbeatSec 间隔
+	// (保活), 但 CPU/内存/磁盘IO/网络指标只在每 MetricsSec 秒窗口结束时附带
+	// 上报一次(用户口径"不要实时发, 累积 30 秒发一次, 时间中心端可下发")。
+	// 中心端可在注册应答里覆盖(Envelope.MetricsSec), 与 HeartbeatSec 同模式。
+	MetricsSec int `json:"metricsSec"`
 }
 
 // Probe 探针端运行时。
@@ -57,6 +69,11 @@ type Probe struct {
 
 	prevCPU CpuSample
 	startAt time.Time
+
+	// 2026-09-26: 最近一次指标采样的负载快照 —— 保活心跳复用(采样按 30s 批量,
+	// 但每次心跳都带最新指标, 中心端快照/大屏不会在"任务拍"与"指标拍"之间抖动)。
+	perfMu   sync.Mutex
+	lastPerf *Load
 
 	// dial 连接工厂: 默认走 TCP 拨号, 测试可替换为内存管道(见 withDialer)。
 	dial func(addr string) (net.Conn, error)
@@ -88,6 +105,9 @@ func NewProbe(cfg ProbeConfig, exec ExecFunc) *Probe {
 	}
 	if cfg.ReconnectSec <= 0 {
 		cfg.ReconnectSec = 5
+	}
+	if cfg.MetricsSec <= 0 {
+		cfg.MetricsSec = 30
 	}
 	id := strings.TrimSpace(cfg.ID)
 	if id == "" {
@@ -271,6 +291,9 @@ func (p *Probe) session() error {
 	if resp.HeartbeatSec > 0 {
 		p.cfg.HeartbeatSec = resp.HeartbeatSec
 	}
+	if resp.MetricsSec > 0 {
+		p.cfg.MetricsSec = resp.MetricsSec // 中心端统一下发指标上报周期(2026-09-26)
+	}
 	// 版本不一致时中心端会回带更新指令, 这里异步执行。
 	//
 	// 【为什么必须异步】更新要下载 6-7MB 并替换文件, 耗时数秒到数十秒。若在读循环里
@@ -303,20 +326,38 @@ func (p *Probe) session() error {
 		defer hbWG.Done()
 		tk := time.NewTicker(time.Duration(p.cfg.HeartbeatSec) * time.Second)
 		defer tk.Stop()
+		// 2026-09-26: 指标周期门控 —— 首个心跳即带指标, 之后每满一个指标周期
+		// (中心端可下发, 默认 30s)才重新采样; 周期内的心跳只带任务态(保活)。
+		// CPU 采样(prevCPU 差值)只在指标拍做, 窗口 = 指标周期 = "累积 N 秒"语义。
+		nextMetrics := time.Now()
 		for {
 			select {
 			case <-hbStop:
 				return
 			case <-tk.C:
+				now := time.Now()
+				var ld *Load
+				if !now.Before(nextMetrics) {
+					ld = p.sampleLoad()
+					nextMetrics = now.Add(p.metricsInterval())
+				} else {
+					ld = p.taskLoad()
+				}
 				_ = nc.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := WriteMessage(nc, &wmu, &Envelope{
 					Type: MsgHeartbeat,
 					ID:   p.id,
-					Load: p.sampleLoad(),
+					Load: ld,
 					Info: nil, // 常规心跳只报负载, 信息变更时随注册刷新
 				}); err != nil {
 					return
 				}
+				// 写后立即清除 deadline: 它是连接上的**持久状态**, 不清除的话 10 秒后
+				// 任何其它 goroutine 的写(任务进度/结果)都会撞上"已过期的 deadline"
+				// 被直接判 i/o timeout 丢弃 —— 实测事故: 心跳 15s 一写 deadline, 任务
+				// 结果恰在空窗期发送, 中心端永远收不到(表现"任务一直 running")。
+				// deadline 只对心跳写本身有意义(防死连接上写阻塞)。
+				_ = nc.SetWriteDeadline(time.Time{})
 			}
 		}
 	}()
@@ -346,6 +387,8 @@ func (p *Probe) session() error {
 			// 中心端保活探测: 回 pong(不可回 ping —— 两端互回会形成死循环)
 			_ = nc.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			_ = WriteMessage(nc, &wmu, &Envelope{Type: MsgPong, ID: p.id, TS: time.Now().Unix()})
+			// 同心跳: 写后清除 deadline, 避免过期 deadline 误伤后续任务写(见心跳处注释)
+			_ = nc.SetWriteDeadline(time.Time{})
 		case MsgPong:
 			// 中心端对心跳的应答: 无需处理。它能刷新上面的读超时
 			// (收到任意消息即视为链路活跃), 这正是保活的目的。
@@ -470,7 +513,11 @@ func (p *Probe) onAssign(nc net.Conn, wmu *sync.Mutex, t *TaskAssign) {
 		defer p.wg.Done()
 		start := time.Now()
 		res := p.runTask(t, cancelCh, func(msg string) {
-			_ = WriteMessage(nc, wmu, &Envelope{Type: MsgTaskProgress, ID: p.id, Task: t, Message: msg})
+			// 进度是尽力而为(丢一条不影响任务结论), 但失败要留痕:
+			// 连接写坏了却静默丢进度, 排障时中心端"卡住不动"查不到任何线索。
+			if err := WriteMessage(nc, wmu, &Envelope{Type: MsgTaskProgress, ID: p.id, Task: t, Message: msg}); err != nil {
+				p.logf(fmt.Sprintf("任务 %s 进度发送失败: %v", t.TaskID, err))
+			}
 		})
 		res.StartedAt = start.Unix()
 		res.FinishedAt = time.Now().Unix()
@@ -485,12 +532,20 @@ func (p *Probe) onAssign(nc net.Conn, wmu *sync.Mutex, t *TaskAssign) {
 
 		// 结果先回传再允许该 ID 被重新执行: 回传失败(连接已断)时中心端会重派,
 		// 此时 done 里仍有记录 -> 直接拒绝重派, 避免同 ID 任务被跑第二遍。
-		_ = WriteMessage(nc, wmu, &Envelope{Type: MsgTaskResult, ID: p.id, Result: res})
+		// 发送失败必须记日志: 此前用 _ = 吞掉, 中心端永远停在 running 而探针端
+		// 日志"执行完成", 两边都查不到结果去了哪(实测事故: SCA 任务结果丢失)。
+		if err := WriteMessage(nc, wmu, &Envelope{Type: MsgTaskResult, ID: p.id, Result: res}); err != nil {
+			p.logf(fmt.Sprintf("任务 %s 结果发送失败: %v (中心端任务状态将保持原值, 请检查连接后重新下发)", t.TaskID, err))
+		}
 		p.logf(fmt.Sprintf("任务 %s 执行完成: %s", t.TaskID, res.Summary))
 	}()
 }
 
 // runTask 执行任务(内部 recover 兜底, 保证必回结果)。
+//
+// 取消链路(2026-09-27 修): cancelCh 与一个 context 绑定 —— 中心端取消时既让
+// select 立即回"已取消"结果, 也取消执行器拿到的 ctx, 让真正的扫描(含 trivy 等
+// 外部引擎子进程)随之停止。此前只回结果不中断执行, 取消形同虚设。
 func (p *Probe) runTask(t *TaskAssign, cancelCh chan struct{}, progress func(string)) (res *TaskResult) {
 	res = &TaskResult{TaskID: t.TaskID, Status: TaskFailed}
 	defer func() {
@@ -502,6 +557,16 @@ func (p *Probe) runTask(t *TaskAssign, cancelCh chan struct{}, progress func(str
 			res.Status = TaskFailed
 		}
 	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	// 双向同步: 取消信号(cancelCh) -> ctx 取消; ctx 随本函数返回自动取消(收尾)。
+	go func() {
+		select {
+		case <-cancelCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	defer cancel()
 	done := make(chan *TaskResult, 1)
 	errCh := make(chan error, 1)
 	go func() {
@@ -510,7 +575,7 @@ func (p *Probe) runTask(t *TaskAssign, cancelCh chan struct{}, progress func(str
 				errCh <- fmt.Errorf("执行panic: %v", r)
 			}
 		}()
-		r, err := p.exec(t, progress)
+		r, err := p.exec(ctx, t, progress)
 		if err != nil {
 			errCh <- err
 			return
@@ -530,8 +595,11 @@ func (p *Probe) runTask(t *TaskAssign, cancelCh chan struct{}, progress func(str
 	case err := <-errCh:
 		return &TaskResult{TaskID: t.TaskID, Status: TaskFailed, Error: err.Error()}
 	case <-cancelCh:
-		return &TaskResult{TaskID: t.TaskID, Status: TaskFailed, Error: "任务已被中心端取消"}
+		// Cancelled 标记供中心端区分"用户取消"与"执行失败"(历史页显示已取消而非已失败)
+		return &TaskResult{TaskID: t.TaskID, Status: TaskFailed, Cancelled: true, Error: "任务已被中心端取消"}
 	case <-time.After(timeoutOf(t)):
+		// 超时同样取消 ctx: 兜底路径也必须让执行器停(与取消同口径)
+		cancel()
 		return &TaskResult{TaskID: t.TaskID, Status: TaskFailed, Error: "任务执行超时(探针侧)"}
 	}
 }
@@ -552,7 +620,9 @@ func (p *Probe) cancelTask(taskID string) {
 	}
 }
 
-// sampleLoad 采集负载指标(CPU 由前后两次采样差值粗算)。
+// sampleLoad 采集完整负载指标(指标周期拍调用): CPU 按窗口差值粗算 + 磁盘IO/
+// 网络上下行速率(2026-09-26)。MetricsAt 标记本拍带性能数据(中心端据此区分
+// "指标为 0"与"无指标", 防大屏闪 0%)。
 func (p *Probe) sampleLoad() *Load {
 	cur := SampleCPU()
 	cpu := CPUPercent(p.prevCPU, cur)
@@ -565,13 +635,66 @@ func (p *Probe) sampleLoad() *Load {
 	running := len(p.running)
 	curTask := p.cur
 	p.mu.Unlock()
-	return &Load{
+	ld := &Load{
 		CPUPercent:   round1(cpu),
 		MemPercent:   round1(memPct),
 		TasksRunning: running,
 		CurrentTask:  curTask,
 		UptimeSec:    int64(time.Since(p.startAt).Seconds()),
+		MetricsAt:    time.Now().Unix(),
 	}
+	// 磁盘 IO / 网络上下行: 采集失败(平台不支持/PDH 异常)返回 nil, 本拍只报
+	// CPU/内存 —— 降级不阻断心跳(项目规则 3)。
+	if m := SampleMetrics(p.metricsInterval()); m != nil {
+		ld.DiskReadBps, ld.DiskWriteBps = m.DiskReadBps, m.DiskWriteBps
+		ld.NetUpBps, ld.NetDownBps = m.NetUpBps, m.NetDownBps
+	}
+	// 网卡端口明细(与整机指标同拍): 采集失败(nil)时保持空, 前端按"暂无端口数据"处理
+	ld.Ifaces = SampleIfaces(p.metricsInterval())
+	p.perfMu.Lock()
+	p.lastPerf = ld
+	p.perfMu.Unlock()
+	return ld
+}
+
+// taskLoad 保活心跳(指标周期内)的负载: 任务态取当前值, 性能数据复用最近一次
+// 指标拍采样(不重新采样 —— 采样成本按 30s 批量, 但心跳始终带最新指标, 中心端
+// 快照与大屏不会在两种拍之间抖动; 首个指标拍前无性能数据属正常)。
+func (p *Probe) taskLoad() *Load {
+	p.mu.Lock()
+	running := len(p.running)
+	curTask := p.cur
+	p.mu.Unlock()
+	ld := &Load{
+		TasksRunning: running,
+		CurrentTask:  curTask,
+		UptimeSec:    int64(time.Since(p.startAt).Seconds()),
+	}
+	p.perfMu.Lock()
+	if lp := p.lastPerf; lp != nil {
+		ld.CPUPercent = lp.CPUPercent
+		ld.MemPercent = lp.MemPercent
+		ld.MetricsAt = lp.MetricsAt // 沿用采样时间戳(中心端据此知道性能数据的新鲜度)
+		ld.DiskReadBps = lp.DiskReadBps
+		ld.DiskWriteBps = lp.DiskWriteBps
+		ld.NetUpBps = lp.NetUpBps
+		ld.NetDownBps = lp.NetDownBps
+		ld.Ifaces = lp.Ifaces // 端口清单沿用最近一次指标拍(不重新采样)
+	}
+	p.perfMu.Unlock()
+	return ld
+}
+
+// metricsInterval 当前指标上报周期(中心端下发值, 非法值钳到 5-3600 秒)。
+func (p *Probe) metricsInterval() time.Duration {
+	sec := p.cfg.MetricsSec
+	if sec < 5 {
+		sec = 5
+	}
+	if sec > 3600 {
+		sec = 3600
+	}
+	return time.Duration(sec) * time.Second
 }
 
 // MemBrief 内存快照(避免整包 NodeInfo 采集开销)。

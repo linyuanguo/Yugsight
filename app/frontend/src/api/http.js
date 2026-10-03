@@ -15,11 +15,15 @@ async function onUnauth() {
   }
 }
 
-async function doFetch(path, { method = 'GET', body } = {}) {
+async function doFetch(path, { method = 'GET', body, signal } = {}) {
   const opt = { method, headers: {} }
+  if (signal) opt.signal = signal   // 透传 AbortSignal(如推送测试 10s 超时掐断)
   if (body !== undefined) {
     opt.headers['Content-Type'] = 'application/json'
-    opt.body = JSON.stringify(body)
+    // 调用方可能已 JSON.stringify(body) 也可能传对象: 已是字符串就原样发送,
+    // 否则再序列化。否则对象被二次序列化会变成 JSON 字符串字面量("{\"a\":1}"),
+    // 后端按结构体解码会报 "cannot unmarshal string into ..."(本报告模块实测)。
+    opt.body = typeof body === 'string' ? body : JSON.stringify(body)
   }
   const r = await fetch(path, opt)
   const text = await r.text()

@@ -65,6 +65,10 @@ var Tables = []TableMib{
 			2:  {OID: "1.3.6.1.2.1.2.2.1.2", Name: "ifDescr", Label: "接口描述", Cat: "interface"},
 			3:  {OID: "1.3.6.1.2.1.2.2.1.3", Name: "ifType", Label: "接口类型", Cat: "interface"},
 			5:  {OID: "1.3.6.1.2.1.2.2.1.5", Name: "ifSpeed", Label: "带宽(bps)", Cat: "interface"},
+			// 2026-09-27: 接口物理地址(MAC)。PhysAddress 解码为 6 字节 MAC 字符串
+			// (ber.formatOctets), 供监控页"MAC 地址"列展示。Hidden: 不进 SubOrder
+			// 展示行(cmd/snmpcheck 输出不变), 只采集进 Cells 供采集层提取。
+			6:  {OID: "1.3.6.1.2.1.2.2.1.6", Name: "ifPhysAddress", Label: "物理地址(MAC)", Cat: "interface", Hidden: true},
 			8:  {OID: "1.3.6.1.2.1.2.2.1.8", Name: "ifOperStatus", Label: "链路状态", Cat: "interface"},
 			10: {OID: "1.3.6.1.2.1.2.2.1.10", Name: "ifInOctets", Label: "入流量(累计)", Cat: "interface"},
 			16: {OID: "1.3.6.1.2.1.2.2.1.16", Name: "ifOutOctets", Label: "出流量(累计)", Cat: "interface"},
@@ -197,6 +201,17 @@ func Collect(ctx context.Context, c *Client, extra ...Metric) *Report {
 
 	rep.Elapsed = time.Since(t0)
 	return rep
+}
+
+// physAddressOID ifPhysAddress 列 OID(1.3.6.1.2.1.2.2.1.6)。
+//
+// isMACOID 判定"该 OID 的值是 MAC 地址": 只有物理地址类 OID 才按 MAC 格式化,
+// 其余(ifDescr/ifName 等字符串列)即便长度也是 6 字节也按文本处理(否则
+// "Null 0"/"Mgmt 0" 会被显示成 4e:75:6c:6c:20:30, 见 ber.formatOctets 注释)。
+const physAddressOID = "1.3.6.1.2.1.2.2.1.6"
+
+func isMACOID(oid string) bool {
+	return oid == physAddressOID || strings.HasPrefix(oid, physAddressOID+".")
 }
 
 // groupRows 把 walk 结果(列优先的 varbind 流)聚成"行→列"。

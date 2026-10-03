@@ -51,6 +51,35 @@
       </div>
     </div>
 
+    <!-- 2026-09-26: 上报参数下发(用户口径"时间控制在中心端探针管理可以下发"):
+         指标不再实时发, 累积 N 秒发一次; 心跳/离线判定一并可调。
+         保存后各探针在下次注册(重连/重启)时生效。 -->
+    <div class="card" v-if="status && status.centerEnabled">
+      <div class="card-title">
+        探针上报参数
+        <span class="sub">中心端统一下发 · 保存后各探针下次注册(重连/重启)时生效</span>
+      </div>
+      <div class="form-row">
+        <div class="field" style="max-width:150px">
+          <label class="label">心跳间隔 (秒)</label>
+          <input class="input mono" type="number" v-model.number="cfgForm.heartbeatSec" min="3" max="600">
+        </div>
+        <div class="field" style="max-width:170px">
+          <label class="label">指标上报周期 (秒)</label>
+          <input class="input mono" type="number" v-model.number="cfgForm.metricsSec" min="5" max="3600"
+            title="CPU/内存/磁盘IO/网络上下行 累积 N 秒上报一次(心跳保活不受影响)">
+        </div>
+        <div class="field" style="max-width:180px">
+          <label class="label">离线判定 (秒, 0=3倍心跳)</label>
+          <input class="input mono" type="number" v-model.number="cfgForm.offlineSec" min="0">
+        </div>
+        <div class="field" style="max-width:150px; align-self:flex-end">
+          <button class="btn primary" :disabled="savingCfg" @click="saveCfg">{{ savingCfg ? '保存中...' : '保存并下发' }}</button>
+        </div>
+        <span class="muted small" style="align-self:flex-end">{{ cfgNote }}</span>
+      </div>
+    </div>
+
     <!-- 调度节点负载(GET /api/v2/scheduler/nodes): 探针列表给的是"注册快照",
          这里是调度器视角的"此刻能不能接活" —— 槽位占用/负载/能力/拒绝原因。 -->
     <div class="card">
@@ -114,6 +143,10 @@
             <option value="ip">IP 存活</option>
             <option value="web">Web 漏洞</option>
             <option value="host">主机扫描</option>
+            <!-- 2026-09-26: 镜像/容器远程扫描(探针端 trivy 执行, 探针装 trivy+Docker 即可) -->
+            <option value="image">镜像/容器 (trivy)</option>
+            <!-- 2026-09-27: ARP 异常监测(环路/IP 冲突/MAC 漂移), 目标是探针本机网卡 -->
+            <option value="arp">ARP 异常监测</option>
           </select>
         </div>
         <div class="field">
@@ -124,6 +157,23 @@
           <label class="label">端口 (可选)</label>
           <input class="input mono" v-model.trim="assign.ports" placeholder="空 = 常用端口">
         </div>
+        <!-- 2026-09-26: 探针继承中心端漏扫 —— 主机/Web 可带 nuclei 参数(SCA 可带 trivy 参数) -->
+        <div class="field" style="max-width:160px" v-if="assign.type === 'host' || assign.type === 'web'">
+          <label class="label">漏扫引擎</label>
+          <div style="display:flex; gap:10px; padding-top:2px">
+            <label class="checkbox"><input type="checkbox" v-model="assign.enableNuclei"> nuclei</label>
+            <input class="input mono" v-model.trim="assign.nucleiTags" placeholder="标签(可选) cve,c..." style="width:120px">
+          </div>
+        </div>
+        <div class="field" style="max-width:200px" v-if="assign.type === 'image'">
+          <label class="label">trivy 参数 (可选)</label>
+          <input class="input mono" v-model.trim="assign.trivyArgs" placeholder="如 --scanners misconfig,secret">
+        </div>
+        <!-- 2026-09-27: ARP 异常监测 —— 目标=网卡名(local=自动选), 另选监测时长 -->
+        <div class="field" style="max-width:150px" v-if="assign.type === 'arp'">
+          <label class="label">监测时长 (秒)</label>
+          <input class="input mono" type="number" v-model.number="assign.arpDuration" min="10" max="600">
+        </div>
         <div class="field" style="max-width:120px; align-self:flex-end">
           <button class="btn primary" style="width:100%" :disabled="assigning" @click="doAssign">
             {{ assigning ? '下发中...' : '下发' }}
@@ -131,6 +181,11 @@
         </div>
       </div>
       <div class="login-err" style="text-align:left">{{ assignErr }}</div>
+      <!-- 2026-09-27: ARP 监测说明(能力依赖 + 结果去向, 用户口径"要做说明") -->
+      <div class="muted small" v-if="assign.type === 'arp'" style="margin-top:8px">
+        探针在本机网卡上抓 ARP 帧监测 N 秒, 检测三类异常: IP 冲突(同一 IP 多个 MAC 同时声称, 高危) / MAC 漂移(IP 对应 MAC 切换, 中危) / 环路(同一 ARP 请求短窗口内反复出现, 高危)。
+        需探针具备抓包能力(Windows 装 Npcap / Linux 需 root 权限, 能力列带 arpwatch 标记的探针可用); 结果自动进漏洞表、扫描历史与原始报告。
+      </div>
       <div class="muted small" v-if="assignMsg" style="margin-top:8px">{{ assignMsg }}</div>
     </div>
 
@@ -147,7 +202,10 @@
         <table class="table">
           <thead>
             <tr>
-              <th>状态</th><th>探针 ID</th><th>名称</th><th>系统</th><th>版本</th><th>地址</th>
+              <th>状态</th><th>探针 ID</th><th>名称</th>
+              <!-- 2026-09-27: IP/MAC 字段补充(注册时上报的 nodeInfo.netIfaces, 取首个带地址的网卡) -->
+              <th>IP 地址</th><th>MAC 地址</th>
+              <th>系统</th><th>版本</th><th>地址</th>
               <th>能力</th><th>最近心跳</th><th>操作</th>
             </tr>
           </thead>
@@ -158,6 +216,8 @@
               </td>
               <td class="mono small">{{ p.id }}</td>
               <td class="small">{{ p.name || '-' }}</td>
+              <td class="mono small" :title="'网卡: ' + nicText(p)">{{ probeIP(p) || '-' }}</td>
+              <td class="mono small">{{ probeMac(p) || '-' }}</td>
               <td class="small mono">{{ osText(p) }}</td>
               <td class="mono small">
                 <!-- 版本不一致时标红并给提示: 探针会在下次注册时自动更新(中心端已在
@@ -217,17 +277,15 @@
     <!-- 任务明细 -->
     <div class="card">
       <div class="toolbar">
+        <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 探针/状态选项由
+             后端按全量任务聚合回带(不再用探针注册表全量; 已删探针的历史任务按 ID 仍可筛) -->
         <select class="select" v-model="taskProbeId" @change="loadTasks">
           <option value="">全部探针任务</option>
-          <option v-for="p in online" :key="p.id" :value="p.id">{{ p.name || p.id }}</option>
+          <option v-for="p in taskProbeOpts" :key="p.id" :value="p.id">{{ probeLabel(p.id) }} ({{ p.count }})</option>
         </select>
         <select class="select" v-model="taskStatus" @change="loadTasks">
           <option value="">全部状态</option>
-          <option value="pending">待下发</option>
-          <option value="sent">已下发</option>
-          <option value="running">执行中</option>
-          <option value="success">成功</option>
-          <option value="failed">失败</option>
+          <option v-for="s in taskStatusOpts" :key="s.id" :value="s.id">{{ TASK_STATUS[s.id] || s.id }} ({{ s.count }})</option>
         </select>
         <button class="btn sm" @click="loadTasks"><span class="spinner" v-if="taskLoading"></span> 刷新</button>
         <div class="spacer"></div>
@@ -377,6 +435,14 @@
         <button class="btn sm primary" @click="openInstall">可视化安装页</button>
       </div>
 
+      <div class="alert info" style="margin-top:10px">
+        <b>中心端地址变了(换网/VPN 导致 IP 变化)</b>: 探针不会自动切换,
+        <b>重新跑一次一键安装命令即可</b>(地址自动更新为当前 IP, 旧服务地址被覆盖, 开机自启保留, 无需手改文件)。
+        <span class="muted small">
+          手动部署的(无 systemd 环境)用新地址重跑启动命令。
+        </span>
+      </div>
+
       <template #footer>
         <button class="btn sm" @click="showDownload = false">关闭</button>
       </template>
@@ -391,8 +457,20 @@ import Empty from '../components/Empty.vue'
 import Modal from '../components/Modal.vue'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
+import { setPageData } from '../assistant/context'
 
 const TASK_KIND = { port: '端口扫描', ip: 'IP 存活', web: 'Web 漏洞', host: '主机扫描' }
+// 小 Y 助手(2026-09-27): 节点监控"探针管理"Tab 的关键数据(在线状态/版本/告警)
+setPageData('nodemonitor:probe', () => ({
+  total: total.value,
+  probes: online.value.slice(0, 50).map(p => ({
+    name: p.name || p.id,
+    online: !!p.online,
+    version: p.version || '',
+    addr: p.addr || '',
+    lastSeen: p.lastSeen || ''
+  }))
+}))
 const TASK_STATUS = { pending: '待下发', sent: '已下发', running: '执行中', success: '成功', failed: '失败' }
 const OS_NAME = { windows: 'Windows', linux: 'Linux', darwin: 'macOS' }
 // 调度节点类型(scheduler.Node.Kind): 中心本地节点 ID 为空串, 展示名单独兜底
@@ -409,9 +487,17 @@ const showAssign = ref(false)
 const assigning = ref(false)
 const assignErr = ref('')
 const assignMsg = ref('')
-const assign = reactive({ probeId: '', type: 'port', target: '', ports: '' })
+// 2026-09-26: 下发参数扩展 —— 探针继承中心端漏扫(host/web 可带 nuclei;
+// image 类型走探针端 trivy, 可带 trivyArgs)
+// 2026-09-27: arpDuration 供 type=arp 的 ARP 异常监测(默认 60s)
+const assign = reactive({ probeId: '', type: 'port', target: '', ports: '', enableNuclei: false, nucleiTags: '', trivyArgs: '', arpDuration: 60 })
 const enabling = ref(false)
 const enableMsg = ref('')
+
+// 2026-09-26: 上报参数下发(心跳/指标周期/离线判定)
+const cfgForm = reactive({ heartbeatSec: 15, metricsSec: 30, offlineSec: 0 })
+const savingCfg = ref(false)
+const cfgNote = ref('')
 
 const tasks = ref([])
 const taskTotal = ref(0)
@@ -452,8 +538,9 @@ const displayList = computed(() => (onlyOnline.value ? online.value.filter(p => 
 const onlineProbes = computed(() => online.value.filter(p => p.online))
 const assignReady = computed(() => !!(status.value && status.value.center && onlineProbes.value.length))
 const myInfo = computed(() => (status.value && status.value.clientInfo) || {})
-const assignTargetLabel = computed(() => ({ ip: '网段 CIDR', port: '目标 IP', web: '目标 URL', host: '目标 IP' }[assign.type] || '目标'))
-const assignTargetPh = computed(() => ({ ip: '如 192.168.1.0/24', port: '如 192.168.1.10', web: '如 192.168.1.10', host: '如 192.168.1.10' }[assign.type] || ''))
+// 2026-09-27: arp 目标=本机网卡名(local=自动选), 与其它"远端目标"语义不同
+const assignTargetLabel = computed(() => ({ ip: '网段 CIDR', port: '目标 IP', web: '目标 URL', host: '目标 IP', image: '镜像/容器名', arp: '网卡 (可选)' }[assign.type] || '目标'))
+const assignTargetPh = computed(() => ({ ip: '如 192.168.1.0/24', port: '如 192.168.1.10', web: '如 192.168.1.10', host: '如 192.168.1.10', image: '如 nginx:1.25', arp: 'local = 自动选非回环网卡' }[assign.type] || ''))
 
 function capList(p) {
   return (p.capabilities || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -471,6 +558,17 @@ function nicText(p) {
   const nics = nodeOf(p).netIfaces || []
   if (!nics.length) return (p && p.addr) || '-'
   return nics.map(n => n.name + ' ' + n.ip + (n.mac ? ' (' + n.mac + ')' : '')).join(' | ')
+}
+// 2026-09-27: 列表展示的 IP/MAC 取首个带地址的网卡(探针可能多网卡,
+// 完整清单在"详情"弹窗的"网卡"行, 列表只给一眼可用的主网卡)。
+function probeIP(p) {
+  const n = (nodeOf(p).netIfaces || []).find(x => x && x.ip)
+  return (n && n.ip) || ''
+}
+function probeMac(p) {
+  const nics = nodeOf(p).netIfaces || []
+  const n = nics.find(x => x && x.ip && x.mac) || nics.find(x => x && x.mac)
+  return (n && n.mac) || ''
 }
 function loadText(p) {
   const ld = p && p.load
@@ -516,6 +614,13 @@ async function load() {
     total.value = ls.total || 0
     // 节点密钥仅供"下载探针"弹窗生成部署命令; 取不到就退回占位符(不报错)
     probeToken.value = (st && st.centerCfg && st.centerCfg.token) || ''
+    // 2026-09-26: 上报参数表单从中心端当前配置回填(只回填一次, 避免轮询覆盖用户输入)
+    if (st && st.centerCfg && !cfgInited.value) {
+      cfgForm.heartbeatSec = st.centerCfg.heartbeatSec || 15
+      cfgForm.metricsSec = st.centerCfg.metricsSec || 30
+      cfgForm.offlineSec = st.centerCfg.offlineSec || 0
+      cfgInited.value = true
+    }
     // 详情弹窗数据实时刷新
     if (detail.value) {
       const cur = online.value.find(x => x.id === detail.value.id)
@@ -528,6 +633,13 @@ async function load() {
   await loadSchedNodes() // 节点负载随心跳变化, 与探针状态同频刷新
 }
 
+// 2026-10-02: 探针/状态筛选选项 = 后端按全量任务聚合回带(只含真实存在的值)
+const taskProbeOpts = ref([])
+const taskStatusOpts = ref([])
+function probeLabel(id) {
+  const p = online.value.find(x => x.id === id)
+  return (p && p.name) || id   // 探针已删/未注册 → 显 ID(历史任务仍可筛)
+}
 async function loadTasks() {
   taskLoading.value = true
   try {
@@ -537,6 +649,11 @@ async function loadTasks() {
     const d = await v2('/probe/tasks?' + p.toString())
     tasks.value = d.list || []
     taskTotal.value = d.total || 0
+    taskProbeOpts.value = d.probes || []
+    taskStatusOpts.value = d.statuses || []
+    // 已选的筛选值对应任务全删 → 选项消失, 筛选自清(防列表卡死为空)
+    if (taskProbeId.value && !taskProbeOpts.value.some(x => x.id === taskProbeId.value)) taskProbeId.value = ''
+    if (taskStatus.value && !taskStatusOpts.value.some(x => x.id === taskStatus.value)) taskStatus.value = ''
   } catch (e) { tasks.value = [] } finally { taskLoading.value = false }
 }
 
@@ -554,17 +671,41 @@ async function doAssign() {
   assignErr.value = ''
   assignMsg.value = ''
   if (!assign.probeId) { assignErr.value = '请选择目标探针'; return }
-  if (!assign.target) { assignErr.value = '目标不能为空'; return }
+  // 2026-09-27: arp 的目标是"本机网卡", 允许留空(后端归一为 local=自动选);
+  // 其它类型仍要求非空目标。
+  if (assign.type !== 'arp' && !assign.target) { assignErr.value = '目标不能为空'; return }
   assigning.value = true
   try {
-    const d = await v2('/probe/assign', {
-      method: 'POST',
-      body: { probeId: assign.probeId, type: assign.type, target: assign.target, ports: assign.ports },
-    })
-    assignMsg.value = '已下发任务 ' + d.taskId + ' 到 ' + d.probeId
+    // 2026-09-26: 漏扫参数随类型透传(host/web → nuclei; image → trivyArgs)
+    const target = assign.type === 'arp' ? (assign.target || 'local') : assign.target
+    const body = { probeId: assign.probeId, type: assign.type, target, ports: assign.ports }
+    if (assign.type === 'host' || assign.type === 'web') {
+      body.enableNuclei = assign.enableNuclei
+      if (assign.nucleiTags) body.nucleiTags = assign.nucleiTags
+    }
+    if (assign.type === 'image' && assign.trivyArgs) body.trivyArgs = assign.trivyArgs
+    if (assign.type === 'arp') body.arpDuration = assign.arpDuration || 60
+    const d = await v2('/probe/assign', { method: 'POST', body })
+    assignMsg.value = '已下发任务 ' + d.taskId + ' 到 ' + d.probeId + (assign.type === 'arp' ? '(ARP 监测 ' + (assign.arpDuration || 60) + 's, 结果自动进漏洞表/扫描历史)' : '')
     assign.target = ''
     await loadTasks()
   } catch (e) { assignErr.value = e.message } finally { assigning.value = false }
+}
+
+// 2026-09-26: 保存并下发上报参数(PUT /probe/config, 中心端热应用)
+const cfgInited = ref(false)
+async function saveCfg() {
+  cfgNote.value = ''
+  savingCfg.value = true
+  try {
+    const d = await v2('/probe/config', {
+      method: 'PUT',
+      body: { heartbeatSec: cfgForm.heartbeatSec, metricsSec: cfgForm.metricsSec, offlineSec: cfgForm.offlineSec },
+    })
+    cfgNote.value = d.note || '已保存'
+  } catch (e) {
+    cfgNote.value = e.message
+  } finally { savingCfg.value = false }
 }
 
 async function cancelTask(t) {

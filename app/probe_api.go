@@ -19,9 +19,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -147,8 +149,11 @@ func startClient(cfg probe.ProbeConfig) {
 // 实现已抽出到 probe/agentexec 包(2026-09-16 拆分): 该包不依赖 db/engine/sse/http,
 // 因而可被独立的 yugsight-agent 入口安全引用 —— 主程序与 agent 共用同一份执行逻辑,
 // 避免双份实现漂移。此处仅做一层转发, 保持既有调用点不变。
-func runProbeTask(t *probe.TaskAssign, progress func(string)) (*probe.TaskResult, error) {
-	return agentexec.Run(t, progress)
+//
+// ctx(2026-09-27): 由 probe 包 runTask 传入、与中心端取消信号绑定的 context,
+// 透传到 agentexec.Run —— 取消时扫描循环与外部引擎子进程(trivy 等)一并停止。
+func runProbeTask(ctx context.Context, t *probe.TaskAssign, progress func(string)) (*probe.TaskResult, error) {
+	return agentexec.Run(ctx, t, progress)
 }
 
 // ===== 落库(中心端侧) =====
@@ -215,12 +220,24 @@ func (r *taskRecorder) Offline(id, reason string) {
 	}
 	// 该节点未完成任务统一置失败(避免任务永远挂在运行中), 由上层决定是否重派
 	if tasks, err := d.ProbeTasks().ByProbe(id); err == nil {
+		stale := 0
 		for _, t := range tasks {
 			switch t.Status {
 			case db.ProbeTaskPending, db.ProbeTaskSent, db.ProbeTaskRunning:
 				_, _ = d.ProbeTasks().Finish(t.ID, db.ProbeTaskFailed, "", "",
 					"探针离线("+reason+"), 任务未完成", t.FindingNum, 0)
+				// 2026-09-27: 统一任务表(scan_tasks)同步置失败 —— 扫描历史页查的是它,
+				// 只更明细表时探针离线后历史里任务永远"运行中"(用户实测: 离线任务挂了一夜)。
+				// 任务若经调度/立即扫描登记在统一表则命中; 独立下发的探针任务查不到, 忽略。
+				if d.ScanTasks() != nil {
+					if _, uerr := d.ScanTasks().UpdateStatus(t.ID, db.TaskFailed, "探针离线("+reason+"), 任务未完成"); uerr == nil {
+						stale++
+					}
+				}
 			}
+		}
+		if stale > 0 {
+			probeLogLine(fmt.Sprintf("探针 %s 离线, 同步置失败统一任务 %d 条", id, stale))
 		}
 	}
 	sse.Default().PublishJSON("probe", map[string]any{"event": "offline", "probeId": id, "reason": reason})
@@ -264,8 +281,14 @@ func (r *taskRecorder) Progress(id, taskID, msg string) {
 		return
 	}
 	if d.ScanTasks() != nil {
-		if _, err := d.ScanTasks().UpdateStatus(taskID, db.TaskRunning, ""); err != nil {
-			// 任务不存在于统一任务表时忽略(探针任务可独立下发)
+		// 与 MarkRunning 同一竞争(2026-09-27): 取消时"已取消"结果可能先于执行器
+		// 收尾进度到达, 迟到进度不得把统一任务表的终态翻回 running。
+		if cur, err := d.ScanTasks().Get(taskID); err == nil && cur != nil {
+			switch cur.Status {
+			case db.TaskSuccess, db.TaskFailed, db.TaskCancelled:
+			default:
+				_, _ = d.ScanTasks().UpdateStatus(taskID, db.TaskRunning, "")
+			}
 		}
 	}
 	if _, err := d.ProbeTasks().SetProgress(taskID, msg); err != nil {
@@ -304,8 +327,13 @@ func (r *taskRecorder) Result(id string, res *probe.TaskResult) {
 		onProbeResultIngest(id, res)
 	}
 	// 统一任务表状态流转(存在则更新, 不存在忽略)
+	// 2026-09-27: 用户取消单列为 cancelled(区别于"执行失败") —— 探针任务表没有
+	// cancelled 常量(明细仍记 failed + 错误"任务已被中心端取消"), 统一任务表有,
+	// 历史页按它展示"已取消"。
 	taskStatus := db.TaskSuccess
-	if status != db.ProbeTaskSuccess {
+	if res.Cancelled {
+		taskStatus = db.TaskCancelled
+	} else if status != db.ProbeTaskSuccess {
 		taskStatus = db.TaskFailed
 	}
 	summary := res.Summary
@@ -353,7 +381,12 @@ func probeCapabilities(info *probe.NodeInfo) string {
 		return strings.Join(caps, ",")
 	}
 	if info.NpcapInstalled {
-		caps = append(caps, "capture", "synscan")
+		caps = append(caps, "capture", "synscan", "arpwatch")
+	}
+	// 2026-09-27: Linux 探针内置 AF_PACKET 原始套接字采集器(collector_linux.go),
+	// 同样支持 ARP 异常监测; 无 root 权限时任务会明确失败(不静默空结果)。
+	if info.OS == "linux" {
+		caps = append(caps, "arpwatch")
 	}
 	for _, e := range info.Engines {
 		if e.Found {
@@ -441,10 +474,14 @@ func dispatchToProbe(req scanReq, emit func(string, any)) {
 		return
 	}
 	// 统一任务表登记(便于任务列表统一查看; 探针链路明细另落 probe_tasks)
+	// 2026-09-27: JobName 单列(历史页"任务名"列直接展示, 不再埋在 params 里);
+	// Params 改存完整 scanReq(与 runScanPipeline 的 registerScanHistory 同口径) ——
+	// 此前只存 {ports}, 导致探针任务的历史详情看不到参数、"重扫"回放的参数不完整。
 	st := &db.ScanTask{
 		Type: req.Type, Target: target, ProbeNode: req.ProbeNode, CreatedBy: currentUser(),
+		JobName: strings.TrimSpace(req.JobName),
 	}
-	if raw, err := json.Marshal(map[string]string{"ports": ports}); err == nil {
+	if raw, err := json.Marshal(req); err == nil {
 		st.Params = raw
 	}
 	if err := d.ScanTasks().Create(st); err != nil {
@@ -527,6 +564,16 @@ func probeTaskArgs(req scanReq, ports string) string {
 			args["captureMaxBytes"] = req.CaptureMaxBytes
 		}
 	}
+	// SCA(trivy)额外参数透传(2026-09-26): 探针端 scanSca 读 trivyArgs 拼进命令行。
+	// 关键用途: --scanners misconfig,secret 绕过漏洞 DB(内网/受限拉不下 trivy-db
+	// 时, 配置+密钥扫描仍可用); 用户也可传 --severity/--exclude-pkg 等。
+	//
+	// 必须传"数组"而非字符串: 探针端 extraArgs 只认 []string/[]any, 传字符串会被
+	// 类型断言忽略(表现为 trivy 命令没有追加参数)。strings.Fields 按空格拆,
+	// token 内逗号不拆(如 "misconfig,secret" 整体, 正是 trivy 期望的写法)。
+	if s := strings.TrimSpace(req.TrivyArgs); s != "" {
+		args["trivyArgs"] = strings.Fields(s)
+	}
 	return marshalProbeTaskArgs(args)
 }
 
@@ -544,6 +591,11 @@ func marshalProbeTaskArgs(args map[string]any) string {
 	return string(b)
 }
 
+// scaAutoTarget SCA 自动枚举占位(2026-09-27): image/container 任务目标留空时
+// 下发给探针的目标值。探针端 internal/probe/scanner 的同名常量必须保持同值
+// (跨包契约: 中心端下发、探针端识别, 见 scanner.scaTargets 注释)。
+const scaAutoTarget = "自动枚举"
+
 // probeTarget 从扫描请求里取探针任务的目标与端口:
 // 与本地执行口径一致 —— ip/alive 用 CIDR、port/host 用 IP、web 用 URL。
 func probeTarget(req scanReq) (target, ports string) {
@@ -555,6 +607,17 @@ func probeTarget(req scanReq) (target, ports string) {
 		}
 	case "web":
 		target = strings.TrimSpace(req.URL)
+	case "image", "fs", "container":
+		// SCA: 目标就是镜像名 / 本地路径 / 容器名(TrivyTarget), 探针端按 Kind 选 trivy
+		// 子命令, 这里传净目标(不带 image:/fs:/container: 前缀, 与本地执行口径不同)。
+		target = strings.TrimSpace(req.TrivyTarget)
+		if target == "" && (req.Type == "image" || req.Type == "container") {
+			// 2026-09-27 SCA 自动枚举: 镜像/容器目标留空 = 探针在自己主机上 docker
+			// images / docker ps 全量枚举逐个扫(探针与 trivy/docker 同机, 无需中心
+			// 跨机查询)。占位串必须非空(下方"目标为空"拦截与探针端 Run 的空目标校验),
+			// 探针端 scanner.scaTargets 认这个占位并触发本机枚举。
+			target = scaAutoTarget
+		}
 	case "collect":
 		// 本机枚举: 采集探针所在机器自身, 目标就是本机。中心端一般不知道探针的
 		// 出口 IP, 未填时用 127.0.0.1 作为"本机"占位(探针端 collectLocalIP 会
@@ -623,6 +686,8 @@ func assignToProbeWithArgs(d *db.Database, taskID, probeID, kind, target, args s
 func registerProbeRoutes(srv *server.Server) {
 	srv.Get("/api/v2/probe/status", requireAuth(hProbeStatus))
 	srv.Post("/api/v2/probe/enable", requireAuth(adminOrOperator(hProbeEnable)))
+	// 上报参数下发(2026-09-26: 心跳/指标周期/离线判定, 中心端统一控制)
+	srv.Put("/api/v2/probe/config", requireAuth(adminOnly(hProbeConfig)))
 	srv.Get("/api/v2/probe/list", requireAuth(hProbeList))
 	// 任务下发/取消/删除探针是写操作, 只读角色禁止(adminOnly; 免登录直通)
 	srv.Post("/api/v2/probe/assign", requireAuth(adminOrOperator(hProbeAssign)))
@@ -634,7 +699,9 @@ func registerProbeRoutes(srv *server.Server) {
 	// 静态段, Go 1.22 ServeMux 按"最具体优先"匹配, 不会与 /{id} 冲突;
 	// 但为可读性仍集中在此处, 与探针管理同一装配点。
 	srv.Get("/api/v2/probe/agent/list", requireAuth(hAgentList))
-	srv.Get("/api/v2/probe/agent/download", requireAuth(hAgentDownload))
+	// 2026-09-27 用户要求: 安装包下载移除登录校验(匿名可访问) —— 目标机器上的
+	// 操作者未登录也能下载安装包(下载的是探针二进制本身, 无敏感数据)。
+	srv.Get("/api/v2/probe/agent/download", hAgentDownload)
 	srv.Get("/api/v2/probe/agent/guide", requireAuth(hAgentGuide))
 	// 探针自动更新下载(见 probe_agent_update.go): 给探针用的通道, **刻意不走
 	// requireAuth** —— 探针只有一条 TCP 长连接, 没有浏览器会话 cookie。鉴权改为
@@ -646,7 +713,14 @@ func registerProbeRoutes(srv *server.Server) {
 	srv.Post("/api/v2/probe/agent/build", requireAuth(adminOrOperator(hAgentBuild)))
 	// 安装落地页(见 probe_agent_install.go): 面向被扫描机器上的操作者,
 	// 一个能直接打开、按提示下载+复制启动命令的 HTML 页面。
-	srv.Get("/api/v2/probe/agent/install", requireAuth(hAgentInstall))
+	// 2026-09-27 用户要求: 移除登录校验(匿名可访问) —— 登录页的"探针安装包
+	// 下载"入口指向本页, 未登录的目标机器操作者需直接打开; 页面由服务端渲染
+	// 注入地址/密钥, 无登录态时密钥仍按 probe.json 配置如实注入(内网部署口径)。
+	srv.Get("/api/v2/probe/agent/install", hAgentInstall)
+	// Linux 一键安装脚本(curl | bash 口径, 见 probe_agent_install.go): 与 /install
+	// 同安全口径匿名可访问(内网部署, 脚本含服务端注入的节点密钥)。落地页的
+	// "Linux 一键安装"命令即指向本接口。
+	srv.Get("/api/v2/probe/agent/install.sh", hAgentInstallScript)
 }
 
 // hProbeStatus GET /api/v2/probe/status 中心端/探针端运行状态(前端状态卡片)。
@@ -740,6 +814,60 @@ func hProbeEnable(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// hProbeConfig PUT /api/v2/probe/config {heartbeatSec, metricsSec, offlineSec}
+// 调整探针上报参数并下发(2026-09-26, 用户口径"时间控制在中心端探针管理可以下发")。
+//
+//   - heartbeatSec: 心跳间隔(保活/离线判定基础), 3-600 秒;
+//   - metricsSec:   性能指标上报周期(指标不再实时发, 累积 N 秒发一次), 5-3600 秒;
+//   - offlineSec:   离线判定秒数, 0 = 默认 3 倍心跳。
+//
+// 落 settings.json 的 probe.center 节(合并写, 保留 listen/token 等既有值)并
+// 热应用到运行中的中心端; 生效时机与 HeartbeatSec 既有口径一致 —— 各探针下次
+// 注册(重连/重启)时按新值。adminOnly: 上报节奏影响所有探针的流量, 写操作。
+func hProbeConfig(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		HeartbeatSec int `json:"heartbeatSec"`
+		MetricsSec   int `json:"metricsSec"`
+		OfflineSec   int `json:"offlineSec"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.HeartbeatSec < 3 || in.HeartbeatSec > 600 {
+		server.FailBadRequest(w, "heartbeatSec 需在 3-600 秒之间")
+		return
+	}
+	if in.MetricsSec < 5 || in.MetricsSec > 3600 {
+		server.FailBadRequest(w, "metricsSec 需在 5-3600 秒之间")
+		return
+	}
+	if in.OfflineSec < 0 || in.OfflineSec > 86400 {
+		server.FailBadRequest(w, "offlineSec 需在 0-86400 秒之间(0=默认 3 倍心跳)")
+		return
+	}
+	cfg := loadProbeConfig()
+	cfg.Center.HeartbeatSec = in.HeartbeatSec
+	cfg.Center.MetricsSec = in.MetricsSec
+	cfg.Center.OfflineSec = in.OfflineSec
+	if err := writeSection(secProbe, cfg); err != nil {
+		server.FailInternal(w, "写入 settings.json 失败: "+err.Error())
+		return
+	}
+	// 刷新包级配置缓存(probeCfg 只在启动时加载一次, 不刷新则 /probe/status
+	// 回显的 centerCfg 还是旧值, 前端"保存了却没变"的观感)
+	probeCfg = loadProbeConfig()
+	// 热应用(中心端在跑时立即对新注册生效); 未启用时只落配置, 下次启动生效
+	if probeCenter != nil {
+		probeCenter.UpdateRuntime(in.HeartbeatSec, in.MetricsSec, in.OfflineSec)
+	}
+	logAudit(v2DB(), r, "probe.config", "",
+		fmt.Sprintf("heartbeat=%ds metrics=%ds offline=%ds", in.HeartbeatSec, in.MetricsSec, in.OfflineSec))
+	server.OK(w, map[string]any{
+		"ok":   true,
+		"note": "已保存并热应用; 各探针在下次注册(重连/重启)时按新周期上报",
+	})
+}
+
 // hProbeList GET /api/v2/probe/list 已登记探针列表(落库数据 + 在线态合并)。
 func hProbeList(w http.ResponseWriter, r *http.Request) {
 	d := v2NeedDB(w)
@@ -769,29 +897,77 @@ func hProbeList(w http.ResponseWriter, r *http.Request) {
 
 // hProbeAssign POST /api/v2/probe/assign 下发扫描任务到指定探针。
 //
-// 入参: {probeId, type, target, ports?, scanTaskId?}
+// 入参: {probeId, type, target, ports?, scanTaskId?, enableNuclei?, nucleiTags?, trivyArgs?}
 // scanTaskId 提供时复用既有任务 ID(便于任务列表关联), 否则自动创建统一任务记录。
+//
+// 2026-09-26: 类型扩展 + 漏扫参数透传(用户口径"探针继承中心端的漏扫功能"):
+//   - type 增 image/fs/container(远程扫镜像/容器, 探针端 trivy 执行, 结果回传);
+//   - host/web 可带 enableNuclei/nucleiTags(与 /api/scan 下发同口径);
+//   - SCA 类型可带 trivyArgs(--scanners misconfig,secret 等, 空格分隔)。
+// 参数经 assignToProbeWithArgs 透传(与 dispatchToProbe 的 probeTaskArgs 同口径)。
 func hProbeAssign(w http.ResponseWriter, r *http.Request) {
 	d := v2NeedDB(w)
 	if d == nil {
 		return
 	}
 	var in struct {
-		ProbeID    string `json:"probeId"`
-		Type       string `json:"type"`
-		Target     string `json:"target"`
-		Ports      string `json:"ports"`
-		ScanTaskID string `json:"scanTaskId"`
+		ProbeID      string `json:"probeId"`
+		Type         string `json:"type"`
+		Target       string `json:"target"`
+		Ports        string `json:"ports"`
+		ScanTaskID   string `json:"scanTaskId"`
+		EnableNuclei bool   `json:"enableNuclei"`
+		NucleiTags   string `json:"nucleiTags"`
+		TrivyArgs    string `json:"trivyArgs"`
+		// 2026-09-27: ARP 异常监测时长(秒, type=arp 用; 0=默认 60s)
+		ArpDuration int `json:"arpDuration"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
 	}
-	if strings.TrimSpace(in.ProbeID) == "" || strings.TrimSpace(in.Target) == "" {
-		server.FailBadRequest(w, "probeId 与 target 不能为空")
+	if strings.TrimSpace(in.ProbeID) == "" {
+		server.FailBadRequest(w, "probeId 不能为空")
 		return
 	}
 	if in.Type == "" {
 		in.Type = "port"
+	}
+	// 2026-09-27: ARP 监测的目标是"本机网卡"(网卡名或 local=自动选), 允许为空
+	// 并归一为 local —— 其它类型 target 仍必填。
+	if in.Type == "arp" {
+		if s := strings.TrimSpace(in.Target); s != "" {
+			in.Target = s
+		} else {
+			in.Target = "local"
+		}
+	} else if strings.TrimSpace(in.Target) == "" {
+		server.FailBadRequest(w, "target 不能为空")
+		return
+	}
+	// 任务参数(只透传探针端用得到的, 与 probeTaskArgs 同口径)
+	args := map[string]any{}
+	switch in.Type {
+	case "port", "host":
+		if s := strings.TrimSpace(in.Ports); s != "" {
+			args["ports"] = s
+		}
+	case "image", "fs", "container":
+		// 目标=镜像名/本地路径/容器名(直接进 task.Target, 探针端按 Kind 选 trivy 子命令)
+		if s := strings.TrimSpace(in.TrivyArgs); s != "" {
+			// 必须传数组: 探针端 extraArgs 只认 []string(见 probeTaskArgs 注释)
+			args["trivyArgs"] = strings.Fields(s)
+		}
+	case "arp":
+		// 2026-09-27: ARP 异常监测时长(探针端 OptionsFromArgs 解析, 上限 600s)
+		if in.ArpDuration > 0 {
+			args["arpDuration"] = in.ArpDuration
+		}
+	}
+	if in.EnableNuclei {
+		args["enableNuclei"] = true
+	}
+	if s := strings.TrimSpace(in.NucleiTags); s != "" {
+		args["nucleiTags"] = s
 	}
 	taskID := in.ScanTaskID
 	if taskID == "" {
@@ -807,7 +983,7 @@ func hProbeAssign(w http.ResponseWriter, r *http.Request) {
 		}
 		taskID = st.ID
 	}
-	if err := assignToProbe(d, taskID, in.ProbeID, in.Type, in.Target, in.Ports, currentUser()); err != nil {
+	if err := assignToProbeWithArgs(d, taskID, in.ProbeID, in.Type, in.Target, marshalProbeTaskArgs(args), currentUser()); err != nil {
 		server.FailBadRequest(w, err.Error())
 		return
 	}
@@ -878,6 +1054,36 @@ func hProbeTaskList(w http.ResponseWriter, r *http.Request) {
 		server.FailInternal(w, err.Error())
 		return
 	}
+	// 2026-10-02 用户口径: 筛选选项基于当前数据里实际存在的 —— 回带探针任务
+	// 全量里真实出现的探针/状态(无数据的选项不出现, 后期有了再出现; 探针筛选
+	// 不再用"探针注册表"全量 —— 已删探针的历史任务按 ID 仍可筛)。聚合在过滤前
+	// 的全量上做, 不随筛选条件收缩。
+	probeFacet := map[string]int{}
+	stFacet := map[string]int{}
+	for _, t := range list {
+		if t == nil {
+			continue
+		}
+		if t.ProbeNode != "" {
+			probeFacet[t.ProbeNode]++
+		}
+		stFacet[t.Status]++
+	}
+	probeIDs := make([]string, 0, len(probeFacet))
+	for id := range probeFacet {
+		probeIDs = append(probeIDs, id)
+	}
+	sort.Strings(probeIDs)
+	probeOpts := make([]map[string]any, 0, len(probeIDs))
+	for _, id := range probeIDs {
+		probeOpts = append(probeOpts, map[string]any{"id": id, "count": probeFacet[id]})
+	}
+	statusOpts := make([]map[string]any, 0)
+	for _, st := range []string{"pending", "sent", "running", "success", "failed"} {
+		if stFacet[st] > 0 {
+			statusOpts = append(statusOpts, map[string]any{"id": st, "count": stFacet[st]})
+		}
+	}
 	if pid := q.Get("probeId"); pid != "" {
 		list, _ = d.ProbeTasks().ByProbe(pid)
 	}
@@ -896,6 +1102,7 @@ func hProbeTaskList(w http.ResponseWriter, r *http.Request) {
 	}
 	server.OK(w, map[string]any{
 		"list": paginate(list, page, size), "total": len(list), "page": page, "size": size,
+		"probes": probeOpts, "statuses": statusOpts,
 	})
 }
 

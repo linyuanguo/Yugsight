@@ -8,6 +8,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,6 +52,17 @@ func TestAgentUpdateSign(t *testing.T) {
 
 // TestCenterUpdateDirective 覆盖版本比对口径与前置条件。
 func TestCenterUpdateDirective(t *testing.T) {
+	// 更新 URL 由主程序 UI 地址拼出(GetUIURL); 测试环境没起 HTTP 服务, 显式置上
+	// (生产里 main 在 startServer 成功后必然已设置, 探针注册时早已就绪)。
+	uiURLMu.Lock()
+	uiURLValue = "http://127.0.0.1:8420"
+	uiURLMu.Unlock()
+	t.Cleanup(func() {
+		uiURLMu.Lock()
+		uiURLValue = ""
+		uiURLMu.Unlock()
+	})
+
 	// 准备 agents/ 目录: 放一个 windows/amd64 的包, 用来验证"有包才下发"
 	dir := t.TempDir()
 	oldDir := agentDownloadDir
@@ -87,6 +99,14 @@ func TestCenterUpdateDirective(t *testing.T) {
 	}
 	if !hasAll(d.URL, "os=windows", "arch=amd64", "sig=", "exp=") {
 		t.Errorf("更新 URL 缺少必要参数(平台/签名/有效期): %s", d.URL)
+	}
+	// 回归守护: 更新 URL 必须走主程序 HTTP 端口, 不得指向探针 TCP 协议端口 8600
+	// (旧实现复用中心端 advertise 地址, 探针下载永远 EOF, 自动更新整体失效)。
+	if strings.Contains(d.URL, ":8600") {
+		t.Errorf("更新 URL 不应指向探针 TCP 端口 8600: %s", d.URL)
+	}
+	if !strings.Contains(d.URL, ":8420") {
+		t.Errorf("更新 URL 应包含主程序 HTTP 端口 8420: %s", d.URL)
 	}
 
 	// 平台越界: 不下发

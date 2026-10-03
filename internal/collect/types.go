@@ -22,6 +22,8 @@
 package collect
 
 import (
+	"errors"
+	"strings"
 	"time"
 )
 
@@ -207,6 +209,45 @@ type Config struct {
 	RetentionHours int           `json:"retentionHours"` // 时序保留时长(小时), 0=24
 	NetFlow        NetFlowConfig `json:"netflow"`
 	Alerts         Alerts        `json:"alerts"`
+	// PerNode 每任务(节点)独立的告警阈值覆盖(2026-09-29, 借鉴 Zabbix 的
+	// "全局宏 + 主机宏覆盖"口径): key=任务 ID, 只写需要覆盖的字段,
+	// 0 值字段回落全局默认 —— 一台低配服务器的 CPU 阈值 60%, 不影响其它节点。
+	// 缺失/空 = 全部走全局阈值(零行为变化)。
+	PerNode map[string]Alerts `json:"perNode,omitempty"`
+	// Templates 采集模板(2026-09-29 阶段 C, 借鉴 Zabbix 监控模板:
+	// 命名预设 = 协议 + 参数 + 默认阈值)。建任务时选模板, 任务自动继承
+	// 模板参数与阈值(阈值写入 PerNode[taskID], 之后仍可在"每节点阈值"
+	// 覆盖 —— 模板是起点不是锁)。落 settings.json 同节, 页面增删。
+	Templates []Template `json:"templates,omitempty"`
 	// Tasks 采集任务(页面增删; 落 settings.json 同节, 与 monitor.Targets 同模式)。
 	Tasks []Task `json:"tasks"`
+}
+
+// Template 采集模板(表单预设 + 默认阈值)。
+//
+// 为什么"继承"落在建任务那一刻而非运行时绑定: 任务参数(community/user/
+// params)是任务自身字段, 运行期"绑定模板再动态套用"会让同一任务的行为
+// 随模板编辑漂移 —— 排障时无法确定"当时用的什么参数"。一次性继承 +
+// 后续可单独改, 行为可追溯。
+type Template struct {
+	ID       string            `json:"id"`                 // 稳定 ID(页面生成, 如 tpl_xxx)
+	Name     string            `json:"name"`               // 展示名
+	Protocol string            `json:"protocol"`           // 协议(决定 side 与参数形态)
+	Params   map[string]string `json:"params,omitempty"`   // 协议参数预设(icmp count / restconf path 等)
+	Alerts   Alerts            `json:"alerts,omitempty"`   // 默认阈值(0 值 = 跟全局)
+	Note     string            `json:"note,omitempty"`     // 说明(目标机要求等)
+}
+
+// Validate 模板自检: ID/Name/协议必填且协议已知。
+func (t Template) Validate() error {
+	if strings.TrimSpace(t.ID) == "" {
+		return errors.New("模板 ID 不能为空")
+	}
+	if strings.TrimSpace(t.Name) == "" {
+		return errors.New("模板名称不能为空")
+	}
+	if !ProtocolKnown(t.Protocol) {
+		return errors.New("未知协议: " + t.Protocol)
+	}
+	return nil
 }

@@ -96,6 +96,8 @@ type authCheckRun struct {
 	Summary   string             `json:"summary"`
 	Results   []weakpass.Result  `json:"results"`
 	Audit     []weakpass.Attempt `json:"audit,omitempty"`
+	// Job 扫描任务名(原始报告按任务名分类; 空 = 独立检测)
+	Job string `json:"job,omitempty"`
 }
 
 // snapshot 取一份可安全读取/序列化的副本(切片也一起拷, 否则等于没加锁)。
@@ -110,6 +112,7 @@ func (r *authCheckRun) snapshot() *authCheckRun {
 		Summary:   r.Summary,
 		Results:   append([]weakpass.Result(nil), r.Results...),
 		Audit:     append([]weakpass.Attempt(nil), r.Audit...),
+		Job:       r.Job,
 	}
 }
 
@@ -259,6 +262,9 @@ type authCheckReq struct {
 	Dict []string `json:"dict,omitempty"`
 	// BuiltinOnly 仅使用内置字典(页面"仅使用内置字典"开关; 默认 false = 全量"内置+自定义")
 	BuiltinOnly bool `json:"builtinOnly,omitempty"`
+	// Job 扫描任务名(2026-09-25: 控制台"下一步弱口令"带任务名跳来, 原始报告
+	// 按任务名分类; 空 = 独立弱口令检测, 行为不变)
+	Job string `json:"job,omitempty"`
 }
 
 // handleAuthCheckStatus GET /api/authcheck/status
@@ -336,7 +342,17 @@ func handleAuthCheckStart(w http.ResponseWriter, r *http.Request) {
 	}
 	authCheckSeq++
 	id := time.Now().Format("20060102-150405") + "-" + strconv.Itoa(authCheckSeq)
-	run := &authCheckRun{ID: id, StartedAt: time.Now()}
+	// 任务名(可选): 非法名直接拒绝(与扫描登记同口径), 合法名登记进任务名登记簿
+	// —— 弱口令作为控制台"下一步"的一环, 结果要能挂回任务名下
+	jobName := strings.TrimSpace(req.Job)
+	if jobName != "" && !validTaskName(jobName) {
+		jsonErr(w, http.StatusBadRequest, "任务名非法(中英文/数字/空格/-_./, 1-64 字)")
+		return
+	}
+	if jobName != "" {
+		_, _ = registerScanTask(jobName, "")
+	}
+	run := &authCheckRun{ID: id, StartedAt: time.Now(), Job: jobName}
 	authCheckLast = run
 	authCheckRunning = true
 	ctx, cancel := context.WithCancel(context.Background())

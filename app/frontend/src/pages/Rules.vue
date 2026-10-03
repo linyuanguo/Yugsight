@@ -208,19 +208,15 @@
     <div class="card">
       <div class="toolbar">
         <input class="input" v-model.trim="q" placeholder="过滤: ID / 名称 / 模式 / 详情">
+        <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 等级/匹配方式选项
+             从当前规则列表(rows 全量, 不分页)聚合; 某类数据删光后选项消失, 有了再出现 -->
         <select class="select" v-model="fSeverity">
           <option value="">全部等级</option>
-          <option value="critical">严重</option>
-          <option value="high">高危</option>
-          <option value="medium">中危</option>
-          <option value="low">低危</option>
-          <option value="info">信息</option>
+          <option v-for="s in sevOpts" :key="s" :value="s">{{ SEV_CN[s] || s }}</option>
         </select>
         <select class="select" v-model="fType">
           <option value="">全部匹配方式</option>
-          <option value="body">body (响应体)</option>
-          <option value="header">header (响应头)</option>
-          <option value="path">path (敏感路径)</option>
+          <option v-for="t in typeOpts" :key="t" :value="t">{{ TYPE_CN[t] || t }}</option>
         </select>
         <button class="btn sm" @click="resetF">清空</button>
         <div class="spacer"></div>
@@ -361,7 +357,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import PageHeader from '../components/PageHeader.vue'
 import Empty from '../components/Empty.vue'
 import SevTag from '../components/SevTag.vue'
@@ -383,6 +379,16 @@ const q = ref('')
 const fSeverity = ref('')
 const fType = ref('')
 const err = ref('')
+// 2026-10-02: 等级/匹配方式筛选选项 = 当前规则列表里实际存在的值(只含存在的)
+const SEV_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+const TYPE_CN = { body: 'body (响应体)', header: 'header (响应头)', path: 'path (敏感路径)' }
+const sevOpts = computed(() => ['critical', 'high', 'medium', 'low', 'info'].filter(s => rows.value.some(r => (r.severity || '') === s)))
+const typeOpts = computed(() => ['body', 'header', 'path'].filter(t => rows.value.some(r => (r.type || '') === t)))
+watch(rows, () => {
+  // 已选的筛选值对应数据被删光 → 选项消失, 筛选要自清, 否则列表卡死为空
+  if (fSeverity.value && !sevOpts.value.includes(fSeverity.value)) fSeverity.value = ''
+  if (fType.value && !typeOpts.value.includes(fType.value)) fType.value = ''
+})
 
 const importOpen = ref(false)
 const importName = ref('')

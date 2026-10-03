@@ -63,6 +63,11 @@ func collectSNMP(ctx context.Context, e *Engine, t Task) *Round {
 	}
 	for _, tr := range rep.Tables {
 		switch tr.Table.Name {
+		case "ifTable":
+			// 2026-10-02 需求 1: 主机 SNMP 也要出网卡端口明细(与 SSH/WinRM 的
+			// nic 指标同口径, 前端端口详情统一消费)。snmp.Collect 的表库本来就
+			// walk ifTable, 这里只做提取 + ifHighSpeed 万兆修正。
+			collectSNMPIfaces(ctx, c, r, tr.Rows)
 		case "hrProcessorTable":
 			for _, row := range tr.Rows {
 				if v, err := strconv.ParseInt(row.Cells["hrProcessorLoad"], 10, 64); err == nil {

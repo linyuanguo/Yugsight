@@ -139,3 +139,42 @@ func TestPersistScanResultNilGuards(t *testing.T) {
 		t.Errorf("库已关闭时应静默跳过, 实为 %d/%d/%d", a, v, f)
 	}
 }
+
+// TestApplyAliveStateSkipsDeadIPs 契约: 无响应/未存活的 IP 不入资产表。
+//
+// 背景(2026-09-26 用户反馈): 此前对所有被探测的 IP(含无响应)都生成最小资产,
+// 扫 /24 会得到 256 个"资产"(其中 250 个根本没有主机), /16 更会 65536 个。
+// 只有综合判定存活(有 ICMP/ARP/开放端口任一证据, 见 mergedAlive)的 IP 才算真实资产。
+//
+// 守的是"资产数 = 存活主机数"这个口径 —— 大屏/资产页的资产统计全靠它,
+// 一旦回退成"探到就入账", 资产数会虚高到整个子网地址数。
+func TestApplyAliveStateSkipsDeadIPs(t *testing.T) {
+	sink := newScanSink(scanReq{Type: "unified"}, "", 0)
+	// 一次 /24 存活扫描: 每台都会 emit 一条 ip 事件(存活 alive=true, 无响应 alive=false)
+	sink.observe("ip", map[string]any{"ip": "10.0.0.1", "alive": true, "mac": "aa:bb:cc:dd:ee:01"})
+	sink.observe("ip", map[string]any{"ip": "10.0.0.2", "alive": false})
+	sink.observe("ip", map[string]any{"ip": "10.0.0.3", "alive": true, "mac": "aa:bb:cc:dd:ee:03"})
+	sink.observe("ip", map[string]any{"ip": "10.0.0.4", "alive": false})
+
+	res := sink.normalize() // 只有 ip 事件, 无 finding/port → normalize 返回 nil
+	res = sink.applyAliveState(res)
+	if res == nil {
+		t.Fatal("有存活 IP 时应生成资产结果")
+	}
+	if len(res.Assets) != 2 {
+		t.Fatalf("资产数=%d, want 2(仅存活 IP, 无响应的 2 台不入账)", len(res.Assets))
+	}
+	got := map[string]bool{}
+	for _, a := range res.Assets {
+		got[a.IP] = a.Alive
+	}
+	if !got["10.0.0.1"] || !got["10.0.0.3"] {
+		t.Errorf("存活 IP 应入资产且 Alive=true: %v", got)
+	}
+	if _, ok := got["10.0.0.2"]; ok {
+		t.Errorf("无响应 IP 10.0.0.2 不应入资产: %v", got)
+	}
+	if _, ok := got["10.0.0.4"]; ok {
+		t.Errorf("无响应 IP 10.0.0.4 不应入资产: %v", got)
+	}
+}

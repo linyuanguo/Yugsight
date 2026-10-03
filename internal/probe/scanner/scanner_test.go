@@ -624,12 +624,36 @@ func TestIsTrivyTarget(t *testing.T) {
 	}
 }
 
+// TestSCASubTarget SCA 子命令与净目标解析(2026-09-26 探针远程扫容器):
+// 守"container 不靠目标形态启发式"的契约 —— 运行中容器名常无冒号(如 web-1),
+// 若像 runTrivy 那样"含 : 才算镜像"会把容器名误判成 fs(找不到路径)。子命令必须
+// 由 Kind 明确决定; 带 image:/fs:/container: 前缀的净目标要去前缀。
+func TestSCASubTarget(t *testing.T) {
+	cases := []struct{ kind, target, wantSub, wantTarget string }{
+		{"image", "nginx:1.25", "image", "nginx:1.25"},
+		{"image", "image:nginx:1.25", "image", "nginx:1.25"},
+		{"fs", "/app/src", "fs", "/app/src"},
+		{"fs", "fs:/app/src", "fs", "/app/src"},
+		{"container", "web-1", "container", "web-1"},
+		{"container", "container:web-1", "container", "web-1"},
+	}
+	for _, c := range cases {
+		task := NewTask(c.kind, c.target, Config{})
+		sub, target := task.scaSubTarget()
+		if sub != c.wantSub || target != c.wantTarget {
+			t.Errorf("scaSubTarget(%s, %q) = (%q, %q), want (%q, %q)",
+				c.kind, c.target, sub, target, c.wantSub, c.wantTarget)
+		}
+	}
+}
+
 // ===== 按端口推断的风险 =====
 
-// TestPortRisk 高危端口风险库: 已知端口有结论, 未知端口返回空。
+// TestPortRisk 端口风险库: 已知端口有结论, 未知端口返回空。
+// 级别口径(2026-09-25): "端口开放"是正常业务状态, 6379 这类静态规则只报 low。
 func TestPortRisk(t *testing.T) {
-	if sev, title, _ := portRisk(6379); sev != "high" || title == "" {
-		t.Fatalf("6379 应判为高危, 实际 %s/%s", sev, title)
+	if sev, title, _ := portRisk(6379); sev != "low" || title == "" {
+		t.Fatalf("6379 应判为低危(端口开放属正常), 实际 %s/%s", sev, title)
 	}
 	if _, title, _ := portRisk(8888); title != "" {
 		t.Fatalf("未知端口不应有结论, 实际 %q", title)

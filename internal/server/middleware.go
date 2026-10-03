@@ -210,7 +210,13 @@ func LoggingWithOptions(logf func(string), opt LoggingOptions) Middleware {
 			start := time.Now()
 			next.ServeHTTP(sw, r)
 			cost := time.Since(start)
-			key := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+			// key 带实际协议: net/http 对 TLS 监听接受的连接会填 r.TLS,
+			// 据此区分 HTTPS/HTTP, 避免"服务已纯 HTTPS 但日志还标 HTTP"的误导。
+			scheme := "HTTP"
+			if r.TLS != nil {
+				scheme = "HTTPS"
+			}
+			key := fmt.Sprintf("%s %s %s", scheme, r.Method, r.URL.Path)
 			now := time.Now()
 
 			mu.Lock()
@@ -248,12 +254,13 @@ func LoggingWithOptions(logf func(string), opt LoggingOptions) Middleware {
 // 单独抽出来是为了让"定时 flush"与"状态码变化时挤出旧条目"两条路径共用同一口径 ——
 // 否则两处各写一份格式化, 迟早出现"聚合行标注次数、挤出行的不标注"这类不一致。
 func renderEntry(key string, e *loggingEntry) string {
+	// key 形如 "HTTPS GET /path"(协议在中间件里按 r.TLS 判定后拼入)。
 	if e.n == 1 {
-		return fmt.Sprintf("HTTP %s -> %d (%s)", key, e.status, e.last.Round(time.Millisecond))
+		return fmt.Sprintf("%s -> %d (%s)", key, e.status, e.last.Round(time.Millisecond))
 	}
 	// 重复行标注次数与跨距: 同一接口短时间被打 N 次本身可能是个信号
 	// (如前端 bug 导致请求风暴), 保留数字比"只出现一行"更有诊断价值。
-	return fmt.Sprintf("HTTP %s -> %d (重复 %d 次, 跨 %s)",
+	return fmt.Sprintf("%s -> %d (重复 %d 次, 跨 %s)",
 		key, e.status, e.n, e.lastAt.Sub(e.firstAt).Round(time.Second))
 }
 

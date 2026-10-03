@@ -1,0 +1,7 @@
+# 界面截图目录：把 README「界面预览」引用的 5 张图放这里（文件名须一致）。
+#   dashboard.png  首页仪表盘（概览仪表盘，/）
+#   bigscreen.png  安全运维大屏（/ ?tab=screen，3D 地球 + 报告存档）
+#   console.png    扫描作业（/console）
+#   vulns.png      漏洞管理（/vulns，含漏扫管控 tab）
+#   reports.png    报告中心（/reports）
+# 截图方法：浏览器登录 admin 后进入对应页面，F12 → 设备工具栏切到桌面尺寸，整页截图。

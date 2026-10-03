@@ -241,24 +241,32 @@ type serviceRisk struct {
 	detail   string
 }
 
+// 【级别口径 2026-09-25 用户反馈】"XX 端口开放"本身是正常业务状态(不开放就没法
+// 连接), 不能报高危。这条规则只是"端口开着"的静态观察, 没有验证认证配置/已知漏洞,
+// 高危必须留给真实验证过的发现(弱口令命中、CVE 版本匹配、POC 成功)。因此:
+//
+//   - 纯"端口开放"类(数据库/缓存/中间件): 一律 low = 加固建议(核对来源限制与认证);
+//   - 明文传输协议(Telnet/FTP/VNC)与常见攻击面(SMB/RDP/NetBIOS): medium = 真实存在
+//     但未验证的固有风险;
+//   - high 不用于任何"仅端口开放"的静态判定。
 var serviceRisks = []serviceRisk{
-	{23, "high", "Telnet 服务开放", "Telnet 明文传输账号口令, 建议改为 SSH"},
+	{23, "medium", "Telnet 服务开放", "Telnet 明文传输账号口令, 建议改为 SSH"},
 	{21, "medium", "FTP 服务开放", "FTP 明文传输凭据; 确认是否允许匿名登录, 建议改用 SFTP"},
 	{135, "medium", "MSRPC 端口开放", "135 常被用于横向移动与信息收集, 建议防火墙限制来源"},
 	{137, "low", "NetBIOS 名称服务开放", "可能泄露主机名/域信息, 非必要时关闭"},
 	{139, "medium", "NetBIOS 会话服务开放", "建议禁用并仅保留 445(并确保已修补 MS17-010)"},
-	{445, "high", "SMB 文件共享开放", "SMB 是勒索病毒主要入口, 请确认已修补 MS17-010 且禁用 SMBv1"},
-	{1433, "high", "MSSQL 数据库端口开放", "数据库不应直接对外; 请限制来源并检查 sa 弱口令"},
-	{3306, "high", "MySQL 数据库端口开放", "数据库不应直接对外; 请限制来源并检查 root 弱口令"},
-	{5432, "high", "PostgreSQL 端口开放", "请确认 pg_hba.conf 未对 0.0.0.0/0 开放 trust"},
-	{6379, "high", "Redis 端口开放", "Redis 未授权访问可导致服务器被控, 请设置密码并限制来源"},
-	{27017, "high", "MongoDB 端口开放", "请确认已启用认证, 否则全库数据可被直接读取"},
-	{9200, "high", "Elasticsearch 端口开放", "请确认已开启安全认证, 否则索引数据可被直接读取"},
-	{2375, "high", "Docker 未加密 API 开放", "等同于把主机 root 权限暴露到网络, 请立即关闭或改 2376+TLS"},
+	{445, "medium", "SMB 文件共享开放", "SMB 是勒索病毒常见入口; 端口开放属正常, 请确认已修补 MS17-010 且禁用 SMBv1"},
+	{1433, "low", "MSSQL 数据库端口开放", "数据库端口开放属正常业务状态; 请核对访问来源限制并检查 sa 弱口令"},
+	{3306, "low", "MySQL 数据库端口开放", "数据库端口开放属正常业务状态; 请核对访问来源限制并检查 root 弱口令"},
+	{5432, "low", "PostgreSQL 端口开放", "端口开放属正常业务状态; 请确认 pg_hba.conf 未对 0.0.0.0/0 开放 trust"},
+	{6379, "low", "Redis 端口开放", "端口开放属正常业务状态; 请确认已设置密码(requirepass)并限制来源, 未授权访问风险高"},
+	{27017, "low", "MongoDB 端口开放", "端口开放属正常业务状态; 请确认已启用认证, 否则全库数据可被直接读取"},
+	{9200, "low", "Elasticsearch 端口开放", "端口开放属正常业务状态; 请确认已开启安全认证, 否则索引数据可被直接读取"},
+	{2375, "low", "Docker API 端口开放", "端口开放可能是容器编排正常配置; 请确认已启用 TLS(2376)并限制来源, 明文 2375 等同暴露主机 root"},
 	{5900, "medium", "VNC 远程桌面开放", "VNC 口令易被爆破且默认无加密, 建议改用 RDP/SSH 隧道"},
-	{11211, "high", "Memcached 端口开放", "未授权访问可被用于反射放大攻击, 请限制来源并绑定内网"},
+	{11211, "low", "Memcached 端口开放", "端口开放属正常业务状态; 请限制来源并绑定内网, 未授权访问可被用于反射放大攻击"},
 	{5000, "low", "UPnP/HTTP-Alt 服务开放", "确认是否为调试服务误暴露"},
-	{7001, "high", "WebLogic 端口开放", "WebLogic 历史反序列化漏洞较多, 请确认版本已升级并限制访问"},
+	{7001, "low", "WebLogic 端口开放", "端口开放属正常业务状态; WebLogic 历史反序列化漏洞较多, 请确认版本已升级并限制访问"},
 	{3389, "medium", "RDP 远程桌面开放", "存在爆破风险, 建议启用 NLA、限制来源并配置账户锁定"},
 }
 
@@ -438,25 +446,37 @@ func HostScan(ctx context.Context, ip string, ports []int, timeout time.Duration
 		emit("info", map[string]any{"key": fmt.Sprintf("TLS 证书 (端口 %d)", p), "value": info})
 		switch {
 		case d.Days < 0:
-			emit("finding", NewFinding("high", fmt.Sprintf("端口 %d TLS 证书已过期", p),
-				fmt.Sprintf("证书 %s 已于 %s 过期, 会导致客户端告警, 请立即续签", d.CN, d.NotAfter.Format("2006-01-02")), fixTLSExpired))
+			f := NewFinding("high", fmt.Sprintf("端口 %d TLS 证书已过期", p),
+				fmt.Sprintf("证书 %s 已于 %s 过期, 会导致客户端告警, 请立即续签", d.CN, d.NotAfter.Format("2006-01-02")), fixTLSExpired)
+			f.Host, f.Port = ip, p
+			emit("finding", f)
 		case d.Days < 30:
-			emit("finding", NewFinding("medium", fmt.Sprintf("端口 %d TLS 证书即将过期", p),
-				fmt.Sprintf("剩余 %d 天, 请及时续签", d.Days), fixTLSExpired))
+			f := NewFinding("medium", fmt.Sprintf("端口 %d TLS 证书即将过期", p),
+				fmt.Sprintf("剩余 %d 天, 请及时续签", d.Days), fixTLSExpired)
+			f.Host, f.Port = ip, p
+			emit("finding", f)
 		case d.SelfSigned:
-			emit("finding", NewFinding("medium", fmt.Sprintf("端口 %d 使用自签名证书", p),
-				"自签名证书无法被浏览器信任, 且易被中间人替换; 建议改用受信 CA 证书", fixTLSSelfSigned))
+			f := NewFinding("medium", fmt.Sprintf("端口 %d 使用自签名证书", p),
+				"自签名证书无法被浏览器信任, 且易被中间人替换; 建议改用受信 CA 证书", fixTLSSelfSigned)
+			f.Host, f.Port = ip, p
+			emit("finding", f)
 		}
 		if d.Version < tls.VersionTLS12 {
-			emit("finding", NewFinding("medium", fmt.Sprintf("端口 %d TLS 协议版本过低", p),
-				"协商版本低于 TLS 1.2, 存在已知攻击面, 建议禁用 TLS 1.0/1.1", fixTLSOldVersion))
+			f := NewFinding("medium", fmt.Sprintf("端口 %d TLS 协议版本过低", p),
+				"协商版本低于 TLS 1.2, 存在已知攻击面, 建议禁用 TLS 1.0/1.1", fixTLSOldVersion)
+			f.Host, f.Port = ip, p
+			emit("finding", f)
 		}
 	}
 
 	// ---- 6. 服务配置风险(按端口) ----
+	// Host/Port 必须随事件携带: 原始报告按 finding 的 host/port 填"资产/端口"列,
+	// 不携带就只能显示 "-"(2026-09-25 用户反馈"端口列空白")。
 	for _, sr := range serviceRisks {
 		if containsInt(openPorts, sr.port) {
-			emit("finding", NewFinding(sr.severity, sr.title, sr.detail, FixFor(sr.title+" "+sr.detail)))
+			f := NewFinding(sr.severity, sr.title, sr.detail, FixFor(sr.title+" "+sr.detail))
+			f.Host, f.Port = ip, sr.port
+			emit("finding", f)
 		}
 	}
 

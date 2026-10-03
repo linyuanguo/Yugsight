@@ -39,7 +39,7 @@ import (
 // DefaultPorts 探针主机扫描默认端口集(与经典页主机扫描口径一致)。
 var DefaultPorts = pscan.DefaultPorts
 
-// Run 探针任务执行入口。
+// Run 探针任务执行入口(带 context, 签名满足 probe.ExecFunc —— 见 cmd/agent 的编译期断言)。
 //
 // 说明: 探针只做"扫描 + 归一化", 不写中心端数据库; 结果统一回传中心端落库,
 // 保证分布式场景下数据只有一个写入方(中心端), 避免双写冲突。
@@ -47,19 +47,17 @@ var DefaultPorts = pscan.DefaultPorts
 // 兼容性: 早期实现直接返回 probe.TaskResult.Findings(扁平发现列表);
 // 现在改为在 Result.Report 里携带结构化报告(资产 + 漏洞), 同时保留 Findings
 // 供旧版中心端展示 —— 中心端优先读 Report, 缺失时回落到 Findings。
-func Run(t *probe.TaskAssign, progress func(string)) (*probe.TaskResult, error) {
-	return RunContext(context.Background(), t, progress)
-}
-
-// RunContext 带 context 的任务执行(支持中心端取消 / 上层超时)。
 //
-// context 的价值: 长扫描(大网段)收到 MsgTaskCancel 后能立刻停止,
-// 而不是等整轮跑完 —— 探针跑在远端机器上, 用户无法直接 kill。
+// ctx 的价值(2026-09-27 起由 probe 包 runTask 传入可取消 context): 长扫描
+// (大网段/多镜像 SCA)收到中心端取消后立刻停止, 而不是等整轮跑完 —— 探针跑在
+// 远端机器上, 用户无法直接 kill。此前无 ctx 参数(Background 兜底), 取消只回
+// 结果不中断执行, trivy 等子进程会继续扫完整个目标列表。
+//
 // 语义约定: 本函数**永不返回 error**(始终返回 nil 的 error), 一律通过
 // TaskResult.Status/Error 表达失败 —— 探针的任务失败也是"一种结果", 必须回传
 // 中心端落库; 返回 error 会让调用方把结果整个丢掉, 中心端只能看到"超时无响应"。
 // 唯一的例外是任务本身非法(空任务/空目标), 此时连结果都无法构造, 才返回 error。
-func RunContext(ctx context.Context, t *probe.TaskAssign, progress func(string)) (res *probe.TaskResult, err error) {
+func Run(ctx context.Context, t *probe.TaskAssign, progress func(string)) (res *probe.TaskResult, err error) {
 	if t == nil {
 		return nil, fmt.Errorf("任务为空")
 	}
@@ -180,7 +178,9 @@ func RunContext(ctx context.Context, t *probe.TaskAssign, progress func(string))
 // 而不是在 pscan.Run 里靠 error 兜底 —— 提前拒绝能避免"先做了一轮无谓扫描再报错"。
 func supportedKind(kind string) bool {
 	switch kind {
-	case "ip", "alive", "port", "web", "host", "collect":
+	case "ip", "alive", "port", "web", "host", "collect", "image", "fs", "container",
+		// 2026-09-27: ARP 异常监测(环路/IP 冲突/MAC 漂移), 目标是本机网卡
+		"arp":
 		return true
 	}
 	return false
@@ -366,6 +366,8 @@ func CapabilitySummary() string {
 	}
 	if pscan.CaptureSupported() {
 		parts = append(parts, "PCAP 抓包")
+		// 2026-09-27: ARP 异常监测与抓包同依赖(平台采集器: Windows Npcap / Linux 原始套接字)
+		parts = append(parts, "ARP 异常监测")
 	}
 	if bin := pscan.EngineBinPath("nmap"); bin != "" {
 		parts = append(parts, "nmapcore(增强)")

@@ -91,7 +91,8 @@ func TestSectionBlocksPenta(t *testing.T) {
 	}}
 	s1 := newSnap(penta)
 	hs := headings(s1)
-	want := []string{"一、总体概况", "二、风险等级分布", "三、资产清单", "四、漏洞明细", "五、渗透验证结果", "六、扫描范围"}
+	// 2026-09-25 起版权信息强制压尾(第 7 章)
+	want := []string{"一、总体概况", "二、风险等级分布", "三、资产清单", "四、漏洞明细", "五、渗透验证结果", "六、扫描范围", "七、版权信息"}
 	if len(hs) != len(want) {
 		t.Fatalf("章节=%v 期望 %v", hs, want)
 	}
@@ -110,9 +111,10 @@ func TestSectionBlocksPenta(t *testing.T) {
 			row.Cells[0].Text(), row.Cells[3].Text(), row.Cells[4].Text())
 	}
 
-	// 无渗透数据: 章节整体不出现, 扫描范围直接顺位到五(编号连续)
+	// 无渗透数据: 章节整体不出现, 扫描范围直接顺位到五(编号连续);
+	// 末尾为强制压尾的版权信息
 	hs2 := headings(newSnap(nil))
-	if len(hs2) != 5 || hs2[4] != "五、扫描范围" {
+	if len(hs2) != 6 || hs2[4] != "五、扫描范围" || hs2[5] != "六、版权信息" {
 		t.Fatalf("无渗透数据时章节应连续: %v", hs2)
 	}
 

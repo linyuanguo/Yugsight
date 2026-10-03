@@ -2,6 +2,7 @@ package probe
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -173,7 +174,7 @@ func TestTaskRoundTrip(t *testing.T) {
 	center.OnProgress(func(id, taskID, msg string) { progressed <- msg })
 	center.OnResult(func(id string, r *TaskResult) { results <- r })
 
-	exec := func(tk *TaskAssign, progress func(string)) (*TaskResult, error) {
+	exec := func(ctx context.Context, tk *TaskAssign, progress func(string)) (*TaskResult, error) {
 		progress("步骤 1")
 		progress("步骤 2")
 		return &TaskResult{
@@ -228,7 +229,7 @@ func TestTaskFailureReported(t *testing.T) {
 	results := make(chan *TaskResult, 4)
 	center.OnResult(func(id string, r *TaskResult) { results <- r })
 
-	exec := func(tk *TaskAssign, progress func(string)) (*TaskResult, error) {
+	exec := func(ctx context.Context, tk *TaskAssign, progress func(string)) (*TaskResult, error) {
 		return nil, fmt.Errorf("目标不可达")
 	}
 	p := newTestProbe(t, center, "test-probe-3", "失败探针", "", exec)
@@ -255,7 +256,7 @@ func TestExecutorPanicRecovered(t *testing.T) {
 	results := make(chan *TaskResult, 4)
 	center.OnResult(func(id string, r *TaskResult) { results <- r })
 
-	exec := func(tk *TaskAssign, progress func(string)) (*TaskResult, error) {
+	exec := func(ctx context.Context, tk *TaskAssign, progress func(string)) (*TaskResult, error) {
 		panic("执行器内部崩溃")
 	}
 	p := newTestProbe(t, center, "test-probe-panic", "崩溃探针", "", exec)
@@ -292,15 +293,26 @@ func TestNoExecutorRejected(t *testing.T) {
 }
 
 // TestTaskCancel 覆盖: 取消下发 -> 任务终止并回传取消原因。
+//
+// 2026-09-27 加强: exec 改为"阻塞直到 ctx 取消才返回"(模拟真实扫描循环尊重
+// ctx 的行为) —— 守住"取消必须真正中断执行器, 而不是只回个已取消结果让执行
+// 跑到底"的契约(此前 trivy 就是这种情况: 用户点取消, 远端还在扫)。
 func TestTaskCancel(t *testing.T) {
 	center := startTestCenter(t, "")
 	results := make(chan *TaskResult, 4)
 	center.OnResult(func(id string, r *TaskResult) { results <- r })
 
-	exec := func(tk *TaskAssign, progress func(string)) (*TaskResult, error) {
+	ctxInterrupted := make(chan struct{})
+	exec := func(ctx context.Context, tk *TaskAssign, progress func(string)) (*TaskResult, error) {
 		progress("阻塞中")
-		time.Sleep(10 * time.Second)
-		return &TaskResult{Status: TaskDone}, nil
+		select {
+		case <-ctx.Done():
+			close(ctxInterrupted) // 执行器确实收到了 ctx 取消(被中断, 而非跑完)
+			return &TaskResult{Status: TaskFailed, Error: "ctx 已取消"}, nil
+		case <-time.After(10 * time.Second):
+			t.Error("执行器未被 ctx 取消(取消链路断了)")
+			return &TaskResult{Status: TaskDone}, nil
+		}
 	}
 	p := newTestProbe(t, center, "test-probe-cancel", "取消探针", "", exec)
 	p.Start()
@@ -319,8 +331,17 @@ func TestTaskCancel(t *testing.T) {
 		if r.Status != TaskFailed || !strings.Contains(r.Error, "取消") {
 			t.Fatalf("取消结果异常: %+v", r)
 		}
+		if !r.Cancelled {
+			t.Fatalf("取消结果缺 Cancelled 标记(中心端历史页无法区分取消与失败): %+v", r)
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("取消后未回传结果")
+	}
+	select {
+	case <-ctxInterrupted:
+		// 执行器被 ctx 中断 —— 契约成立
+	case <-time.After(3 * time.Second):
+		t.Fatal("取消后执行器的 ctx 未被取消(扫描会继续跑完, 与修复前同症)")
 	}
 }
 
@@ -331,7 +352,7 @@ func TestDuplicateTaskRejected(t *testing.T) {
 	center.OnResult(func(id string, r *TaskResult) { results <- r })
 
 	release := make(chan struct{})
-	exec := func(tk *TaskAssign, progress func(string)) (*TaskResult, error) {
+	exec := func(ctx context.Context, tk *TaskAssign, progress func(string)) (*TaskResult, error) {
 		<-release
 		return &TaskResult{Status: TaskDone, Summary: "done"}, nil
 	}

@@ -1,0 +1,1 @@
+import{g as e}from"./utils-CU4oL7Dg.js";import{m as n,c as o,t as r,n as c,l}from"./index-D_Lrh3-v.js";const g={__name:"StatusTag",props:{status:{type:String,default:"pending"}},setup(t){const s=t,a=l(()=>e[s.status]||s.status);return(p,u)=>(n(),o("span",{class:c(["badge","st-"+t.status])},r(a.value),3))}};export{g as _};

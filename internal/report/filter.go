@@ -70,12 +70,27 @@ func (f Filter) Apply(s *Snapshot) (*Snapshot, SnapshotStats) {
 	// 口径: 资产是否入报告取"时间/网段/IP"三个维度, 不取风险维度 ——
 	// 若按风险等级过滤资产, 选"仅高危"时资产清单会整个消失(用户看到的
 	// 是"这次扫描没有资产", 那是错误结论)。风险维度只作用于漏洞与拓扑着色。
+	//
+	// 另剔除"空资产"(2026-09-25 用户: 报告里一堆离线的、没端口没服务没漏洞
+	// 的 IP 没意义): 存活探测会把仅"被探测过"的 IP 记成最小资产(无端口无服务),
+	// 离线且无开放端口、无服务、无漏洞的这类记录只起占位作用, 不入报告。
+	// 离线但有端口/漏洞的是历史数据要保留; 在线资产(哪怕没扫出端口)是真实
+	// 资产也保留。漏洞集用过滤后的 out.Vulns 判定(与清单同口径)。
+	vulnIPs := make(map[string]bool, len(out.Vulns))
+	for _, v := range out.Vulns {
+		if v != nil {
+			vulnIPs[models.NormIP(v.AssetIP)] = true
+		}
+	}
 	assetRules := make([]*models.Asset, 0, len(s.Assets))
 	for _, a := range s.Assets {
 		if a == nil {
 			continue
 		}
 		if !f.matchAsset(a, ipNet, from, to, hasTime) {
+			continue
+		}
+		if isEmptyAsset(a, vulnIPs) {
 			continue
 		}
 		assetRules = append(assetRules, a)
@@ -164,6 +179,19 @@ func (f Filter) matchAsset(a *models.Asset, ipNet *net.IPNet, from, to time.Time
 		return false
 	}
 	return true
+}
+
+// isEmptyAsset "空资产"判定(见 Apply 资产过滤段的口径说明): 离线 + 无开放
+// 端口 + 无服务 + 无漏洞 = 存活探测的占位记录, 不入报告。vulnIPs 是过滤后
+// 漏洞集的 IP 集合(与资产清单同口径)。
+func isEmptyAsset(a *models.Asset, vulnIPs map[string]bool) bool {
+	if a.Alive {
+		return false
+	}
+	if len(a.Ports) > 0 || strings.TrimSpace(a.Service) != "" {
+		return false
+	}
+	return !vulnIPs[models.NormIP(a.IP)]
 }
 
 // nodeOfVuln 取漏洞的来源节点 ID(空 = 无节点信息)。

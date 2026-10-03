@@ -1,70 +1,126 @@
 <!--
-  NodeMonitor.vue 节点监控(阶段 1, 菜单: 诊断与观测)。
+  NodeMonitor.vue 节点监控(2026-09-28 改版: 左侧多级手风琴菜单 + 右侧视图切换;
+  2026-09-30 按用户反馈调整总览/协议配置边界)。
 
-  两个 Tab(与 Engrules 同一 URL query 承载 tab 的口径, 刷新/书签不丢 tab):
-    探针节点管理: yugsight-agent 分布式探针(注册/在线/版本/任务下发/日志/下载)
-                  + 主机侧扩展采集(WinRM/SSH/主机SNMP, 无代理场景)。
-    网络设备监控: SNMP(monitor 包, 既有) + 扩展采集协议(ICMP/NetFlow/NETCONF/RESTCONF)。
+  菜单(SideMenu, 多级可缩进手风琴, 展开状态 localStorage 持久化):
+    节点监控
+    ├─ 设备总览         → 探针节点管理(2026-10-01: 原「纳管设备」只读清单与协议配置的
+    │                     监控目标重复, 按用户要求移除; 监控设备看「协议配置 → 监控目标」)
+    ├─ 告警日志管理     → AlertLog(页内四 Tab: 告警记录/推送日志/推送配置/异常事件;
+    │                     异常事件 2026-09-30 从协议配置并入, AI 分析按钮随之迁移)
+    └─ 节点配置(可展开)
+       ├─ 协议配置      → 网络设备监控(SNMP) + 主机侧扩展采集 + 网络侧扩展采集
+       │                 + 采集全局配置(异常事件卡已移入告警日志)
+       └─ 连通性测试    → 本地模拟连通性探测
+  (2026-09-29: 「3D 拓扑视图」内嵌入口按用户要求移除, 拓扑唯一入口=安全大屏的网络拓扑卡,
+   卡内「⤢ 全屏」进 /topology/3d 独立页)
 
-  底部公共区: 采集全局配置 + 异常事件(NodeCommonCards, 两 Tab 共用)。
-
-  探针功能整体从原"探针管理"(系统配置组)迁移到此, SNMP 监控从原"网络监控"
-  菜单合并到此 —— 原 /probes、/monitor 路由保留为重定向, 旧书签不失效。
+  路由兼容: 仍是单路由 /nodemonitor, 视图由 query 参数 ?view= 承载
+  (overview|alerts|protocol|connectivity, 默认 overview) ——
+  与全站 query-tab 口径一致, 刷新/书签不丢视图。
+  旧书签不失效: /probes → 本页默认(设备总览); /monitor → ?tab=net → 协议配置。
 -->
 <template>
-  <div class="page">
-    <PageHeader
-      title="节点监控"
-      desc="主机侧(探针 + WinRM/SSH/SNMP)与网络侧(SNMP + ICMP/NetFlow/NETCONF/RESTCONF)统一采集底座">
+  <div class="page nm">
+    <PageHeader title="节点监控" desc="主机侧(探针/WinRM/SSH/SNMP)与网络侧(SNMP/ICMP/NetFlow/NETCONF/RESTCONF)统一运维 —— 左侧菜单切换视图">
     </PageHeader>
 
-    <div class="tabs">
-      <div class="tab" :class="{ active: tab === 'probe' }" @click="setTab('probe')">探针节点管理</div>
-      <div class="tab" :class="{ active: tab === 'net' }" @click="setTab('net')">网络设备监控</div>
+    <div class="nm-body">
+      <aside class="nm-side">
+        <SideMenu :items="menu" :model-value="view" storage-key="yugsight_nodemonitor_menu" @select="setView" />
+      </aside>
+
+      <section class="nm-main">
+        <!-- 设备总览: 只有探针节点管理(2026-10-01 用户要求: 「纳管设备」只读清单与
+             「协议配置 → 监控目标」重复, 已整体移除 —— 监控设备看协议配置即可) -->
+        <Probes v-if="view === 'overview'" />
+
+        <!-- 告警日志管理: 页内四 Tab(注册离开守卫, 推送配置未保存时拦截菜单切换) -->
+        <AlertLog v-else-if="view === 'alerts'" :set-guard="setAlertsGuard" />
+
+        <!-- 协议配置: 网络设备监控(SNMP) + 主机侧/网络侧扩展采集 + 采集全局配置 -->
+        <template v-else-if="view === 'protocol'">
+          <Monitor />
+          <div class="section-gap"></div>
+          <CollectSection side="host" title="主机侧扩展采集(无代理)" />
+          <div class="section-gap"></div>
+          <CollectSection side="net" title="网络侧扩展采集(SNMP 之外)" />
+          <div class="section-gap"></div>
+          <NodeCommonCards />
+        </template>
+
+        <!-- 连通性测试 -->
+        <ConnectivityTest v-else />
+      </section>
     </div>
-
-    <!-- 探针节点管理 -->
-    <template v-if="tab === 'probe'">
-      <Probes />
-      <div class="section-gap"></div>
-      <CollectSection side="host" title="主机侧扩展采集(无代理)" />
-    </template>
-
-    <!-- 网络设备监控 -->
-    <template v-else>
-      <Monitor />
-      <div class="section-gap"></div>
-      <CollectSection side="net" title="网络侧扩展采集(SNMP 之外)" />
-    </template>
-
-    <!-- 公共区: 采集配置 + 异常事件(两 Tab 共用, 常驻) -->
-    <div class="section-gap"></div>
-    <NodeCommonCards />
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
+import SideMenu from '../components/node/SideMenu.vue'
 import Probes from './Probes.vue'
 import Monitor from './Monitor.vue'
 import CollectSection from '../components/CollectSection.vue'
 import NodeCommonCards from '../components/NodeCommonCards.vue'
+import AlertLog from './NodeMonitor/AlertLog.vue'
+import ConnectivityTest from './NodeMonitor/ConnectivityTest.vue'
+// 2026-10-01: MonitoredDevices(纳管设备只读清单)按用户要求移除 —— 与"协议配置 → 监控
+// 目标"重复; 组件文件随之删除(仅本页引用过)。
 
 const route = useRoute()
 const router = useRouter()
 
-// 只有 'net' 是网络设备 Tab, 其它取值(含空)落到探针 Tab —— 旧书签 /nodemonitor 不失效
-const tab = computed(() => (route.query.tab === 'net' ? 'net' : 'probe'))
+const VIEWS = ['overview', 'alerts', 'protocol', 'connectivity']
 
-// replace 而非 push: 切 Tab 不堆历史(后退应是离开本页)
-function setTab(t) {
-  if (t === tab.value) return
-  router.replace({ path: '/nodemonitor', query: t === 'net' ? { tab: 'net' } : {} })
+// 左侧菜单树: 一级「节点监控」根, 二级 4 项, 节点配置下三级 2 项
+const menu = [{
+  key: 'root',
+  label: '节点监控',
+  children: [
+    { key: 'overview', label: '设备总览' },
+    { key: 'alerts', label: '告警日志管理' },
+    { key: 'settings', label: '节点配置', children: [
+      { key: 'protocol', label: '协议配置' },
+      { key: 'connectivity', label: '连通性测试' }
+    ] }
+  ]
+}]
+
+// view 解析: 新 ?view= 优先; 旧 ?tab=net(/monitor 重定向遗留)映射到协议配置
+const view = computed(() => {
+  const v = route.query.view
+  if (VIEWS.includes(v)) return v
+  if (route.query.tab === 'net') return 'protocol'
+  return 'overview'
+})
+
+// 告警日志管理的离开守卫: AlertLog 挂载时注册/卸载时注销(返回 false = 拦截)。
+// 必须在路由变化【之前】询问 —— vue-router 的 replace 是异步的, 若用路由 watcher
+// 事后拦截再顶回路由, 中间态(view=overview)的重渲染已先一步卸载 AlertLog,
+// 表单重挂载清零, 未保存修改全丢(2026-09-28 真机排查确认)。
+const alertsLeaveGuard = ref(null)
+function setAlertsGuard(fn) { alertsLeaveGuard.value = fn }
+
+function setView(key) {
+  if (key === view.value) return
+  if (view.value === 'alerts' && alertsLeaveGuard.value && !alertsLeaveGuard.value()) return
+  router.replace({ path: '/nodemonitor', query: key === 'overview' ? {} : { view: key } })
 }
 </script>
 
 <style scoped>
+.nm-body { display: flex; gap: 16px; align-items: flex-start; }
+.nm-side {
+  width: 216px; flex-shrink: 0;
+  position: sticky; top: 70px;
+}
+.nm-main { flex: 1; min-width: 0; }
 .section-gap { height: 16px; }
+@media (max-width: 900px) {
+  .nm-body { flex-direction: column; }
+  .nm-side { width: 100%; position: static; }
+}
 </style>

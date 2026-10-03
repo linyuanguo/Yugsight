@@ -149,6 +149,58 @@ func TestBuildFlowsAggregation(t *testing.T) {
 	if len(resp.Points) != 3 {
 		t.Fatalf("应有 3 个热点城市, got %d: %+v", len(resp.Points), resp.Points)
 	}
+	// 内网 /16 网段聚合: 10.0.0.1 → 10.0.0.0/16, 192.168.1.1 → 192.168.0.0/16
+	// (地球替代视图的数据源 —— 全内网时 arcs/points 空, 这个必须还在)
+	if len(resp.Intranet) != 2 {
+		t.Fatalf("应有 2 个内网网段, got %d: %+v", len(resp.Intranet), resp.Intranet)
+	}
+	inetByNet := map[string]int{}
+	for _, s := range resp.Intranet {
+		inetByNet[s.Net] = s.Count
+	}
+	if inetByNet["10.0.0.0/16"] != 1 || inetByNet["192.168.0.0/16"] != 1 {
+		t.Fatalf("内网网段应为 10.0.0.0/16=1, 192.168.0.0/16=1, got %v", inetByNet)
+	}
+}
+
+// TestBuildFlowsAllIntranet 全内网场景: arcs/points 空(无公网可定位)但 intranet 有数据。
+// 这是前端"地球 vs 内网分布"双态切换的数据契约 —— 地球画不出弧线但内网段分布必须还在,
+// 否则前端会误判"无数据"而丢掉内网资产信息。
+func TestBuildFlowsAllIntranet(t *testing.T) {
+	d := newTestDB(t)
+	g := newTestGeoIP(t)
+	addTask(t, d, "10.0.2.3", "")
+	addTask(t, d, "10.0.9.9", "") // 与上条同 10.0.0.0/16
+	addTask(t, d, "192.168.5.5", "")
+	addTask(t, d, "172.16.0.1", "")
+
+	cfg := dashboardConfig{Enabled: true, Days: 7, TopCities: 50}
+	resp := buildFlows(d, g, cfg)
+	if resp == nil {
+		t.Fatal("buildFlows 不应返回 nil")
+	}
+	// 全内网: 无公网可定位 → 弧线/热点空
+	if len(resp.Arcs) != 0 || len(resp.Points) != 0 {
+		t.Fatalf("全内网场景弧线/热点应为空, got arcs=%d points=%d", len(resp.Arcs), len(resp.Points))
+	}
+	// 内网 /16 聚合: 10.0.0.0/16=2(同段合并), 192.168.0.0/16=1, 172.16.0.0/16=1
+	if len(resp.Intranet) != 3 {
+		t.Fatalf("应有 3 个内网网段, got %d: %+v", len(resp.Intranet), resp.Intranet)
+	}
+	inetByNet := map[string]int{}
+	for _, s := range resp.Intranet {
+		inetByNet[s.Net] = s.Count
+	}
+	if inetByNet["10.0.0.0/16"] != 2 {
+		t.Fatalf("10.0.0.0/16 应计 2(同 /16 合并), got %d", inetByNet["10.0.0.0/16"])
+	}
+	if inetByNet["192.168.0.0/16"] != 1 || inetByNet["172.16.0.0/16"] != 1 {
+		t.Fatalf("192.168.0.0/16 与 172.16.0.0/16 各应计 1, got %v", inetByNet)
+	}
+	// 降序: count=2 的 10.0.0.0/16 必须排第一
+	if resp.Intranet[0].Net != "10.0.0.0/16" {
+		t.Fatalf("内网网段应按计数降序, 第一应为 10.0.0.0/16, got %q", resp.Intranet[0].Net)
+	}
 }
 
 // TestBuildFlowsProbeSource 远程任务源=探针城市(非中心)。

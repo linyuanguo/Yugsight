@@ -18,9 +18,10 @@
 
   【关键约束: 页面里的 token 必须由服务端注入, 不能靠页面自己拿】
   页面本身是无状态模板, 服务端渲染时把地址与密钥替换进 {{...}} 占位符。
-  之所以不在浏览器里再调一次接口取 token: 那是把密钥暴露给"任何能打开这个
-  URL 的人", 而这个页面是给目标机器上的操作用户看的, 不是给未鉴权的匿名请求的
-  —— 接口 /install 走 requireAuth, 只有登录后的中心端使用者才拿得到带密钥的版本。
+  之所以不在浏览器里再调一次接口取 token: 密钥不该出现在接口响应之外的
+  任何地方, 由服务端在渲染时一次性注入最可控。
+  (2026-09-27 起 /install 匿名可访问: 登录页提供"探针安装包下载"入口,
+  目标机器上的操作者无需登录即可打开本页; 内网部署口径。)
 
   【为什么要 meta referrer=no-referrer】页面上有"复制命令"含密钥, 用户若从本页
   点任何外链, Referer 会把本页 URL(可能带参数)带出去; 直接禁掉更省心。
@@ -97,11 +98,28 @@
 
   <div class="card">
     <h2><span class="num">3</span>Linux / macOS: 命令行启动</h2>
-    <div class="tip">拷到目标机器任意目录, 然后在<strong>该目录</strong>执行(已带上本中心的地址与节点密钥):</div>
+
+    <div class="tip"><b>手动方式</b>: 需先在步骤 1 把对应平台的探针安装包<b>下载下来, 再拷到(上传到)目标机器</b>, 然后执行下面命令(已带上本中心的地址与节点密钥):</div>
     <div class="cmd">
       <pre id="cmdUnix">./yugsight-agent -center {{ADDR}} -token {{TOKEN}}</pre>
       <button class="copy" onclick="copyCmd('cmdUnix')">复制</button>
     </div>
+    <div class="tip" style="margin-top:8px">
+      以上命令带的是<b>当前中心端地址 <code>{{ADDR}}</code></b>。
+      <b>若中心端 IP 变化(换网/VPN)</b>, 旧命令即失效 —— 重新打开本页复制命令(地址自动更新),
+      再到探针端重跑即可; Windows 探针连不上时也会弹窗让你改地址。
+    </div>
+
+    <div style="margin-top:16px" class="tip"><b>Linux 一键安装(无需手动下载/上传)</b>: 在目标机器上执行下面一行(root 权限), 脚本自动从中心端 Web 端口 <code>{{UIPORT}}</code> 下载探针、安装到 <code>/usr/local/bin</code> 并用 systemd 托管(<b>开机自启 + 进程崩溃自动拉起</b>), 地址与节点密钥已由中心端注入脚本, 无需手填。需要目标机器已装 <code>curl</code> 与 <code>systemd</code>(服务器标配)且能访问中心端。</div>
+    <div class="cmd">
+      <pre id="cmdAuto">curl -fsSLk https://{{ADDRHOST}}:{{UIPORT}}/api/v2/probe/agent/install.sh | bash</pre>
+      <button class="copy" onclick="copyCmd('cmdAuto')">复制</button>
+    </div>
+    <div class="tip" style="margin-top:8px">
+      非 root 账号执行时, 把结尾的 <code>bash</code> 换成 <code>sudo bash</code>;
+      macOS 无 systemd, 请用上面的手动方式。
+    </div>
+
     <div class="tip" style="margin-top:10px">
       <span class="k">请勿公开分享本页面</span>(页面内含节点密钥)。
     </div>
@@ -111,7 +129,7 @@
     <h2><span class="num">4</span>确认上线</h2>
     <ul>
       <li>启动后回到中心端 <b>探针管理</b> 页, 节点应在数秒内出现在列表中(每 5 秒自动刷新)。</li>
-      <li>从 Windows 访问格式为 <code>http://&lt;中心端IP&gt;:{{UIPORT}}/app/</code> 的地址进入管理界面; 从 Linux/macOS 访问则替换为对应 IP/端口。</li>
+      <li>从 Windows 访问格式为 <code>https://&lt;中心端IP&gt;:{{UIPORT}}/app/</code> 的地址进入管理界面; 从 Linux/macOS 访问则替换为对应 IP/端口。</li>
       <li>探针日志在同目录的 <code>yugsight-agent.log</code>, 出问题先看它。</li>
     </ul>
   </div>
@@ -125,6 +143,10 @@
           的 <code>center.token</code> 不一致(密钥可在中心端 探针管理 页复制)。</li>
       <li><b>连不上中心端</b>: 目标机器需能出站访问 <code>{{ADDR}}</code>;
           请检查防火墙/安全组是否放行了这条出站连接。Windows 上会弹框让你改地址或稍后提醒。</li>
+      <li><b>中心端地址变了(换网/VPN 导致 IP 变化)</b>: 探针不会自动切换,
+          <b>重新跑一次一键安装命令即可</b>(地址自动更新为当前 IP, 旧服务的地址会被覆盖,
+          开机自启保留, 无需手改任何文件)。
+          手动部署的(无 systemd 环境)则用新地址重跑启动命令。</li>
       <li><b>Windows 卸载</b>: 双击安装目录 <code>C:\YugsightAgent</code> 里的
           <b>卸载探针.exe</b>(自动停止探针 + 删除开机自启 + 删除安装目录);
           也可手工: 结束 <code>yugsight-agent.exe</code> 进程、删除该目录、删除注册表项
@@ -137,7 +159,7 @@
 
 <script>
 // 复制按钮: 优先用 clipboard API(HTTPS/localhost), 否则回落到 textarea + execCommand
-// —— 中心端多为 http://内网IP 访问, clipboard API 在非安全上下文不可用, 不回落的话
+// —— 中心端多为 https://内网IP 访问, clipboard API 在非安全上下文不可用, 不回落的话
 // 用户点了"复制"没反应, 会以为页面坏了。
 function copyCmd(id){
   var el = document.getElementById(id);

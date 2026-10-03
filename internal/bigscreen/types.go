@@ -168,6 +168,11 @@ type ProbeNode struct {
 	CPUPercent   *float64  `json:"cpuPercent,omitempty"`
 	MemPercent   *float64  `json:"memPercent,omitempty"`
 	DiskPercent  *float64  `json:"diskPercent,omitempty"`
+	// 2026-09-26: 磁盘 IO / 网络上下行速率(字节/秒, 探针按指标周期上报, 默认 30s)
+	DiskReadBps  float64 `json:"diskReadBps,omitempty"`
+	DiskWriteBps float64 `json:"diskWriteBps,omitempty"`
+	NetUpBps     float64 `json:"netUpBps,omitempty"`
+	NetDownBps   float64 `json:"netDownBps,omitempty"`
 	Hostname     string    `json:"hostname,omitempty"`
 	OS           string    `json:"os,omitempty"`
 	CPUCores     int       `json:"cpuCores,omitempty"`

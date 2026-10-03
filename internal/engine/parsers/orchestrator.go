@@ -455,10 +455,16 @@ func (o *Orchestrator) buildArgs(engineName string, req Request) (args []string,
 	case "trivy":
 		// 目标形如 "image:nginx:1.21" / "fs:/app" 时按前缀切换子命令
 		sub := "fs"
-		if strings.HasPrefix(strings.ToLower(target), "image:") {
+		// 前缀决定 trivy 子命令: image:/container: 走镜像/运行中容器, 其余默认 fs(本地路径)。
+		// container 与 image 输出 schema 一致, 复用同一套 ParseTrivy。
+		switch {
+		case strings.HasPrefix(strings.ToLower(target), "container:"):
+			sub = "container"
+			target = target[len("container:"):]
+		case strings.HasPrefix(strings.ToLower(target), "image:"):
 			sub = "image"
 			target = target[len("image:"):]
-		} else if strings.HasPrefix(strings.ToLower(target), "fs:") {
+		case strings.HasPrefix(strings.ToLower(target), "fs:"):
 			target = target[len("fs:"):]
 		}
 		args = []string{sub, "-f", "json"}

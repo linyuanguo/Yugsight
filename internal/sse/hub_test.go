@@ -55,6 +55,33 @@ func TestHubReplay(t *testing.T) {
 	}
 }
 
+// hello 是连接握手信号: 进环形缓冲实时广播, 但重连补发时必须跳过 ——
+// 否则每次断线重连都会把之前的 hello 批量补发, 前端"已接入 SSE 事件流"重复刷屏。
+func TestHubReplaySkipsHello(t *testing.T) {
+	h := NewHub()
+	if err := h.PublishJSON("hello", map[string]string{"msg": "已接入 SSE 事件流"}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if err := h.PublishJSON("status", map[string]string{"msg": "hi"}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	ch, cancel := h.Subscribe(0) // 从零补发: 应只有 status, 不含 hello
+	defer cancel()
+	select {
+	case ev := <-ch:
+		if ev.Name != "status" || ev.ID != 2 {
+			t.Fatalf("replay = %+v, want status#2(hello 必须被跳过)", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("未收到补发事件")
+	}
+	select {
+	case ev := <-ch:
+		t.Fatalf("补发窗口里还有多余事件: %+v", ev)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 // 环形缓冲上限: 超出 ringSize 的旧事件不再补发
 func TestHubRingBound(t *testing.T) {
 	h := NewHub()

@@ -8,7 +8,7 @@
 // "1天内记住密码": 勾选时把账号+密码存本机 localStorage, 24h 过期自动清除,
 // 下次打开登录页自动回填 —— 只省敲键盘, 动态码每次都必须输入(安全边界不松)。
 // 本工具为单管理员离线内网部署, 凭据只存本机浏览器, 不出网。
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/http.js'
 import { setUser } from '../auth'
@@ -23,6 +23,68 @@ const showPass = ref(false)  // 密码框内"显示/隐藏密码"开关
 const err = ref('')
 const msg = ref('')
 const loading = ref(false)
+
+// ===== 证书信任引导(仅登录页, 先于登录表单渲染) =====
+// 浏览器不向页面 JS 暴露"证书是否受系统信任"(受信与"点了继续访问"都是
+// isSecureContext=true, JS 读不到地址栏), 前端自己永远判不准"装没装证书"。
+// 唯一可靠依据在中心端: 后端进程直接读 Windows 证书存储, /api/auth/status 回
+// certTrusted(根 CA 是否在机器/用户根存储)。登录页口径:
+//   selfSigned && !certTrusted → 显示安装引导条;
+//   certTrusted=true(已装)     → 提示自动消失, 无需点任何按钮;
+//   卸载证书后刷新页面          → 提示自动回来(含 certmgr 手动卸载)。
+// "不再提示"仅留作兜底(如非 Windows 平台后端恒回 certTrusted=false), 正常流程
+// 不依赖它。
+// 新 key(不沿用旧版 yugsight_cert_perm_dismissed): 旧状态是"无条件压横幅", 与现在
+// "横幅跟随证书真实状态"的口径冲突, 旧残留会让卸载证书后提示回不来, 故换新名重置。
+const CERT_ACK_KEY = 'yugsight_cert_ack_v2'
+const CERT_LATER_KEY = 'yugsight_cert_later'
+let ack0 = false
+let later0 = false
+try { ack0 = localStorage.getItem(CERT_ACK_KEY) === '1' } catch { ack0 = false }
+try { later0 = sessionStorage.getItem(CERT_LATER_KEY) === '1' } catch { later0 = false }
+const certSelfSigned = ref(false)   // 后端 selfSigned 标志, onMounted 填入
+const certTrusted = ref(false)      // 后端 certTrusted: 根 CA 是否已装入信任存储
+const certAcked = ref(ack0)
+const certLater = ref(later0)
+const certDownloading = ref(false)
+const showCertWarn = computed(() => certSelfSigned.value && !certTrusted.value && !certAcked.value && !certLater.value)
+
+// 永久收起(兜底, 正常流程靠 certTrusted 自动驱动)
+function ackCert() {
+  certAcked.value = true
+  try { localStorage.setItem(CERT_ACK_KEY, '1') } catch { /* 隐私模式静默 */ }
+}
+// 本标签页本次会话不再显示(关标签页/重开浏览器后恢复)
+function laterCert() {
+  certLater.value = true
+  try { sessionStorage.setItem(CERT_LATER_KEY, '1') } catch { /* 隐私模式静默 */ }
+}
+// 安装证书: 拉取 /static/YugsightCertTool.exe(同源, 跟随当前 http/https)→ blob →
+// 触发下载; 按钮文字"安装证书"→"正在下载..."→ 完成后恢复。拉取失败(如工具未构建)
+// 回退直接链接, 让浏览器自行处理 404。不拦截登录(按钮 type=button)。
+async function downloadCertTool() {
+  if (certDownloading.value) return
+  certDownloading.value = true
+  try {
+    const r = await fetch('/static/YugsightCertTool.exe')
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'YugsightCertTool.exe'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    window.location.href = '/static/YugsightCertTool.exe'
+  } finally {
+    certDownloading.value = false
+  }
+}
+
+
 
 // ===== 记住密码(1天有效, 仅本机 localStorage) =====
 // 存 {user, pass, ts}; 加载时超 24h 直接清掉。损坏数据也清掉, 不让脏数据
@@ -150,6 +212,11 @@ onMounted(async () => {
     const st = await api('/api/auth/status')
     if (st && st.disabled) { msg.value = '测试模式(免登录), 正在进入控制台...'; router.push('/dashboard'); return }
     if (st && st.registered === false) { router.push('/register'); return }
+    // 自签部署 + 证书真实信任态均由后端给出(浏览器不向 JS 暴露受信状态, 只有
+    // 中心端进程能读证书存储): selfSigned 决定"是否该引导", certTrusted 决定
+    // "装了没"—— 装了不提示, 没装提示, 卸载后刷新自动回显。
+    if (st && st.selfSigned) certSelfSigned.value = true
+    if (st && st.certTrusted) certTrusted.value = true
   } catch { /* 状态获取失败不阻断登录页 */ }
   loadCred() // 回填记住的账号密码(必须在拉码值之前, 码值按用户名取)
   await fetchCode()
@@ -161,6 +228,31 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
 <template>
   <div class="page-login">
     <form class="login-card" @submit.prevent="doLogin">
+      <!-- 证书安装引导条: 自签部署(selfSigned)且根证书未装入信任存储(certTrusted=false,
+           后端读系统证书存储判定)时显示; 装好证书刷新页面即自动消失, 卸载后自动回显。
+           未"稍后再说"(本标签页)且未"不再提示"(永久兜底)时可见; 登录成功后离开本页
+           即不再出现。不拦截登录(按钮均 type=button)。 -->
+      <div v-if="showCertWarn" class="cert-warn">
+        <div class="cert-warn-top">
+          <div class="cert-warn-main">
+            <svg class="cert-warn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+              <path d="M12 8v4"/><path d="M12 16h.01"/>
+            </svg>
+            <p class="cert-warn-text">当前连接证书未受系统信任，请安装证书</p>
+          </div>
+          <div class="cert-warn-actions">
+            <button type="button" class="cert-install" :disabled="certDownloading" @click="downloadCertTool">
+              {{ certDownloading ? '正在下载...' : '安装证书' }}
+            </button>
+            <button type="button" class="cert-later" @click="ackCert">不再提示</button>
+            <button type="button" class="cert-later" @click="laterCert">稍后再说</button>
+          </div>
+        </div>
+      </div>
+
       <div class="brand">
         <h1>御视 <span class="en">Yugsight</span></h1>
         <p class="sub">网络安全扫描探测与运维大屏</p>
@@ -207,6 +299,14 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
       <button class="btn" type="submit" :disabled="loading">
         {{ loading ? '登录中...' : '登 录' }}
       </button>
+
+      <!-- 2026-09-27: 探针安装包下载入口(醒目位置, 用户明确要求)。
+           用同源相对路径: 跟随当前浏览器地址(https/任意 IP 均正确, 换 IP 不用改)。
+           该接口已移除登录校验, 未登录的操作者也能直接打开页面下载安装包。
+           2026-09-29: 原写死 http://192.168.1.143:8420, 切 HTTPS 后失效, 改同源相对路径。 -->
+      <a class="agent-dl" href="/api/v2/probe/agent/install" target="_blank" rel="noreferrer">
+        探针安装包下载(免登录, 新机器部署用)
+      </a>
     </form>
     <p class="foot">Yugsight · 离线本地部署 · 登录校验全程本地完成
       · <a class="quit-link" href="javascript:void(0)" @click="quitService">停止服务</a>
@@ -217,6 +317,20 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
 <style scoped>
 .page-login { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: var(--bg, #0d1220); }
 .login-card { width: 360px; max-width: 92vw; background: var(--panel, #131a2c); border: 1px solid var(--line, #232c45); border-radius: 12px; padding: 28px 26px; display: flex; flex-direction: column; gap: 14px; }
+/* 证书信任警示条: 登录卡顶部通栏(负边距抵消卡片内边距, 撑满卡片宽), 浅黄底 + 顶部
+   描边, 与系统深色风格区分但不突兀。 */
+.cert-warn { margin: -28px -26px 0; padding: 14px 16px 12px; background: #fbf3d0; border-top: 3px solid #e6a700; border-bottom: 1px solid var(--line, #232c45); border-radius: 11px 11px 0 0; }
+.cert-warn-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.cert-warn-main { display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 0; }
+.cert-warn-icon { width: 20px; height: 20px; color: #b8860b; flex-shrink: 0; margin-top: 1px; }
+.cert-warn-text { margin: 0; font-size: 13px; line-height: 1.5; color: #6b5900; }
+.cert-warn-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+.cert-install { background: var(--accent, #4c8dff); color: #fff; border: 0; border-radius: 6px; padding: 6px 16px; font-size: 13px; cursor: pointer; }
+.cert-install:hover { filter: brightness(1.08); }
+.cert-install:disabled { opacity: .7; cursor: default; }
+.cert-later { background: none; border: 0; color: var(--dim, #7d8db0); font-size: 12px; cursor: pointer; padding: 2px 4px; }
+.cert-later:hover { color: var(--fg, #e8ecf5); text-decoration: underline; }
+
 .brand h1 { margin: 0; font-size: 22px; color: var(--fg, #e8ecf5); }
 .brand .en { font-size: 15px; color: var(--dim, #7d8db0); font-weight: 400; }
 .brand .sub { margin: 4px 0 0; font-size: 12px; color: var(--dim, #7d8db0); }
@@ -243,6 +357,9 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
 .ok { margin: 0; font-size: 12px; color: var(--accent, #4c8dff); }
 .btn { background: var(--accent, #4c8dff); border: 0; border-radius: 8px; padding: 11px 0; color: #fff; font-size: 14px; cursor: pointer; }
 .btn:disabled { opacity: .6; cursor: default; }
+/* 探针安装包下载入口(2026-09-27): 登录页醒目位置, 免登录直开安装落地页 */
+.agent-dl { display: block; text-align: center; text-decoration: none; font-size: 13px; color: var(--accent, #4c8dff); border: 1px dashed var(--accent, #4c8dff); border-radius: 8px; padding: 9px 10px; transition: background .15s, color .15s; }
+.agent-dl:hover { background: rgba(76, 141, 255, .1); color: var(--fg, #e8ecf5); }
 .foot { font-size: 12px; color: var(--dim, #7d8db0); }
 .quit-link { color: var(--danger, #ff6b6b); text-decoration: none; }
 .quit-link:hover { text-decoration: underline; }

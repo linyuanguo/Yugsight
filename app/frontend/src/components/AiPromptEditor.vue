@@ -10,7 +10,8 @@ import { computed, ref } from 'vue'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   height: { type: String, default: '300px' },
-  vars: { type: Array, default: () => [] } // 内置变量名(着色 + 悬停提示)
+  vars: { type: Array, default: () => [] }, // 内置变量名(着色 + 悬停提示)
+  disabled: { type: Boolean, default: false } // 2026-09-27: 小 Y 总开关关闭时整卡置灰不可编辑
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -44,12 +45,13 @@ function syncScroll(e) {
 </script>
 
 <template>
-  <div class="phe" :style="{ height }">
+  <div class="phe" :class="{ disabled }" :style="{ height }">
     <pre ref="hlEl" class="phe-hl" v-html="highlighted"></pre>
     <textarea
       ref="taEl"
       class="phe-ta"
       :value="modelValue"
+      :disabled="disabled"
       spellcheck="false"
       wrap="off"
       @input="onInput"
@@ -65,6 +67,11 @@ function syncScroll(e) {
   border-radius: 6px;
   background: var(--bg2, #101318);
   overflow: hidden;
+}
+/* 2026-09-27: 禁用态(小 Y 总开关关) —— 整块置灰, 高亮层挡掉交互 */
+.phe.disabled {
+  opacity: 0.55;
+  pointer-events: none;
 }
 .phe-hl,
 .phe-ta {

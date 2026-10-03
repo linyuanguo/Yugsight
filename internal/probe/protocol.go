@@ -97,12 +97,31 @@ type EngineVer struct {
 }
 
 // Load stat: 心跳时上报的负载指标。
+//
+// 2026-09-26 指标批量上报(用户口径"不要实时发, 累积 30 秒发一次, 时间中心端可
+// 下发"): 心跳保持原间隔(保活/离线判定不受影响), 但**性能指标只在指标周期
+// (MetricsSec, 默认 30s) 边界随心跳附带**; 周期内的心跳只带任务态字段
+// (MetricsAt=0)。周期内 CPU 按窗口差值算 = "累积"语义; 磁盘 IO / 网络上下行
+// 是速率值(字节/秒), 由采集端按窗口计算。
 type Load struct {
-	CPUPercent   float64 `json:"cpuPercent,omitempty"`  // CPU 占用百分比(粗算)
+	CPUPercent   float64 `json:"cpuPercent,omitempty"`  // CPU 占用百分比(窗口平均)
 	MemPercent   float64 `json:"memPercent,omitempty"`  // 内存占用百分比
 	TasksRunning int     `json:"tasksRunning"`          // 正在执行的任务数
 	CurrentTask  string  `json:"currentTask,omitempty"` // 当前任务描述
 	UptimeSec    int64   `json:"uptimeSec,omitempty"`   // 探针运行时长
+	// MetricsAt 最近一次性能指标采样的 Unix 秒; 0 = 本心跳不带性能指标
+	// (处于指标周期内的保活心跳)。中心端据此区分"指标为 0"与"没有指标",
+	// 避免大屏上负载闪 0%。
+	MetricsAt int64 `json:"metricsAt,omitempty"`
+	// 磁盘 IO / 网络流量速率(字节/秒, 全部窗口均值; 采集失败平台为 0 被省略)。
+	DiskReadBps  float64 `json:"diskReadBps,omitempty"`  // 磁盘读速率
+	DiskWriteBps float64 `json:"diskWriteBps,omitempty"` // 磁盘写速率
+	NetUpBps     float64 `json:"netUpBps,omitempty"`     // 网络上行(发送)速率
+	NetDownBps   float64 `json:"netDownBps,omitempty"`   // 网络下行(接收)速率
+	// 2026-10-02: 按网卡的端口明细(名称/状态/MAC/IP/上下行速率), 供拓扑"端口详情"
+	// 与"链路绑定端口"使用。只在指标拍随性能指标一起带(与整机速率同拍, 避免每
+	// 15s 心跳都传一份清单); 平台不支持时为空(前端显示"暂无端口数据")。
+	Ifaces []IfaceSample `json:"ifaces,omitempty"`
 }
 
 // Envelope 统一消息信封: 所有通信消息都是单行 JSON。
@@ -120,6 +139,7 @@ type Envelope struct {
 	Error        string      `json:"error,omitempty"`
 	Message      string      `json:"message,omitempty"`
 	HeartbeatSec int         `json:"heartbeatSec,omitempty"` // 中心端下发的推荐心跳间隔(秒)
+	MetricsSec   int         `json:"metricsSec,omitempty"`   // 中心端下发的性能指标上报周期(秒), 默认 30
 	TS           int64       `json:"ts,omitempty"`           // Unix 时间戳(秒)
 	// AgentVersion 中心端当前提供的 agent 版本(注册应答回带)。
 	//
@@ -166,6 +186,7 @@ type TaskAssign struct {
 type TaskResult struct {
 	TaskID     string    `json:"taskId"`
 	Status     string    `json:"status"` // success / failed
+	Cancelled  bool      `json:"cancelled,omitempty"` // 2026-09-27: 用户取消(区别于执行失败, 中心端历史页按"已取消"展示)
 	Error      string    `json:"error,omitempty"`
 	StartedAt  int64     `json:"startedAt,omitempty"`
 	FinishedAt int64     `json:"finishedAt,omitempty"`

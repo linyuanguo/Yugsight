@@ -1,7 +1,13 @@
 <template>
   <div>
-    <PageHeader title="授权管理" desc="用户 / 登录会话 / 审计日志 / 服务管理"></PageHeader>
+    <PageHeader title="授权与模型" desc="用户 / 登录会话 / 审计日志 / 服务管理 · AI 配置"></PageHeader>
 
+    <div class="tabs" style="margin-bottom:14px">
+      <div class="tab" :class="{ active: tab === 'license' }" @click="setTab('license')">授权与模型</div>
+      <div class="tab" :class="{ active: tab === 'ai' }" @click="setTab('ai')">AI 配置</div>
+    </div>
+
+    <div v-if="tab === 'license'">
     <div class="grid cols-2">
       <!-- 账户 -->
       <div class="card">
@@ -19,7 +25,7 @@
 
       <!-- 用户管理(仅管理员可见; auditor 的写接口会被后端 403 兜底) -->
       <div class="card" v-if="role === 'admin'">
-        <div class="card-title">用户管理 <span class="sub">admin 全权限 / operator 除授权管理外全功能 / auditor 只读</span></div>
+        <div class="card-title">用户管理 <span class="sub">admin 全权限 / operator 除授权与模型外全功能 / auditor 只读</span></div>
         <div class="form-row">
           <input v-model="newUser.name" class="input" placeholder="用户名" maxlength="20" />
           <input v-model="newUser.pass" class="input" type="password" placeholder="初始密码" />
@@ -83,7 +89,7 @@
       </div>
 
       <!-- 服务管理: "停止服务"按钮从顶栏移到这里(2026-09-21 收尾)—— 破坏性动作
-           不该常驻全局顶栏, 放在授权管理页降低误触; /api/quit 端点保留不变 -->
+           不该常驻全局顶栏, 放在授权与模型页降低误触; /api/quit 端点保留不变 -->
       <div class="card">
         <div class="card-title">服务管理 <span class="sub">停止后进程退出, 需重新运行 exe</span></div>
         <p class="muted small" style="margin:0 0 10px">
@@ -91,6 +97,63 @@
           本按钮与登录页的"停止服务"链接是仅有的两个停止入口。
         </p>
         <button class="btn quit" :disabled="busy" @click="quitService">停止服务</button>
+
+        <!-- 恢复出厂: 清空全部运行期数据 + 配置(打 dist 分发包发给他人前用) -->
+        <div style="border-top:1px solid var(--border); margin:14px 0 10px"></div>
+        <div class="card-title">恢复出厂 <span class="sub">清空所有数据与配置, 不可恢复</span></div>
+        <p class="muted small" style="margin:0 0 10px">
+          清空 AI 配置 / 用户配置 / 审计日志 / 渗透审计 / 资产 / 扫描任务 / 全部报告,
+          并重置为出厂状态(初始账号 admin/admin123)。用于打包 dist 发给他人前清理。
+        </p>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin:0 0 10px; cursor:pointer">
+          <input type="checkbox" v-model="resetCleanEnv"> 同时清除外部引擎(nmap/ZAP)·探针包·日志(回收约 700MB)
+        </label>
+        <div style="display:flex; gap:8px">
+          <input class="input" style="flex:1" v-model="resetConfirm" placeholder='输入"恢复出厂"以确认' @keyup.enter="doFactoryReset">
+          <button class="btn quit" :disabled="busy" @click="doFactoryReset">恢复出厂</button>
+        </div>
+        <p v-if="resetErr" style="color:var(--danger,#ff6b6b); font-size:12px; margin:8px 0 0">{{ resetErr }}</p>
+        <p v-if="resetOk" style="color:#34d399; font-size:12px; margin:8px 0 0">{{ resetOk }}</p>
+      </div>
+
+      <!-- 品牌自定义(2026-09-28): 系统名称 + 页脚版权, 仅 2 个可配置字段;
+           保存走 brand 节合并写, 立即生效无需重启; 仅 admin 可改
+           (后端 adminOnly 是最终边界) -->
+      <div class="card" v-if="role === 'admin'">
+        <div class="card-title">品牌自定义 <span class="sub">系统名称与页脚版权 · 保存后立即生效, 无需重启</span></div>
+        <div class="form-row" style="flex-direction:column; align-items:stretch">
+          <label class="muted small">系统名称 <span class="muted">(浏览器标签页标题 + 侧边栏顶部)</span></label>
+          <input class="input" v-model="brand.system_name" maxlength="120" placeholder="Yugsight 御视" :disabled="brandSaving" />
+          <label class="muted small" style="margin-top:8px">版权信息 <span class="muted">(全局页脚主行)</span></label>
+          <input class="input" v-model="brand.copyright" maxlength="120" placeholder="Copyright © 2026 Yugsight" :disabled="brandSaving" />
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:10px">
+          <button class="btn" :disabled="brandSaving || !brandDirty" @click="saveBrand">{{ brandSaving ? '保存中…' : '保存' }}</button>
+          <span class="muted small" v-if="brandMsg">{{ brandMsg }}</span>
+        </div>
+      </div>
+
+      <!-- HTTPS 访问白名单(2026-09-29): 空 = 不限制任何 IP(默认); 配 IP/网段 = 只放行列表内来源。
+           保存即热加载(无需重启); 换 IP 也无需改这里(服务器按访问 IP 自动签发证书),
+           白名单只用于"限制谁能访问"。仅 admin 可改(后端 adminOnly 是最终边界) -->
+      <div class="card" v-if="role === 'admin'">
+        <div class="card-title">HTTPS 访问白名单 <span class="sub">限制哪些 IP 可访问中心端 · 保存立即生效, 无需重启</span></div>
+        <p class="muted small" style="margin:0 0 10px">
+          留空 = <b>不限制</b>(任何人可访问, 默认)。添加 IP 或网段(如 <span class="mono">192.168.1.0/24</span>、<span class="mono">10.0.0.5</span>)后,
+          只放行列表内的来源, 其它 IP 在 TLS 握手阶段被拒。换 IP 无需改这里(服务器按访问 IP 自动签证书)。
+        </p>
+        <div class="form-row">
+          <input class="input" style="flex:1" v-model="httpsNew" placeholder="IP 或网段, 如 192.168.1.0/24" :disabled="httpsSaving" @keyup.enter="addHttpsIp" />
+          <button class="btn" :disabled="httpsSaving || !httpsNew.trim()" @click="addHttpsIp">添加</button>
+        </div>
+        <div class="form-row" style="flex-wrap:wrap; gap:6px; margin-top:8px" v-if="httpsIps.length">
+          <span class="badge" v-for="ip in httpsIps" :key="ip" style="cursor:pointer" @click="removeHttpsIp(ip)" :title="点击移除">{{ ip }} ×</span>
+        </div>
+        <Empty v-else text="未启用(不限制任何 IP)" />
+        <div style="display:flex; align-items:center; gap:10px; margin-top:10px">
+          <button class="btn" :disabled="httpsSaving" @click="saveHttps">{{ httpsSaving ? '保存中…' : '保存' }}</button>
+          <span class="muted small" v-if="httpsMsg">{{ httpsMsg }}</span>
+        </div>
       </div>
     </div>
 
@@ -98,9 +161,11 @@
     <div class="card">
       <div class="card-title">审计日志 <span class="sub">登录 / 操作 / 启动 全量记录 · 保存 {{ retention }} 天(0=不限) · 上限 5000 条 <span class="muted">| 渗透审计在「渗透工作台 → 渗透审计」单独留痕(仅管理员可清空, 清空动作留 penta.audit.clear 痕迹)</span></span></div>
       <div class="form-row" style="flex-wrap:wrap">
+        <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 用户选项=审计
+             记录里出现过的用户(与动作同口径, 不再用用户表全量) -->
         <select class="input" v-model="flt.user" style="width:130px">
           <option value="">全部用户</option>
-          <option v-for="u in users" :key="u.username" :value="u.username">{{ u.username }}</option>
+          <option v-for="u in auditUsers" :key="u" :value="u">{{ u }}</option>
         </select>
         <select class="input" v-model="flt.action" style="width:170px">
           <option value="">全部动作</option>
@@ -146,17 +211,29 @@
         <span class="muted small">0 = 不限制(仅受 5000 条上限裁剪)</span>
       </div>
     </div>
+    </div>
+
+    <!-- AI 配置并入授权与模型(2026-09-26): 内嵌 AICfg(embedded 隐藏自身 PageHeader) -->
+    <AICfg v-if="tab === 'ai'" embedded />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import Empty from '../components/Empty.vue'
+import AICfg from './AICfg.vue'
 import { api } from '../api/http'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
 import { currentUser } from '../auth'
+
+const router = useRouter()
+const route = useRoute()
+// AI 配置并入授权与模型(2026-09-26): URL query 驱动 tab; 旧 /settings/ai 重定向到 ?tab=ai
+const tab = computed(() => (route.query.tab === 'ai' ? 'ai' : 'license'))
+function setTab(t) { router.replace({ path: '/license', query: t === 'ai' ? { tab: 'ai' } : {} }) }
 
 const st = ref({ registered: false, disabled: false })
 // 响应式绑定(与 Layout 同一修复): 整页刷新时本组件先于守卫 whoami 挂载,
@@ -165,10 +242,82 @@ const user = currentUser
 const role = ref('') // whoami 返回(admin/operator/auditor); 仅 admin 显示用户管理与日志清理
 const msg = ref('')
 const busy = ref(false)
+// ===== 恢复出厂(打 dist 分发包前清空全部数据) =====
+const resetCleanEnv = ref(false)
+const resetConfirm = ref('')
+const resetErr = ref('')
+const resetOk = ref('')
 const sessions = ref([])
 const audits = ref([])
 const users = ref([])
 const newUser = ref({ name: '', pass: '', role: 'auditor' })
+
+// ===== 品牌自定义(2026-09-28): 系统名称 + 页脚版权(仅 2 个可配置字段) =====
+// brandBase 记录加载时的原值, 用于"有改动才允许保存"(避免无意义写盘)
+const brand = ref({ system_name: '', copyright: '' })
+const brandBase = ref({ system_name: '', copyright: '' })
+const brandSaving = ref(false)
+const brandMsg = ref('')
+const brandDirty = computed(
+  () => brand.value.system_name !== brandBase.value.system_name
+    || brand.value.copyright !== brandBase.value.copyright
+)
+
+// ===== HTTPS 访问白名单(2026-09-29): 空 = 不限制, 配 IP/网段 = 只放行列表内来源 =====
+const httpsIps = ref([])
+const httpsNew = ref('')
+const httpsSaving = ref(false)
+const httpsMsg = ref('')
+
+async function loadBrand() {
+  try {
+    const d = await v2('/brand')
+    brand.value = { system_name: d.system_name || '', copyright: d.copyright || '' }
+    brandBase.value = { ...brand.value }
+  } catch (e) { /* 非 admin/异常: 面板本身已按 role 隐藏, 这里静默 */ }
+}
+
+async function saveBrand() {
+  if (!brand.value.system_name.trim() || !brand.value.copyright.trim()) { alert('系统名称与版权信息不能为空'); return }
+  brandSaving.value = true
+  brandMsg.value = ''
+  try {
+    const d = await v2('/brand', { method: 'POST', body: JSON.stringify(brand.value) })
+    brand.value = { system_name: d.system_name, copyright: d.copyright }
+    brandBase.value = { ...brand.value }
+    brandMsg.value = '已保存, 立即生效'
+    // 标签页标题同源更新(与 Layout 的 /api/info.brandName 一致)
+    if (d.system_name) document.title = d.system_name
+  } catch (e) { brandMsg.value = e.message || '保存失败' }
+  finally { brandSaving.value = false }
+}
+
+// ===== HTTPS 访问白名单: 读取/增删/保存(保存即热加载, 无需重启) =====
+async function loadHttps() {
+  try {
+    const d = await v2('/https')
+    httpsIps.value = (d && d.ips) || []
+  } catch (e) { /* 非 admin/异常: 面板按 role 隐藏, 静默 */ }
+}
+function addHttpsIp() {
+  const v = httpsNew.value.trim()
+  if (!v) return
+  if (!httpsIps.value.includes(v)) httpsIps.value.push(v)
+  httpsNew.value = ''
+}
+function removeHttpsIp(ip) {
+  httpsIps.value = httpsIps.value.filter(x => x !== ip)
+}
+async function saveHttps() {
+  httpsSaving.value = true
+  httpsMsg.value = ''
+  try {
+    const d = await v2('/https', { method: 'POST', body: JSON.stringify({ ips: httpsIps.value }) })
+    httpsIps.value = (d && d.ips) || []
+    httpsMsg.value = httpsIps.value.length ? ('已保存: ' + httpsIps.value.length + ' 条, 立即生效') : '已保存: 白名单关闭(不限制)'
+  } catch (e) { httpsMsg.value = e.message || '保存失败' }
+  finally { httpsSaving.value = false }
+}
 
 // ===== 审计日志: 筛选 / 分页 / 保存天数 =====
 const flt = ref({ user: '', action: '', keyword: '', from: '', to: '' })
@@ -204,14 +353,27 @@ async function loadAudits() {
   } catch (e) { msg.value = e.message }
 }
 
+const auditUsers = ref([])
 async function loadActions() {
-  // 动作下拉: 全表 distinct(最多 5000 条, 一次取完足够)
+  // 动作/用户下拉: 审计记录 distinct(最多 5000 条, 一次取完足够)。
+  // 2026-10-02 用户口径: 用户选项也从审计记录聚合(不再用用户表全量 ——
+  // 没留过审计记录的用户不该出现在筛选选项里)
   try {
     const r = await v2('/audit?limit=5000')
-    const s = new Set((r.list || []).map(a => a.action))
+    const list = r.list || []
+    const s = new Set(list.map(a => a.action))
     actions.value = Array.from(s).sort()
+    const u = new Set(list.map(a => a.userId).filter(Boolean))
+    auditUsers.value = Array.from(u).sort()
   } catch (e) { /* 下拉可空, 不影响主体 */ }
 }
+watch(auditUsers, () => {
+  // 已选用户的记录全被删/清空 → 选项消失, 筛选自清(防列表卡死为空)
+  if (flt.value.user && !auditUsers.value.includes(flt.value.user)) {
+    flt.value.user = ''
+    loadAudits()
+  }
+})
 
 function applyFilter() { page.value = 1; loadAudits() }
 function resetFilter() {
@@ -335,7 +497,22 @@ async function quitService() {
     + 'Yugsight 服务已停止。如需继续使用，重新运行 yugsight_windows_amd64.exe。</p>'
 }
 
-onMounted(() => { loadAll() })
+// 一键恢复出厂: 清空全部运行期数据 + 配置(打 dist 分发包发给他人前)。
+// 需输入"恢复出厂"确认; cleanEnv 勾选时额外清外部引擎/探针包/日志。
+async function doFactoryReset() {
+  if (resetConfirm.value !== '恢复出厂') { resetErr.value = '请输入"恢复出厂"以确认'; return }
+  if (!confirm('确定恢复出厂？将清空所有数据与配置(不可恢复)。' + (resetCleanEnv.value ? ' 同时清除外部引擎/探针包/日志。' : ''))) return
+  busy.value = true
+  resetErr.value = ''; resetOk.value = ''
+  try {
+    const d = await v2('/factory-reset', { method: 'POST', body: JSON.stringify({ cleanEnv: resetCleanEnv.value }) })
+    resetOk.value = '已恢复出厂：清空数据 ' + (d.cleared || 0) + ' 条。请点"停止服务"退出后再复制 dist 分发。'
+    resetConfirm.value = ''
+  } catch (e) { resetErr.value = e.message || '恢复出厂失败' }
+  finally { busy.value = false }
+}
+
+onMounted(() => { loadAll(); loadBrand(); loadHttps() })
 </script>
 
 <style scoped>

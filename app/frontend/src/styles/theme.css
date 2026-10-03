@@ -52,16 +52,25 @@ a:hover { text-decoration: underline; }
   padding: 18px 14px 24px;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
+/* 品牌区(2026-09-25 二轮): logo+名称整体居中, 点击跳版权信息页 */
+.brand-wrap { text-align: center; cursor: pointer; padding: 2px 0 6px; border-radius: 10px; user-select: none; }
+.brand-wrap:hover .brand { color: var(--accent); }
 .logo {
-  width: 44px; height: 44px; border-radius: 12px; margin-bottom: 12px;
+  width: 44px; height: 44px; border-radius: 12px; margin: 0 auto 10px;
   background: linear-gradient(135deg, #0ea5e9, #6366f1);
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; color: #fff; font-size: 15px; letter-spacing: .5px;
   box-shadow: 0 4px 18px rgba(56, 189, 248, .35);
 }
-.brand { font-size: 16.5px; font-weight: 700; padding: 0 10px; letter-spacing: .3px; }
+.brand { font-size: 16.5px; font-weight: 700; padding: 0; letter-spacing: .3px; text-align: center; }
+.brand-ver { font-size: 12.5px; font-weight: 600; color: var(--accent); margin-left: 6px; }
 .brand-sub { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
-.nav-group { font-size: 11px; color: var(--muted); padding: 16px 10px 6px; letter-spacing: 2px; }
+/* 2026-09-27: 菜单分组分隔线(替代旧文字标题 .nav-group): 用户要求去掉组标题字,
+   用分隔线区分分组; 两端渐隐的渐变线比实线更精致, 不抢菜单项视觉焦点 */
+.nav-sep {
+  height: 1px; margin: 14px 10px 8px;
+  background: linear-gradient(90deg, transparent, var(--border2) 28%, var(--border2) 72%, transparent);
+}
 .nav-item {
   display: flex; align-items: center; gap: 9px;
   padding: 9px 12px; margin-bottom: 2px; border-radius: 8px;
@@ -94,7 +103,8 @@ a:hover { text-decoration: underline; }
 .layout.collapsed .sidebar { width: 64px; padding: 18px 8px 24px; }
 .layout.collapsed .logo { margin: 0 auto 12px; }
 .layout.collapsed .brand { display: none; }
-.layout.collapsed .nav-group { display: none; }
+/* 收起态: 分隔线保留但缩为居中短线 —— 64px 图标栏里仍有分组感 */
+.layout.collapsed .nav-sep { width: 24px; margin: 12px auto 8px; }
 .layout.collapsed .nav-item { justify-content: center; padding: 8px 0; }
 .layout.collapsed .nav-item .nav-dot,
 .layout.collapsed .nav-item .nav-label { display: none; }
@@ -112,6 +122,13 @@ a:hover { text-decoration: underline; }
 .top-title { font-size: 15.5px; font-weight: 700; }
 .top-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .page-main { padding: 20px 24px 48px; flex: 1; width: 100%; max-width: 1500px; }
+/* 大屏沉浸式(2026-09-28): 安全大屏 Pro / 拓扑页进入浏览器全屏时给 body 挂 .bpro-immersive,
+   隐藏左侧菜单与顶部导航, 内容区去掉内边距/最大宽度限制, 只留画布与悬浮控制栏。
+   2026-09-29 起: 全屏为文档级(跨站内页保持), 类名由 App.vue 全局监听 fullscreenchange
+   增删(不再随页面卸载丢失), 退出全屏立即还原。 */
+body.bpro-immersive .sidebar,
+body.bpro-immersive .topbar { display: none !important; }
+body.bpro-immersive .page-main { padding: 0 !important; max-width: none !important; }
 
 /* ===== 卡片 / 栅格 ===== */
 .card {
@@ -132,6 +149,23 @@ a:hover { text-decoration: underline; }
 @media (max-width: 1200px) {
   .grid.cols-4, .grid.cols-5 { grid-template-columns: repeat(2, 1fr); }
   .grid.cols-3 { grid-template-columns: repeat(2, 1fr); }
+}
+/* ===== 手机端(<768px, 2026-09-27 用户反馈手机访问不协调) =====
+   桌面优先, 窄屏只调内容区密度: 栅格收 1 列、内边距收紧。
+   侧边栏由 Layout.vue 在 <768 时自动收起为 64px 图标栏(复用 collapsed 态);
+   表格保持 min-width 640px 依赖 .table-wrap 横向滚动(手机看数据表是常态,
+   强行压缩列只会让内容溢出重叠)。 */
+@media (max-width: 768px) {
+  .grid.cols-2, .grid.cols-3, .grid.cols-4, .grid.cols-5 { grid-template-columns: 1fr; }
+  .page-main { padding: 14px 12px 40px; }
+  .topbar { padding: 10px 12px; gap: 8px; }
+  .top-title { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card { padding: 14px; }
+  .toolbar .input, .toolbar .select { min-width: 110px; }
+}
+@media (max-width: 560px) {
+  .form-row { flex-direction: column; }
+  .kv { grid-template-columns: 88px 1fr; }
 }
 .grid > .card { margin-bottom: 0; }
 
@@ -472,12 +506,18 @@ table.table tr.clickable { cursor: pointer; }
 .donut-legend .top-item { padding: 5px 4px; border-bottom: none; }
 .donut-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
-/* --- 3D 地球 IP 流向 + SNMP 监控(任务 10b/10d) --- */
-/* 二期 14: 三卡片(地球 / SNMP / 漏洞热力图) */
-.screen-globe { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; min-height: 0; }
-.screen-globe > .card { min-height: 0; display: flex; flex-direction: column; }
+/* --- 大屏主体两栏(2026-09-26 精简为两项: 左=节点监控 IP 流向 3D 地球, 右=报告存档) --- */
+.screen-two { display: grid; grid-template-columns: 1.5fr 1fr; gap: 14px; min-height: 0; flex: 1; }
+.screen-two > .card { min-height: 0; display: flex; flex-direction: column; }
 .globe-card { min-height: 360px; }
-.globe-body { flex: 1; min-height: 300px; }
+.globe-body { flex: 1; min-height: 360px; }
+/* 报告存档列表(撑满卡片高度, 内容多时内层滚动) */
+.arch-list { max-height: none; flex: 1; overflow-y: auto; padding-right: 2px; }
+.arch-row { padding: 9px 4px; border-bottom: 1px solid var(--border); }
+.arch-row:last-child { border-bottom: none; }
+.arch-top { display: flex; align-items: center; gap: 8px; }
+.arch-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.arch-meta { display: flex; align-items: center; gap: 10px; margin-top: 5px; flex-wrap: wrap; }
 .mon-row { display: flex; align-items: center; gap: 8px; padding: 7px 4px; font-size: 12px; border-bottom: 1px solid var(--border); }
 .mon-row:last-child { border-bottom: none; }
 .mon-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
@@ -512,6 +552,7 @@ table.table tr.clickable { cursor: pointer; }
   .screen-mid { grid-template-columns: 1fr 1fr; }
   .screen-globe { grid-template-columns: 1fr 1fr; }
   .screen-bot { grid-template-columns: 1fr 1fr; }
+  .screen-two { grid-template-columns: 1fr; }
 }
 @media (max-width: 1000px) {
   .screen-cards { grid-template-columns: repeat(2, 1fr); }
@@ -536,3 +577,24 @@ table.table tr.clickable { cursor: pointer; }
 .heat-row .cell { text-align: center; border-radius: 4px; font-size: 12px; padding: 3px 0; color: #e2e8f0; }
 .heat-foot { margin-top: 8px; }
 }
+
+/* ===== Toast 全局轻提示(2026-09-28, toast.js 按需挂载) =====
+   顶栏中央堆叠, pointer-events 隔离: 容器不挡点击, 条本身可点(点击=关闭) */
+.ys-toast-wrap {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  z-index: 300; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+.ys-toast {
+  pointer-events: auto; cursor: pointer;
+  max-width: 72vw; padding: 9px 18px; border-radius: 10px;
+  font-size: 13px; line-height: 1.5; color: var(--text);
+  background: linear-gradient(180deg, rgba(22, 32, 56, .96), rgba(13, 20, 36, .96)), var(--panel);
+  border: 1px solid rgba(52, 211, 153, .5);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .5);
+  animation: ys-toast-in .22s ease;
+}
+.ys-toast-err { border-color: rgba(248, 113, 113, .55); }
+.ys-toast-info { border-color: rgba(56, 189, 248, .5); }
+.ys-toast-out { opacity: 0; transform: translateY(-8px); transition: all .2s; }
+@keyframes ys-toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }

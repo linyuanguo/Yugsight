@@ -1,10 +1,12 @@
 <!--
-  NodeCommonCards.vue 节点监控公共区: 采集全局配置 + 异常事件(两 Tab 共用)。
+  NodeCommonCards.vue 节点监控「协议配置」公共区: 采集全局配置。
 
   配置: 总开关 / 默认间隔 / 并发 / 全局限速 / 保留时长 / IP 白名单 / NetFlow 接收 /
         告警阈值 —— 对应 /api/v2/node/config(写 settings.json 的 collect 节)。
-  事件: 采集底座输出的异常事件(离线/恢复/CPU·内存·时延·丢包越限), 来自
-        /api/v2/node/events(落 collect_events 表, 保留 30 天)。
+
+  2026-09-30 用户要求: 异常事件与「告警日志管理 → 告警记录」同源(都是采集引擎
+  异常事件自动生成), 两处显示重复 —— 异常事件卡整体移入告警日志页(新"异常事件"
+  Tab, 含 AI 分析按钮), 本组件不再展示。
 -->
 <template>
   <div>
@@ -48,22 +50,9 @@
       </div>
     </div>
 
-    <!-- 报告中心(二期): 节点监控是连续采样, 周期轮询不自动存档;
-         这里提供手动"存快照"入口(最新状态 + 最近异常事件 → 原始报告) -->
-    <div class="card">
-      <div class="card-title">报告中心 <span class="sub">把当前节点监控状态存一份原始报告</span></div>
-      <div class="form-row cfg-row">
-        <div class="field cfg-field">
-          <button class="btn sm" @click="saveSnapshot('collect')" :disabled="snapBusy">存节点采集快照</button>
-        </div>
-        <div class="field cfg-field">
-          <button class="btn sm" @click="saveSnapshot('monitor')" :disabled="snapBusy">存设备监控快照(SNMP)</button>
-        </div>
-        <div class="field" style="flex:1; align-self:center">
-          <span class="muted small">"立即采集"完成也会自动存档一份; 存储与查看在「报告中心 → 原始报告」。</span>
-        </div>
-      </div>
-    </div>
+    <!-- 2026-10-02 用户口径: 节点监控不生成原始报告(报告中心被刷屏) ——
+         原"报告中心/存快照"卡片与"立即采集自动存档"一并移除, 采集结果只记日志;
+         存量历史报告仍在「报告中心 → 原始报告」可查/可删 -->
 
     <!-- 告警阈值 + NetFlow + 白名单(折叠区, 避免首屏过长) -->
     <div class="card">
@@ -114,43 +103,96 @@
       </template>
     </div>
 
-    <!-- 异常事件 -->
+    <!-- 每节点告警阈值(Zabbix 式"全局默认 + 节点覆盖": 留空=跟全局, 填了=该节点独立阈值) -->
     <div class="card">
-      <div class="card-title">
-        异常事件
-        <span class="sub">{{ events.length }} 条(保留 30 天)</span>
-        <div class="spacer"></div>
-        <button class="btn xs" @click="loadEvents">刷新</button>
-        <!-- 阶段 3: 告警 AI 分析 —— 后端按 module=collect 现场生成采集快照报告
-             (最新状态 + 最近事件)并分析, 结果存报告中心; 未启用自动置灰 -->
-        <AiAnalyzeButton module="collect" label="AI 分析(告警)" />
+      <div class="card-title">每节点告警阈值
+        <span class="sub">覆盖全局默认 · 留空项跟随全局 · 下一轮采集生效</span>
       </div>
-      <div v-if="!events.length" class="empty-box">
-        <span class="ph-tag">无事件</span>
-        暂无异常事件。连续失败达阈值会报离线, 恢复报上线, 指标越限报告警。
+      <div v-if="!status.tasks || !status.tasks.length" class="empty-box">
+        <span class="ph-tag">无任务</span> 先添加采集任务, 再为单个节点设置独立阈值。
       </div>
       <div v-else class="table-wrap">
         <table class="table">
-          <thead><tr><th>级别</th><th>类型</th><th>目标</th><th>说明</th><th>时间</th></tr></thead>
+          <thead><tr><th>节点(任务)</th><th>CPU(%)</th><th>内存(%)</th><th>时延(ms)</th><th>丢包(%)</th><th>连续失败N轮</th><th></th></tr></thead>
           <tbody>
-            <tr v-for="e in events" :key="e.id">
-              <td><span class="chip" :class="lvlClass(e.level)">{{ e.level }}</span></td>
-              <td class="mono small">{{ evtLabel(e.type) }}</td>
-              <td class="mono small">{{ e.target }}</td>
-              <td class="small">{{ e.msg }}</td>
-              <td class="mono small muted">{{ fmtDT(e.at) }}</td>
+            <tr v-for="t in status.tasks" :key="t.id">
+              <td>
+                <div class="small">{{ t.name || t.target }}</div>
+                <div class="mono small muted">{{ t.protocol }} · {{ t.target }}</div>
+              </td>
+              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[t.id].cpuPct" placeholder="全局" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[t.id].memPct" placeholder="全局" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="0" v-model="perNode[t.id].rttMs" placeholder="全局" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="0" max="100" v-model="perNode[t.id].lossPct" placeholder="全局" @input="onPerNodeInput" /></td>
+              <td><input class="input cfg-input" type="number" min="1" v-model="perNode[t.id].failStreak" placeholder="全局" @input="onPerNodeInput" /></td>
+              <td><button class="btn xs" @click="resetPerNode(t.id)" :disabled="!hasPerNode(t.id)">重置</button></td>
             </tr>
           </tbody>
         </table>
       </div>
+      <div class="form-row cfg-row" v-if="status.tasks && status.tasks.length">
+        <div class="field" style="flex:1; align-self:center">
+          <span class="muted small">placeholder「全局」= 跟随全局阈值(当前 CPU {{ cfg.alerts.cpuPct }}% / 内存 {{ cfg.alerts.memPct }}% / 时延 {{ cfg.alerts.rttMs || '关' }}ms / 丢包 {{ cfg.alerts.lossPct }}% / 失败 {{ cfg.alerts.failStreak }} 轮)。</span>
+        </div>
+        <div class="field cfg-field" style="justify-content:flex-end">
+          <button class="btn primary sm" @click="savePerNode" :disabled="perNodeSaving">保存节点阈值</button>
+        </div>
+      </div>
     </div>
+
+    <!-- 采集模板(2026-09-29 阶段 C, 借鉴 Zabbix 监控模板: 命名预设=协议+参数+默认阈值。
+         建任务时选模板自动继承; 继承是一次性起点, 之后改模板不影响已建任务) -->
+    <div class="card">
+      <div class="card-title">采集模板
+        <span class="sub">建任务时的快捷预设 · 选中模板自动带入协议/参数/默认阈值</span>
+      </div>
+      <div v-if="!tplList.length" class="empty-box">
+        <span class="ph-tag">无模板</span> 暂无采集模板。常用节点(如"Linux 服务器 SSH"、"交换机 SNMP")可存为模板, 建任务时一键带入。
+      </div>
+      <div v-else class="table-wrap">
+        <table class="table">
+          <thead><tr><th>名称</th><th>协议</th><th>默认阈值</th><th>说明</th><th class="a-r">操作</th></tr></thead>
+          <tbody>
+            <tr v-for="tp in tplList" :key="tp.id">
+              <td class="small">{{ tp.name }}</td>
+              <td><span class="chip proto">{{ protoLabel(tp.protocol) }}</span></td>
+              <td class="mono small">{{ tplAlertsText(tp) }}</td>
+              <td class="small muted">{{ tp.note || '—' }}</td>
+              <td class="a-r"><button class="btn xs danger" @click="delTpl(tp)">删除</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="form-row cfg-row">
+        <div class="field cfg-field"><label class="lbl">名称</label>
+          <input class="input cfg-input" v-model="tplForm.name" placeholder="如: Linux 服务器" /></div>
+        <div class="field cfg-field"><label class="lbl">协议</label>
+          <select class="input cfg-input" v-model="tplForm.protocol">
+            <option v-for="p in tplProtocols" :key="p.name" :value="p.name">{{ p.label }}</option>
+          </select></div>
+        <div class="field cfg-field"><label class="lbl">CPU(%)</label>
+          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.cpuPct" placeholder="全局" /></div>
+        <div class="field cfg-field"><label class="lbl">内存(%)</label>
+          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.memPct" placeholder="全局" /></div>
+        <div class="field cfg-field"><label class="lbl">时延(ms)</label>
+          <input class="input cfg-input" type="number" min="0" v-model="tplForm.rttMs" placeholder="全局" /></div>
+        <div class="field cfg-field"><label class="lbl">丢包(%)</label>
+          <input class="input cfg-input" type="number" min="0" max="100" v-model="tplForm.lossPct" placeholder="全局" /></div>
+        <div class="field cfg-field"><label class="lbl">说明</label>
+          <input class="input cfg-input" v-model="tplForm.note" placeholder="可选, 如: 需预置 SSH 密钥" /></div>
+        <div class="field" style="align-self:flex-end; justify-content:flex-end">
+          <button class="btn primary sm" @click="saveTpl" :disabled="tplSaving">保存模板</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 异常事件已并入「告警日志管理 → 异常事件」Tab(2026-09-30 用户要求, 见文件头) -->
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { v2 } from '../api/http'
-import AiAnalyzeButton from './AiAnalyzeButton.vue'
 
 const status = ref({})
 const cfg = reactive({
@@ -165,8 +207,93 @@ const cfg = reactive({
 })
 const saving = ref(false)
 const advOpen = ref(false)
-const events = ref([])
 const whitelistText = ref('')
+
+// ===== 每节点阈值覆盖(留空字符串 = 跟随全局; 提交时只带非空字段) =====
+const perNode = ref({})
+const perNodeSaving = ref(false)
+const EMPTY_T = { cpuPct: '', memPct: '', rttMs: '', lossPct: '', failStreak: '' }
+function syncPerNode(tasks, saved) {
+  const out = {}
+  for (const t of (tasks || [])) {
+    const s = (saved && saved[t.id]) || {}
+    out[t.id] = {
+      cpuPct: s.cpuPct || '', memPct: s.memPct || '', rttMs: s.rttMs || '',
+      lossPct: s.lossPct || '', failStreak: s.failStreak || '',
+    }
+  }
+  perNode.value = out
+}
+function hasPerNode(id) {
+  const v = perNode.value[id]
+  return !!(v && (v.cpuPct || v.memPct || v.rttMs || v.lossPct || v.failStreak))
+}
+function resetPerNode(id) {
+  perNode.value[id] = { ...EMPTY_T }
+}
+
+// ===== 采集模板(阶段 C, 借鉴 Zabbix 监控模板) =====
+// 模板 = 命名预设(协议 + 默认阈值 + 说明)。建任务时选模板一次性继承。
+// 整体替换语义: 增删都提交完整列表(与 perNode/authcheck 同口径)。
+const tplList = ref([])
+const tplSaving = ref(false)
+const tplForm = ref(emptyTpl())
+function emptyTpl() {
+  return { name: '', protocol: '', cpuPct: '', memPct: '', rttMs: '', lossPct: '', note: '' }
+}
+const tplProtocols = computed(() =>
+  (status.value.protocols || []).filter(p => p && !p.notInScheduler))
+function protoLabel(name) {
+  const p = (status.value.protocols || []).find(x => x.name === name)
+  return p ? p.label : name
+}
+function tplAlertsText(tp) {
+  const a = (tp && tp.alerts) || {}
+  const parts = []
+  if (a.cpuPct) parts.push('CPU' + a.cpuPct + '%')
+  if (a.memPct) parts.push('内存' + a.memPct + '%')
+  if (a.rttMs) parts.push('时延' + a.rttMs + 'ms')
+  if (a.lossPct) parts.push('丢包' + a.lossPct + '%')
+  return parts.length ? parts.join(' · ') : '跟随全局'
+}
+function syncTpl(list) {
+  tplList.value = (list || []).map(t => ({ ...t }))
+}
+function addTpl() {
+  const name = (tplForm.value.name || '').trim()
+  if (!name) { alert('请填写模板名称'); return }
+  if (!tplForm.value.protocol) { alert('请选择协议'); return }
+  const alerts = {}
+  if (tplForm.value.cpuPct) alerts.cpuPct = Number(tplForm.value.cpuPct)
+  if (tplForm.value.memPct) alerts.memPct = Number(tplForm.value.memPct)
+  if (tplForm.value.rttMs) alerts.rttMs = Number(tplForm.value.rttMs)
+  if (tplForm.value.lossPct) alerts.lossPct = Number(tplForm.value.lossPct)
+  const tpl = {
+    id: 'tpl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name, protocol: tplForm.value.protocol,
+    alerts: Object.keys(alerts).length ? alerts : {},
+    note: (tplForm.value.note || '').trim(),
+  }
+  saveTplList([...tplList.value, tpl])
+}
+function delTpl(tp) {
+  if (!confirm(`删除模板「${tp.name}」? 已建任务不受影响。`)) return
+  saveTplList(tplList.value.filter(x => x.id !== tp.id))
+}
+async function saveTplList(list) {
+  tplSaving.value = true
+  try {
+    await v2('/node/templates', { method: 'PUT', body: { templates: list } })
+    syncTpl(list)
+    tplForm.value = emptyTpl()
+  } catch (e) {
+    alert('模板保存失败: ' + e.message)
+  } finally {
+    tplSaving.value = false
+  }
+}
+// 保存模板 = 追加当前表单
+function saveTpl() { addTpl() }
 
 async function loadStatus() {
   try {
@@ -187,17 +314,40 @@ async function loadStatus() {
       cfg.alerts.lossPct = st.alerts.lossPct ?? 30
       cfg.alerts.failStreak = st.alerts.failStreak ?? 3
     }
+    // 只有"用户改过节点阈值"时才覆盖本地编辑中的值 —— 15s 轮询不能把
+    // 表格里正在输入的数字冲掉(与推送配置表单同一竞态口径)。
+    if (!perNodeEditing) syncPerNode(st.tasks, st.perNode)
+    syncTpl(st.templates)
   } catch (e) {
     console.warn('load node status failed', e)
   }
 }
-
-async function loadEvents() {
+let perNodeEditing = false
+// 输入事件置位(任意节点阈值输入框 @input): 轮询暂停覆盖, 保存后恢复
+function onPerNodeInput() { perNodeEditing = true }
+// 提交: 只带非空字段(0 语义=跟随全局, 与后端 AlertsFor 的覆盖口径一致)
+async function savePerNode() {
+  perNodeSaving.value = true
   try {
-    const d = await v2('/node/events?limit=100')
-    events.value = d.events || []
+    const out = {}
+    for (const t of (status.value.tasks || [])) {
+      const v = perNode.value[t.id]
+      if (!v) continue
+      const item = {}
+      if (v.cpuPct) item.cpuPct = Number(v.cpuPct)
+      if (v.memPct) item.memPct = Number(v.memPct)
+      if (v.rttMs) item.rttMs = Number(v.rttMs)
+      if (v.lossPct) item.lossPct = Number(v.lossPct)
+      if (v.failStreak) item.failStreak = Number(v.failStreak)
+      if (Object.keys(item).length) out[t.id] = item
+    }
+    await v2('/node/alert/thresholds', { method: 'PUT', body: { perNode: out } })
+    await loadStatus()
   } catch (e) {
-    console.warn('load node events failed', e)
+    alert('保存失败: ' + e.message)
+  } finally {
+    perNodeSaving.value = false
+    perNodeEditing = false
   }
 }
 
@@ -239,40 +389,10 @@ async function toggleEnabled() {
   }
 }
 
-const snapBusy = ref(false)
-// 报告中心二期: 手动存快照(module: collect=节点采集 / monitor=SNMP 设备监控)
-async function saveSnapshot(module) {
-  snapBusy.value = true
-  try {
-    await v2('/raw/snapshot', { method: 'POST', body: { module } })
-    alert('快照已存入报告中心(原始报告)')
-  } catch (e) {
-    alert(e.message)
-  } finally {
-    snapBusy.value = false
-  }
-}
-
-function lvlClass(l) {
-  return l === 'critical' ? 'off' : (l === 'warn' ? 'warn' : 'on')
-}
-function evtLabel(t) {
-  const map = { offline: '离线', recover: '恢复', high_cpu: 'CPU 越限', high_mem: '内存越限', high_rtt: '时延越限', high_loss: '丢包越限' }
-  return map[t] || t
-}
-function fmtDT(s) {
-  if (!s) return '—'
-  const d = new Date(s)
-  if (isNaN(d)) return s
-  const p = n => String(n).padStart(2, '0')
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-
 let timer = null
 onMounted(() => {
   loadStatus()
-  loadEvents()
-  timer = setInterval(() => { loadStatus(); loadEvents() }, 15000)
+  timer = setInterval(loadStatus, 15000)
 })
 onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
@@ -283,4 +403,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .cfg-input { width: 100%; }
 .cfg-toggle { display: flex; align-items: center; gap: 6px; }
 .chip.warn { background: rgba(255, 176, 32, .14); color: var(--orange); }
+/* 采集模板卡: 协议 chip + 右对齐操作列(与 CollectSection 同口径) */
+.chip.proto { background: rgba(77, 163, 255, .12); color: var(--blue, #4da3ff); }
+.a-r { text-align: right; }
 </style>

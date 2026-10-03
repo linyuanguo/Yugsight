@@ -40,7 +40,8 @@ var BuiltinTemplates = []Template{
 		Description: "对 Redis 端口发送 PING, 免认证即回 PONG 则未授权访问成立(只读命令, 无破坏性)。",
 		BuiltIn: true,
 		Steps: []StepSpec{
-			{Name: "ping", Type: StepTCP, Port: 6379, Send: "PING\r\n", Expect: `^\+PONG`, TimeoutMs: 5000},
+			{Name: "ping", Type: StepTCP, Port: 6379, Send: "PING\r\n", Expect: `^\+PONG`, TimeoutMs: 5000,
+				Risk: "Redis 未授权访问成立: 攻击者可免认证读写全部数据, 并可能经 CONFIG 写文件/计划任务获得主机权限"},
 		},
 	},
 	{
@@ -49,7 +50,8 @@ var BuiltinTemplates = []Template{
 		Description: "访问目录路径, 响应为 Apache/nginx 目录列表则目录列举成立(只读 GET)。",
 		BuiltIn: true,
 		Steps: []StepSpec{
-			{Name: "root", Type: StepHTTP, Method: "GET", Path: "/", ExpectBody: `Index of /|<title>Index of`, TimeoutMs: 8000},
+			{Name: "root", Type: StepHTTP, Method: "GET", Path: "/", ExpectBody: `Index of /|<title>Index of`, TimeoutMs: 8000,
+				Risk: "目录列举开启: 攻击者可枚举站点文件结构, 进一步定位备份/配置/源码等敏感文件"},
 		},
 	},
 	{
@@ -59,7 +61,8 @@ var BuiltinTemplates = []Template{
 		BuiltIn: true,
 		Steps: []StepSpec{
 			{Name: "headers", Type: StepHTTP, Method: "GET", Path: "/",
-				ExpectHeader: map[string]string{"Server": `\d+\.\d+`, "X-Powered-By": `.`}, TimeoutMs: 8000},
+				ExpectHeader: map[string]string{"Server": `\d+\.\d+`, "X-Powered-By": `.`}, TimeoutMs: 8000,
+				Risk: "组件具体版本暴露: 攻击者可精确匹配该版本的已知漏洞(CVE)定向利用"},
 		},
 	},
 	{
@@ -69,7 +72,8 @@ var BuiltinTemplates = []Template{
 		BuiltIn: true,
 		Steps: []StepSpec{
 			{Name: "env", Type: StepHTTP, Method: "GET", Path: "/.env",
-				ExpectStatus: 200, ExpectBody: `(?i)(appkey|password|secret|token)`, TimeoutMs: 8000},
+				ExpectStatus: 200, ExpectBody: `(?i)(appkey|password|secret|token)`, TimeoutMs: 8000,
+				Risk: "敏感文件可被直接读取: 可能泄露应用密钥、数据库口令等凭据, 凭据泄露可直接转化为越权访问"},
 		},
 	},
 	{
@@ -79,7 +83,8 @@ var BuiltinTemplates = []Template{
 		BuiltIn: true,
 		Steps: []StepSpec{
 			{Name: "probe", Type: StepHTTP, Method: "GET",
-				Path: "/../../../../etc/passwd", ExpectBody: `(?m)^root:`, TimeoutMs: 8000},
+				Path: "/../../../../etc/passwd", ExpectBody: `(?m)^root:`, TimeoutMs: 8000,
+				Risk: "路径穿越成立: 攻击者可读取服务器任意文件(系统账号、应用配置), 常是远程代码执行的前置步骤"},
 		},
 	},
 	{
@@ -88,7 +93,8 @@ var BuiltinTemplates = []Template{
 		Description: "对目标端口抓取服务 Banner 并与任务 CVE 关联版本特征比对(通用, 需自定义 Expect 才有意义)。",
 		BuiltIn: true,
 		Steps: []StepSpec{
-			{Name: "banner", Type: StepTCP, Expect: `.`, TimeoutMs: 6000},
+			{Name: "banner", Type: StepTCP, Expect: `.`, TimeoutMs: 6000,
+				Risk: "服务端口开放且 Banner 可抓取: 服务对外暴露, 版本特征可被用于匹配已知漏洞"},
 		},
 	},
 	{
@@ -97,6 +103,8 @@ var BuiltinTemplates = []Template{
 		Description: "用给定账号口令对目标服务做登录试探(复用弱口令引擎: 限速 + 只试登录不注入)。口令在界面上单独填写。",
 		BuiltIn: true,
 		Steps: []StepSpec{
+			// Risk 留空: weakpass 的隐患文案依赖命中结果(空口令/弱口令/未命中),
+			// 由 engine.go 在命中时动态生成
 			{Name: "login", Type: StepWeakPass, Service: "", Port: 0, TimeoutMs: 15000},
 		},
 	},
@@ -106,7 +114,8 @@ var BuiltinTemplates = []Template{
 		Description: "核查 Web 服务可达性与 HTTP→HTTPS 跳转基线(只读 GET, 用于确认漏洞载体在线)。",
 		BuiltIn: true,
 		Steps: []StepSpec{
-			{Name: "reachable", Type: StepHTTP, Method: "GET", Path: "/", TimeoutMs: 8000},
+			{Name: "reachable", Type: StepHTTP, Method: "GET", Path: "/", TimeoutMs: 8000,
+				Risk: "Web 服务可达且在线(基线确认, 用于佐证漏洞载体在线, 本身不构成漏洞行为)"},
 		},
 	},
 }

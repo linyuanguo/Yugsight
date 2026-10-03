@@ -40,10 +40,15 @@ import (
 	"yugsight/internal/scanner"
 )
 
-const (
-	agentName    = "Yugsight Agent"
-	agentVersion = "1.0.0"
-)
+const agentName = "Yugsight Agent"
+
+// agentVersion 探针版本: 构建时由 build-agents.ps1 经 -ldflags "-X main.agentVersion=<VERSION>"
+// 注入(与中心端 appVersion 同一 VERSION 源)。
+//
+// 【为什么必须是 var 而不是 const】链接器只能改写变量。此前 const 固定 1.0.0, 中心端
+// 每次注册都判定"版本不一致"下发自动更新指令; 而探针即便更新完重启后上报的还是 1.0.0,
+// 形成永无止境的更新循环(实测: WSL 探针每次重连都触发一轮下载)。
+var agentVersion = "1.0.0"
 
 // logFile 日志写入器(带轮转, 见同目录 logrotate.go)。
 // nil = 文件打开失败, 此时只写控制台(不阻断启动)。

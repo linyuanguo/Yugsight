@@ -117,35 +117,43 @@ func detectNpcap() NpcapStatus {
 	return s
 }
 
-// findInstaller 在项目根目录(exe 同目录)查找 Npcap 安装器:
-// 优先精确匹配 npcap-setup.exe, 其次官方安装器 npcap-*.exe(如 npcap-1.86.exe)
+// findInstaller 查找 Npcap 安装器, 依次扫描 exe 同目录与 bin/ 目录:
+// 2026-09-29 起安装器随外部引擎统一收进 bin/(build.ps1 拷贝时直接落 bin/),
+// 但保留 exe 同目录搜索做向后兼容(旧部署/用户手放的安装器仍能找到)。
+// 每个目录内优先精确匹配 npcap-setup.exe, 其次官方安装器 npcap-*.exe(如 npcap-1.86.exe)。
 func findInstaller() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
-	dir := filepath.Dir(exe)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return ""
-	}
-	var fallback string
-	for _, e := range entries {
-		if e.IsDir() {
+	base := filepath.Dir(exe)
+	// exe 同目录优先(兼容旧布局), 其次 bin/(新布局, 随外部引擎归拢)
+	for _, dir := range []string{base, filepath.Join(base, "bin")} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
 			continue
 		}
-		n := strings.ToLower(e.Name())
-		if !strings.HasSuffix(n, ".exe") {
-			continue
+		var fallback string
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			n := strings.ToLower(e.Name())
+			if !strings.HasSuffix(n, ".exe") {
+				continue
+			}
+			if n == "npcap-setup.exe" {
+				return filepath.Join(dir, e.Name())
+			}
+			if strings.HasPrefix(n, "npcap-") && fallback == "" {
+				fallback = filepath.Join(dir, e.Name())
+			}
 		}
-		if n == "npcap-setup.exe" {
-			return filepath.Join(dir, e.Name())
-		}
-		if strings.HasPrefix(n, "npcap-") && fallback == "" {
-			fallback = filepath.Join(dir, e.Name())
+		if fallback != "" {
+			return fallback
 		}
 	}
-	return fallback
+	return ""
 }
 
 // StartInstaller 启动 Npcap 安装器。免费版不支持静默安装, 以 GUI 向导运行,

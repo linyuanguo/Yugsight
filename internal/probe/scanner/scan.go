@@ -90,6 +90,9 @@ type Config struct {
 	EnableSynScan bool
 	// EnableExternal 允许调用 ./bin/ 下的外部引擎增强(nmapcore/trivycore/zapcore)
 	EnableExternal bool
+	// ArpDurationSec ARP 异常监测时长(kind=arp 专用; 0 取默认 60s, 上限 600s)。
+	// 监测对象是探针自己的本地网卡, 目标(网卡名或 "local")在 Task.Target。
+	ArpDurationSec int
 	// ExtraArgs 外部引擎追加参数, 由中心端经 TaskAssign.Args 下发。
 	//
 	// 例: {"nmapArgs": ["-sS","-A"], "trivyArgs": ["--severity","HIGH"]}
@@ -163,8 +166,8 @@ func (p Progress) Emit(msg string) {
 
 // Task 一次探针扫描任务的运行上下文。
 type Task struct {
-	Kind   string // ip / port / web / host / alive
-	Target string // 目标 IP / CIDR / URL
+	Kind   string // ip / alive / port / web / host / collect / image / fs / container
+	Target string // 目标 IP / CIDR / URL / 镜像名 / 本地路径 / 容器名
 	cfg    Config
 
 	// progress 进度回调(由 Run 注入; 内部降级提示走它, 保证中心端能看到"为什么慢了")。
@@ -358,13 +361,40 @@ func Run(ctx context.Context, task *Task, progress Progress) (normalizer.ProbeRe
 
 	switch task.Kind {
 	case "ip", "alive":
-		task.scanAlive(ctx, progress)
+		// 2026-09-27: 全扫(any)展开失败必须明确回传失败(不能静默空结果,
+		// 中心端会把空结果误读成"无存活主机")
+		if err := task.scanAlive(ctx, progress); err != nil {
+			return task.Report(), err
+		}
 	case "port":
 		task.scanPort(ctx, progress)
 	case "web", "host":
 		task.scanHost(ctx, progress)
 	case "collect":
 		task.scanCollect(ctx, progress)
+	case "arp":
+		// 2026-09-27: ARP 异常监测(环路/IP 冲突/MAC 漂移)。目标是本机网卡
+		// (Task.Target = 网卡名或 "local"), 不是远端主机。
+		// 采集器缺失(非 Win/Linux 平台)必须明确失败, 与 trivy SCA 同口径:
+		// 不能静默返回空结果让中心端把"能力缺失"误读成"无异常"。
+		if CurrentCollector() == nil {
+			return task.Report(), fmt.Errorf("当前平台无报文采集能力, 无法执行 ARP 异常监测(Windows 需 Npcap, Linux 需 root/CAP_NET_RAW)")
+		}
+		if err := task.scanArp(ctx, progress); err != nil {
+			return task.Report(), err
+		}
+	case "image", "fs", "container":
+		// SCA: 目标就是本地文件/镜像/容器, 只能由 trivy 完成 —— 无内置替代。
+		// trivy 未装必须明确失败(回传 TaskFailed), 不能静默返回空结果让中心端把
+		// "能力缺失"误读成"扫描无发现"(项目规则: 失败/能力缺失要明确标, 见 agentexec 口径)。
+		bin := engineBinPath("trivy")
+		if bin == "" {
+			return task.Report(), fmt.Errorf("trivycore 未安装(exe 同目录 bin/ 缺少 trivy 二进制), 无法执行 %s 扫描", task.Kind)
+		}
+		if err := task.scanSca(ctx, progress, bin); err != nil {
+			// 自动枚举失败 / 目标扫描失败(2026-09-27): 回传失败状态, 部分结果不丢
+			return task.Report(), err
+		}
 	default:
 		return task.Report(), fmt.Errorf("探针不支持的任务类型: %s", task.Kind)
 	}
@@ -413,10 +443,24 @@ func (t *Task) captureNote(format string, args ...any) {
 }
 
 // scanAlive 网段存活探测: ICMP + TCP + ARP 三路互补。
-func (t *Task) scanAlive(ctx context.Context, progress Progress) {
-	hosts, err := ExpandTargets(t.Target)
-	if err != nil || len(hosts) == 0 {
-		hosts = []string{t.Target}
+//
+// 2026-09-27: target=any 全扫 —— 不指定网段, 自动探测探针所在网络环境
+// (本机全部网卡网段)的存活主机, 展开失败必须明确返回错误(见 any.go)。
+func (t *Task) scanAlive(ctx context.Context, progress Progress) error {
+	var hosts []string
+	var err error
+	if IsAnyTarget(t.Target) {
+		hosts, err = ExpandAnyAliveHosts()
+		if err != nil {
+			progress.Emit("全扫失败: " + err.Error())
+			return err
+		}
+		progress.Emit("全扫: 自动探测本地网段 " + strings.Join(AnyAliveCIDRs(), ", "))
+	} else {
+		hosts, err = ExpandTargets(t.Target)
+		if err != nil || len(hosts) == 0 {
+			hosts = []string{t.Target}
+		}
 	}
 	progress.Emit(fmt.Sprintf("存活探测 %s (%d 个目标, ICMP+TCP+ARP)", t.Target, len(hosts)))
 
@@ -465,6 +509,7 @@ func (t *Task) scanAlive(ctx context.Context, progress Progress) {
 	}
 	wg.Wait()
 	progress.Emit(fmt.Sprintf("存活探测完成: %d/%d 台主机存活", aliveCount, len(hosts)))
+	return nil
 }
 
 // hostProbe 单主机存活探测结果。

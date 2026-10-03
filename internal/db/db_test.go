@@ -18,6 +18,65 @@ func openTestDB(t *testing.T) *Database {
 	return d
 }
 
+// TestAssetDeleteDead 清理未存活: 只删 Alive=false, 保留 Alive=true(曾上线后
+// 下线的主机不受影响), 返回值=实际删除数。守"未存活主机还在列表"治理的核心
+// 口径 —— 清理绝不能误删"曾存活过"的资产。
+func TestAssetDeleteDead(t *testing.T) {
+	d := openTestDB(t)
+	for _, ip := range []string{"10.0.0.1", "10.0.0.2"} {
+		a := NewAsset(ip)
+		a.Alive = true
+		if _, err := d.Assets().Upsert(a); err != nil {
+			t.Fatalf("upsert %s: %v", ip, err)
+		}
+	}
+	for _, ip := range []string{"10.0.0.3", "10.0.0.4"} {
+		a := NewAsset(ip)
+		a.Alive = false
+		if _, err := d.Assets().Upsert(a); err != nil {
+			t.Fatalf("upsert %s: %v", ip, err)
+		}
+	}
+	n, err := d.Assets().DeleteDead()
+	if err != nil {
+		t.Fatalf("DeleteDead: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("应删 2 台未存活, got %d", n)
+	}
+	if c, _ := d.Assets().Count(); c != 2 {
+		t.Fatalf("清理后应剩 2 台存活的, got %d", c)
+	}
+	if got, _ := d.Assets().FindByIP("10.0.0.1"); len(got) != 1 {
+		t.Fatalf("存活资产 10.0.0.1 应保留, got %d", len(got))
+	}
+	if got, _ := d.Assets().FindByIP("10.0.0.3"); len(got) != 0 {
+		t.Fatalf("未存活资产 10.0.0.3 应被删, got %d", len(got))
+	}
+}
+
+// TestAssetCountHosts 主机口径计数: 非 IP 工件(Trivy 镜像名入账)不计入主机数。
+// 守"资产总数(主机维度)"与资产页"共 N 台主机"对齐的契约 —— 工件被数进主机数
+// 会让仪表盘与资产页数字对不上, 用户会当成数据错误。
+func TestAssetCountHosts(t *testing.T) {
+	d := openTestDB(t)
+	for _, ip := range []string{"10.0.0.1", "10.0.0.2"} {
+		if _, err := d.Assets().Upsert(NewAsset(ip)); err != nil {
+			t.Fatalf("upsert %s: %v", ip, err)
+		}
+	}
+	// 镜像工件: IP 字段存的是工件标识(非 IP), 合法资产但不是主机
+	if _, err := d.Assets().Upsert(NewAsset("nginx:1.25-alpine")); err != nil {
+		t.Fatalf("upsert 工件: %v", err)
+	}
+	if c, _ := d.Assets().Count(); c != 3 {
+		t.Fatalf("Count 应 3(含工件), got %d", c)
+	}
+	if c, _ := d.Assets().CountHosts(); c != 2 {
+		t.Fatalf("CountHosts 应 2(只主机), got %d", c)
+	}
+}
+
 // TestOpenDefaults 默认配置与表初始化
 func TestOpenDefaults(t *testing.T) {
 	cfg := DefaultConfig()
@@ -46,8 +105,14 @@ func TestOpenDefaults(t *testing.T) {
 	// + 阶段 5 的渗透任务表 penta_tasks
 	// + 弱口令字典表 weak_password_dict
 	// + 渗透审计独立表 penta_audit(与通用审计分离, 只增不删)
-	if len(stats) != 22 {
-		t.Fatalf("stats 表数=%d, 期望 22: %v", len(stats), stats)
+	// + 2026-09-25 三轮的扫描作业表 scan_jobs(命名任务编排)
+	// + 2026-09-28 的节点告警表 node_alerts 与推送日志表 push_logs
+	if len(stats) != 25 {
+		t.Fatalf("stats 表数=%d, 期望 25: %v", len(stats), stats)
+	}
+	// 扫描作业表必须可访问(报告中心按作业分类/生成依赖它)
+	if d.Jobs() == nil {
+		t.Fatal("扫描作业 DAO 不应为 nil")
 	}
 	// 任务 7.2 新增的两张表必须可访问(DAO 非 nil 才能被 v2 接口使用)
 	if d.Reports() == nil || d.ReportTemplates() == nil {

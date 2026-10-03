@@ -156,13 +156,22 @@ func enrichProbeLoad(snap *bigscreen.Snapshot) {
 		cpu, mem *float64
 		tasks    int
 		task     string
+		// 2026-09-26: 磁盘 IO / 网络上下行(带 MetricsAt 判定: 保活心跳不带性能
+		// 数据时不能把库里的最新值覆盖成 0)
+		diskRd, diskWr, netUp, netDn float64
+		hasMetrics                   bool
 	}
 	byID := make(map[string]loadView, len(live))
 	for _, s := range live {
 		var e loadView
-		if s.Load != nil {
+		if s.Load != nil && s.Load.MetricsAt > 0 {
 			cpu, mem := s.Load.CPUPercent, s.Load.MemPercent
 			e.cpu, e.mem = &cpu, &mem
+			e.diskRd, e.diskWr = s.Load.DiskReadBps, s.Load.DiskWriteBps
+			e.netUp, e.netDn = s.Load.NetUpBps, s.Load.NetDownBps
+			e.hasMetrics = true
+		}
+		if s.Load != nil {
 			e.tasks, e.task = s.Load.TasksRunning, s.Load.CurrentTask
 		}
 		byID[s.ProbeID] = e
@@ -183,6 +192,13 @@ func enrichProbeLoad(snap *bigscreen.Snapshot) {
 		}
 		if e.mem != nil {
 			snap.Probes[i].MemPercent = e.mem
+		}
+		// 2026-09-26: 磁盘 IO / 网络上下行(仅实时快照带指标时覆盖)
+		if e.hasMetrics {
+			snap.Probes[i].DiskReadBps = e.diskRd
+			snap.Probes[i].DiskWriteBps = e.diskWr
+			snap.Probes[i].NetUpBps = e.netUp
+			snap.Probes[i].NetDownBps = e.netDn
 		}
 		snap.Probes[i].TasksRunning = e.tasks
 		snap.Probes[i].CurrentTask = e.task
@@ -205,6 +221,10 @@ func enrichProbeLoad(snap *bigscreen.Snapshot) {
 			cpu, mem := s.Load.CPUPercent, s.Load.MemPercent
 			pn.CPUPercent, pn.MemPercent = &cpu, &mem
 			pn.TasksRunning, pn.CurrentTask = s.Load.TasksRunning, s.Load.CurrentTask
+			if s.Load.MetricsAt > 0 {
+				pn.DiskReadBps, pn.DiskWriteBps = s.Load.DiskReadBps, s.Load.DiskWriteBps
+				pn.NetUpBps, pn.NetDownBps = s.Load.NetUpBps, s.Load.NetDownBps
+			}
 		}
 		if s.Info != nil {
 			pn.Hostname, pn.OS = s.Info.Hostname, s.Info.OS

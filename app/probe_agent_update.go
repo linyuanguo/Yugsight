@@ -134,20 +134,23 @@ func updateDownloadURL(osName, arch string) string {
 
 // updateBaseURL 探针下载更新包的基地址(不含路径)。
 //
-// 复用地址推导(它已处理 "0.0.0.0:8600"/":8600" 这类绑全网卡写法, 退化为局域网 IP)。
-// 用 OrDefault 变体而非原函数: 中心端 listen 未配置时会按默认 :8600 监听, 此时
-// 原函数返回空串会让更新静默失效(探针明明连上了却永远下不到包)。
-// 真推导不出地址时返回空串 → 不下发更新, 而不是给一个探针连不上的地址让它反复重试。
+// 更新包走**主程序 HTTP 服务**(与 /api/v2/ 其它接口同一入口), 而不是探针中心端的
+// TCP 协议端口。
+//
+// 【踩坑记录】旧实现复用 agentAdvertiseAddrOrDefault()(中心端 advertise 地址) ——
+// 该地址的端口是探针 TCP 协议端口(8600), 不是 HTTP。探针拿去下载必然立刻 EOF
+// (裸 TCP 端口把 HTTP 请求行当协议消息解析, 解码失败即断开)。实测事故: 每次注册
+// 都正常下发更新指令, 但探针下载 100% 失败("自动更新下载失败: EOF"), 自动更新
+// 功能整体不可用。
+//
+// 用主程序 UI 地址(GetUIURL, 给用户展示的那个, 含 http/https 方案): 探针能连通
+// 中心端就说明同机的 HTTP 端口对它可达。UI 尚未启动完成时 GetUIURL 为空 →
+// 返回空串不下发更新(降级不报错, 下次注册时 UI 早已就绪自然恢复)。
 func updateBaseURL() string {
-	addr := agentAdvertiseAddrOrDefault()
-	if addr == "" {
-		return ""
+	if u := GetUIURL(); u != "" {
+		return u
 	}
-	scheme := "http"
-	// 中心端是否启用 HTTPS 由主程序决定(见 server 包); 此处按主程序当前监听
-	// 方案推导: 默认 http(本项目默认无 TLS, 内网部署)。若将来加 TLS, 应在此处
-	// 按 server 配置返回 https —— 保留 TODO 注释是为了让后续改动有明确落点。
-	return scheme + "://" + addr
+	return ""
 }
 
 // ===== 下载签名 =====

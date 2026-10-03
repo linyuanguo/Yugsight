@@ -98,6 +98,14 @@ func CollectTarget(ctx context.Context, t Target) *Sample {
 					continue
 				}
 				s.Ifaces = append(s.Ifaces, is)
+				// 2026-09-27: 设备 MAC 取首个 up 接口的物理地址(管理口最代表设备
+				// 身份)。全零 MAC(00:00:00:00:00:00, 逻辑接口常见)视为无值跳过;
+				// 设备不支持该 OID 时整列为空, s.MAC 留空(页面显示 '-')。
+				if s.MAC == "" && is.Oper == 1 {
+					if m := strings.TrimSpace(row.Cells["ifPhysAddress"]); m != "" && m != "00:00:00:00:00:00" {
+						s.MAC = m
+					}
+				}
 			}
 		case "hrProcessorTable":
 			// 取第一条 CPU(多核设备各条相同, 取首条足够展示)
@@ -129,6 +137,11 @@ func CollectTarget(ctx context.Context, t Target) *Sample {
 		}
 	}
 
+	// 带宽修正(接口行聚好之后): ifSpeed 是 Gauge32, 上限 4294967295 bps
+	// ≈ 4.29 Gb/s, 万兆及以上接口必然溢出(锐捷 S7805C 实测: TenGigabitEthernet
+	// 显示 4.3 Gb/s)。IF-MIB 的 ifHighSpeed(单位 Mbps)是正确来源, 取到就覆盖。
+	fixIfSpeedOverflow(ctx, c, s.Ifaces)
+
 	if rep.OKCount > 0 {
 		s.OK = true
 	} else {
@@ -140,4 +153,63 @@ func CollectTarget(ctx context.Context, t Target) *Sample {
 		}
 	}
 	return s
+}
+
+// ifHighSpeedOID IF-MIB 接口带宽(单位 Mbps, 64 位口径, 不受 32 位上限约束)。
+const ifHighSpeedOID = "1.3.6.1.2.1.31.1.1.1.15"
+
+// FixIfSpeedOverflow 是 fixIfSpeedOverflow 的导出包装(2026-10-02 需求 1:
+// 主机 SNMP 采集 collect 包也要修万兆口带宽溢出, 与交换机同一口径)。
+func FixIfSpeedOverflow(ctx context.Context, c *snmp.Client, ifaces []IfaceSample) {
+	fixIfSpeedOverflow(ctx, c, ifaces)
+}
+
+// fixIfSpeedOverflow 用 ifHighSpeed 覆盖 32 位溢出的 ifSpeed。
+//
+// 为什么不整表 walk ifXTable: 那会把 ifXTable 的几十个列全走一遍(113 口交换机
+// 采集耗时从 ~8s 涨到 20s+), 而我们只要一列。这里按接口索引**分批 GET**(40 个
+// 一批, 113 口 = 3 次往返), 拿不到(老设备不支持/超时)就保留 ifSpeed —— 降级,
+// 不影响整轮采集, 也不编造数值。
+func fixIfSpeedOverflow(ctx context.Context, c *snmp.Client, ifaces []IfaceSample) {
+	if len(ifaces) == 0 {
+		return
+	}
+	const chunk = 40
+	for i := 0; i < len(ifaces); i += chunk {
+		end := i + chunk
+		if end > len(ifaces) {
+			end = len(ifaces)
+		}
+		oids := make([]string, 0, chunk)
+		pos := make([]int, 0, chunk)
+		for j := i; j < end; j++ {
+			if strings.TrimSpace(ifaces[j].Index) == "" {
+				continue
+			}
+			oids = append(oids, ifHighSpeedOID+"."+ifaces[j].Index)
+			pos = append(pos, j)
+		}
+		if len(oids) == 0 {
+			continue
+		}
+		vbs, _, err := c.Get(ctx, oids...)
+		if err != nil {
+			return // 不支持/不可达: 整段放弃, 保留 ifSpeed
+		}
+		byOID := make(map[string]string, len(vbs))
+		for _, v := range vbs {
+			byOID[v.OID] = v.Value
+		}
+		for k, j := range pos {
+			txt, ok := byOID[oids[k]]
+			if !ok {
+				continue
+			}
+			mbps, perr := strconv.ParseInt(txt, 10, 64)
+			if perr != nil || mbps <= 0 {
+				continue // 0 = 设备未上报该值, 保留 ifSpeed
+			}
+			ifaces[j].Speed = mbps * 1000000
+		}
+	}
 }

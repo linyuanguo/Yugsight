@@ -114,8 +114,17 @@ func loadCollectConfig() collect.Config {
 
 // saveCollectConfig 写回 settings.json 的 collect 节(合并写, 保留其它节)。
 // 用户要求: 中心端配置一律 settings.json, 不写独立文件。
+//
+// 写盘后必须刷 settings 缓存(2026-09-28 E2E 实测): 采集引擎调度循环每 tick
+// 经 readCfg() 重读 collect 节, 若不刷缓存, 循环会拿启动时的旧快照把
+// SetConfig 刚更新的任务"冲回"原值 —— 表现是页面上改任务目标/启停,
+// 约 1 秒后又变回改之前的值。与 saveNodePushCfg / persistAICfg 同一口径。
 func saveCollectConfig(c collect.Config) error {
-	return writeSection(secCollect, c)
+	if err := writeSection(secCollect, c); err != nil {
+		return err
+	}
+	resetSettingsCache()
+	return nil
 }
 
 // collectWriteHistory 一轮样本落库(装配层注入 collect 包)。
@@ -166,6 +175,11 @@ func collectOnEvent(ev *collect.Event) {
 		"target": ev.Target, "msg": ev.Msg,
 		"at":     ev.At.Format(time.RFC3339),
 	})
+	// 告警推送闭环(2026-09-28): 事件 → 告警落表 + 规则匹配 + Webhook 推送,
+	// 详见 node_push.go 的 onNodeAlert(内部有 recover, 不会反噬采集循环)。
+	onNodeAlert(ev)
+	// 拓扑链路状态随之刷新(2026-09-29 阶段 B; 5s 节流, 见 topology_links_api.go)
+	publishTopoLinks()
 }
 
 // ===== 路由(在 api_v2.go 的 registerV2Routes 内挂载) =====
@@ -180,6 +194,177 @@ func registerNodeRoutes(srv *server.Server) {
 	srv.Get("/api/v2/node/metrics", requireAuth(hNodeMetrics))
 	srv.Get("/api/v2/node/events", requireAuth(hNodeEvents))
 	srv.Post("/api/v2/node/config", requireAuth(adminOrOperator(hNodeSaveConfig)))
+	// 每节点告警阈值覆盖(借鉴 Zabbix 全局宏/主机宏: 节点级优先, 0 值回落全局)
+	srv.Get("/api/v2/node/alert/thresholds", requireAuth(hNodeThresholdsGet))
+	srv.Put("/api/v2/node/alert/thresholds", requireAuth(adminOrOperator(hNodeThresholdsPut)))
+	// 采集模板(2026-09-29 阶段 C, 借鉴 Zabbix 监控模板: 命名预设=协议+参数+默认阈值)
+	srv.Get("/api/v2/node/templates", requireAuth(hNodeTemplatesGet))
+	srv.Put("/api/v2/node/templates", requireAuth(adminOrOperator(hNodeTemplatesPut)))
+	// 连通性测试(2026-09-30: 节点配置页从"前端纯模拟"改为真实探测, 见 connectivity_api.go)
+	srv.Post("/api/v2/node/connectivity", requireAuth(adminOrOperator(hNodeConnectivity)))
+	// 路由跟踪(2026-09-30: ping(ICMP)/端口(TCP) 两种, 见 connectivity_api.go hNodeTrace)
+	srv.Post("/api/v2/node/trace", requireAuth(adminOrOperator(hNodeTrace)))
+}
+
+// ===== 采集模板(阶段 C, 借鉴 Zabbix 监控模板) =====
+//
+// 口径: 模板 = 命名预设(协议 + 参数 + 默认阈值 + 说明)。建任务时选模板,
+// 任务一次性继承模板参数与阈值(阈值写入 PerNode, 之后仍可单独覆盖)。
+// 整体替换语义(同 perNode/authcheck): PUT 请求体 = 完整模板列表。
+// 上限 50(与白名单同口径, 防 settings.json 膨胀)。
+
+const maxNodeTemplates = 50
+
+// validateNodeTemplates 逐条硬校验(坏条目整体 400 不跳过: 静默丢模板会让
+// "建任务选了模板却没继承"最难排查)。
+func validateNodeTemplates(list []collect.Template) error {
+	if len(list) > maxNodeTemplates {
+		return fmt.Errorf("模板数量超限(最多 %d)", maxNodeTemplates)
+	}
+	seen := map[string]bool{}
+	for _, t := range list {
+		if err := t.Validate(); err != nil {
+			return err
+		}
+		if seen[t.ID] {
+			return fmt.Errorf("模板 ID 重复: %s", t.ID)
+		}
+		seen[t.ID] = true
+		// 阈值字段复用每节点阈值的范围校验口径
+		if t.Alerts.CPUPct < 0 || t.Alerts.CPUPct > 100 ||
+			t.Alerts.MemPct < 0 || t.Alerts.MemPct > 100 ||
+			t.Alerts.RTTMs < 0 || t.Alerts.RTTMs > 60000 ||
+			t.Alerts.LossPct < 0 || t.Alerts.LossPct > 100 ||
+			t.Alerts.FailStreak < 0 || t.Alerts.FailStreak > 100 {
+			return fmt.Errorf("%s: 阈值字段超出范围", t.ID)
+		}
+	}
+	return nil
+}
+
+// hNodeTemplatesGet GET /api/v2/node/templates
+func hNodeTemplatesGet(w http.ResponseWriter, r *http.Request) {
+	list := instanceCollect().Config().Templates
+	if list == nil {
+		list = []collect.Template{}
+	}
+	server.OK(w, map[string]any{"templates": list, "count": len(list)})
+}
+
+// hNodeTemplatesPut PUT /api/v2/node/templates body {templates:[...]}
+// 整体替换; 删任务时不联动清模板(模板是预设, 与具体任务解耦)。
+func hNodeTemplatesPut(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Templates []collect.Template `json:"templates"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.Templates == nil {
+		in.Templates = []collect.Template{}
+	}
+	if err := validateNodeTemplates(in.Templates); err != nil {
+		server.FailBadRequest(w, err.Error())
+		return
+	}
+	e := instanceCollect()
+	cfg := e.Config()
+	cfg.Templates = in.Templates
+	if err := saveCollectConfig(cfg); err != nil {
+		server.FailInternal(w, "配置保存失败: "+err.Error())
+		return
+	}
+	e.SetConfig(cfg)
+	logAudit(v2DB(), r, "node.templates.save", "", fmt.Sprintf("templates=%d 项", len(in.Templates)))
+	server.OK(w, map[string]any{"saved": true, "count": len(in.Templates)})
+}
+
+// ===== 每节点告警阈值覆盖 =====
+//
+// 口径(2026-09-29, 借 Zabbix Trigger"每主机独立阈值"语义):
+// 全局 alerts 是默认值, PerNode[taskID] 只存"与全局不同的字段",
+// 0 值=未覆盖(回落全局)。整体替换语义(同 authcheck.config 先例):
+// 请求体就是完整的 perNode 映射, 不传某任务 = 该任务回到全局阈值。
+
+// validatePerNodeThresholds 逐字段硬校验(坏条目整体 400, 不跳过 ——
+// 阈值是告警触发条件, 静默丢弃坏值会让"以为配了其实没配"最难排查)。
+func validatePerNodeThresholds(m map[string]collect.Alerts) error {
+	for id, a := range m {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("任务 ID 不能为空")
+		}
+		if a.CPUPct < 0 || a.CPUPct > 100 {
+			return fmt.Errorf("%s: cpuPct 需在 0-100", id)
+		}
+		if a.MemPct < 0 || a.MemPct > 100 {
+			return fmt.Errorf("%s: memPct 需在 0-100", id)
+		}
+		if a.RTTMs < 0 || a.RTTMs > 60000 {
+			return fmt.Errorf("%s: rttMs 需在 0-60000", id)
+		}
+		if a.LossPct < 0 || a.LossPct > 100 {
+			return fmt.Errorf("%s: lossPct 需在 0-100", id)
+		}
+		if a.FailStreak < 0 || a.FailStreak > 100 {
+			return fmt.Errorf("%s: failStreak 需在 0-100", id)
+		}
+	}
+	return nil
+}
+
+// hNodeThresholdsGet GET /api/v2/node/alert/thresholds
+// {global: 全局阈值(含默认回填), perNode: 节点覆盖映射}
+func hNodeThresholdsGet(w http.ResponseWriter, r *http.Request) {
+	cfg := instanceCollect().Config()
+	g := cfg.WithDefaults().Alerts
+	per := cfg.PerNode
+	if per == nil {
+		per = map[string]collect.Alerts{}
+	}
+	server.OK(w, map[string]any{"global": g, "perNode": per})
+}
+
+// hNodeThresholdsPut PUT /api/v2/node/alert/thresholds body {perNode: {...}}
+// 整体替换 perNode 映射; 空对象 = 全部回落全局阈值。
+func hNodeThresholdsPut(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		PerNode map[string]collect.Alerts `json:"perNode"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.PerNode == nil {
+		in.PerNode = map[string]collect.Alerts{}
+	}
+	// 只保留任务实际存在的 key(删任务后前端残留 key 由此兜底清除, 与推送规则同口径)
+	e := instanceCollect()
+	exist := map[string]bool{}
+	for _, t := range e.Config().Tasks {
+		exist[t.ID] = true
+	}
+	out := make(map[string]collect.Alerts, len(in.PerNode))
+	for id, a := range in.PerNode {
+		if exist[id] {
+			out[id] = a
+		}
+	}
+	if err := validatePerNodeThresholds(out); err != nil {
+		server.FailBadRequest(w, err.Error())
+		return
+	}
+	cfg := e.Config()
+	if len(out) == 0 {
+		cfg.PerNode = nil // 空映射不落盘(避免 settings.json 里留 perNode:{} 噪音)
+	} else {
+		cfg.PerNode = out
+	}
+	if err := saveCollectConfig(cfg); err != nil {
+		server.FailInternal(w, "配置保存失败: "+err.Error())
+		return
+	}
+	e.SetConfig(cfg) // 下一轮采集即生效, 无需重启
+	logAudit(v2DB(), r, "node.thresholds.save", "", fmt.Sprintf("perNode=%d 项", len(out)))
+	server.OK(w, map[string]any{"saved": true, "perNode": out})
 }
 
 // nodeTaskView 任务的脱敏视图(口令只回"是否已配置", 不回明文 —— 与
@@ -261,6 +446,8 @@ func hNodeStatus(w http.ResponseWriter, r *http.Request) {
 		"protocols":       collect.Protocols(),
 		"tasks":           views,
 		"taskCount":       len(views),
+		"perNode":         cfg.PerNode,
+		"templates":       cfg.Templates,
 		"sampleCount":     nodeSampleCount(),
 		"eventCount":      nodeEventCount(),
 	})
@@ -329,6 +516,9 @@ func hNodeUpsertTask(w http.ResponseWriter, r *http.Request) {
 		AuthPass    string            `json:"authPass"`
 		PrivPass    string            `json:"privPass"`
 		Params      map[string]string `json:"params"`
+		// TemplateID 采集模板(2026-09-29 阶段 C): 新建任务时指定 → 继承模板
+		// 参数预设与默认阈值(写入 PerNode, 之后仍可在"每节点阈值"覆盖)。
+		TemplateID string `json:"templateId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		server.FailBadRequest(w, "请求格式错误: "+err.Error())
@@ -422,6 +612,29 @@ func hNodeUpsertTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 模板继承(2026-09-29 阶段 C): 仅新建任务生效(编辑时模板无意义 ——
+	// 任务已有自己的参数/阈值)。继承 = 模板参数补空 + 阈值写入 PerNode。
+	// 阈值是一次性继承起点: 之后改模板不影响已建任务(行为可追溯, 见 Template 注释)。
+	templID := strings.TrimSpace(in.TemplateID)
+	if idx < 0 && templID != "" {
+		if tpl := findTemplate(cfg, templID); tpl != nil {
+			if t.Params == nil {
+				t.Params = map[string]string{}
+			}
+			for k, v := range tpl.Params {
+				if t.Params[k] == "" {
+					t.Params[k] = v
+				}
+			}
+			if cfg.PerNode == nil {
+				cfg.PerNode = map[string]collect.Alerts{}
+			}
+			if _, ok := cfg.PerNode[t.ID]; !ok {
+				cfg.PerNode[t.ID] = tpl.Alerts
+			}
+		}
+	}
+
 	if idx >= 0 {
 		cfg.Tasks[idx] = t
 	} else {
@@ -433,7 +646,17 @@ func hNodeUpsertTask(w http.ResponseWriter, r *http.Request) {
 	}
 	e.SetConfig(cfg)
 	logAudit(v2DB(), r, "node.task.upsert", t.ID, "protocol="+t.Protocol+" target="+t.Target)
-	server.OK(w, map[string]any{"id": t.ID, "saved": true})
+	server.OK(w, map[string]any{"id": t.ID, "saved": true, "fromTemplate": idx < 0 && templID != ""})
+}
+
+// findTemplate 按 ID 找采集模板(nil = 未找到; 调用方静默忽略, 模板可能已被删)。
+func findTemplate(cfg collect.Config, id string) *collect.Template {
+	for i := range cfg.Templates {
+		if cfg.Templates[i].ID == id {
+			return &cfg.Templates[i]
+		}
+	}
+	return nil
 }
 
 // hNodeDeleteTask DELETE /api/v2/node/tasks/{id}
@@ -455,6 +678,16 @@ func hNodeDeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg.Tasks = out
+	// 任务删除 → 清掉它的每节点阈值残留(否则 settings.json 里留孤儿 key,
+	// 前端"每节点阈值"表又看不到对应任务行)
+	if cfg.PerNode != nil {
+		if _, ok := cfg.PerNode[id]; ok {
+			delete(cfg.PerNode, id)
+			if len(cfg.PerNode) == 0 {
+				cfg.PerNode = nil
+			}
+		}
+	}
 	if err := saveCollectConfig(cfg); err != nil {
 		server.FailInternal(w, "配置保存失败: "+err.Error())
 		return
@@ -507,11 +740,14 @@ func hNodeCollectNow(w http.ResponseWriter, r *http.Request) {
 		resp = map[string]any{"total": len(rounds), "rounds": rounds}
 	}
 	logAudit(v2DB(), r, "node.collect.now", in.TaskID, "")
-	// 报告中心二期: "立即采集"完成 → 原始报告自动存档(与 SNMP 监控同口径:
-	// 周期轮询不自动存档, 手动触发的采集轮才留档)
-	if rr := buildRawCollectReport(currentUser()); rr != nil {
-		autoSaveRawReport(v2DB(), rr)
+	// 2026-10-02 用户口径: 节点采集同属节点监控, 不生成原始报告(报告中心被刷屏;
+	// 用户: "这些不需要生成原始报告, 最多是信息做为日志记录一下") → 只记摘要日志,
+	// node.collect.now 审计记录照旧。
+	collectDesc := "全部启用任务"
+	if in.TaskID != "" {
+		collectDesc = "任务 " + in.TaskID
 	}
+	logLine(fmt.Sprintf("节点采集完成: %s(不存报告中心, 仅日志记录)", collectDesc))
 	server.OK(w, resp)
 }
 

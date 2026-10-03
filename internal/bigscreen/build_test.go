@@ -55,6 +55,10 @@ func TestOverviewCounts(t *testing.T) {
 			t.Fatalf("upsert asset: %v", err)
 		}
 	}
+	// 镜像工件(SCA 资产, IP 字段为镜像名非 IP): 不应计入主机维度资产数
+	if _, err := d.Assets().Upsert(db.NewAsset("nginx:1.25-alpine")); err != nil {
+		t.Fatalf("upsert 工件: %v", err)
+	}
 
 	addVuln(t, d, "10.0.0.1", "严重-1", "critical", models.VulnStatusNew, now.Add(-time.Hour), nil)
 	addVuln(t, d, "10.0.0.1", "高危-1", "high", models.VulnStatusNew, now.Add(-2*time.Hour), nil)

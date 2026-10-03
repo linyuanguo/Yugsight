@@ -241,27 +241,11 @@ func TestRawReportTrim(t *testing.T) {
 	}
 }
 
-// TestRawReportSnapshot 手动快照: 只接受 monitor/collect; 无数据时 409
-// (而不是 500 —— "没东西可存"是正常状态); 未知模块 400。
-func TestRawReportSnapshot(t *testing.T) {
-	h, _ := newRawTestEnv(t)
-	w := doReq(t, h, "POST", "/api/v2/raw/snapshot", `{"module":"bogus"}`)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("未知模块应 400: %d", w.Code)
-	}
-	// 测试环境无监控目标/采集任务 → 无可存快照 → 409
-	w = doReq(t, h, "POST", "/api/v2/raw/snapshot", `{"module":"collect"}`)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("无数据应 409: %d %s", w.Code, w.Body.String())
-	}
-	w = doReq(t, h, "POST", "/api/v2/raw/snapshot", `{"module":"monitor"}`)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("无数据应 409: %d %s", w.Code, w.Body.String())
-	}
-}
+// 2026-10-02: TestRawReportSnapshot 随 /api/v2/raw/snapshot 端点删除
+// (用户口径: 节点监控不生成原始报告, 只记日志; 存量历史报告不受影响)。
 
-// TestRawReportOptions 筛选选项: 模块计数(固定五模块全量返回) / 标签并集 /
-// 资产并集 / 时间范围。
+// TestRawReportOptions 筛选选项: 模块计数(2026-10-02 起只返回有数据的模块) /
+// 标签并集 / 资产并集 / 时间范围。
 func TestRawReportOptions(t *testing.T) {
 	h, d := newRawTestEnv(t)
 	base := time.Date(2026, 9, 20, 9, 0, 0, 0, time.Local)
@@ -291,16 +275,18 @@ func TestRawReportOptions(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	// 固定五模块全量返回(空模块计数 0, 前端徽标稳定)
-	if len(resp.Data.Modules) != len(report.RawModules) {
-		t.Fatalf("modules=%d, 期望 %d", len(resp.Data.Modules), len(report.RawModules))
-	}
+	// 2026-10-02 用户口径: 模块选项只返回数据里真实存在的(没数据的模块不进
+	// 选项, 后期有了再出现) → 本环境只种了 scan×2 + capture×1, 其余 4 个模块
+	// (monitor/collect/weakpass/merged)不应出现在选项里
 	modCount := map[string]int{}
 	for _, m := range resp.Data.Modules {
 		modCount[m.ID] = m.Count
 	}
-	if modCount[report.RawModScan] != 2 || modCount[report.RawModCapture] != 1 || modCount[report.RawModMerged] != 0 {
-		t.Fatalf("module counts: %v", modCount)
+	if len(modCount) != 2 || modCount[report.RawModScan] != 2 || modCount[report.RawModCapture] != 1 {
+		t.Fatalf("modules 应只含有数据的模块(2 个): %v", modCount)
+	}
+	if _, ok := modCount[report.RawModMonitor]; ok {
+		t.Fatalf("无数据的模块不应进选项: %v", modCount)
 	}
 	if len(resp.Data.Tags) != 2 || len(resp.Data.Assets) != 2 {
 		t.Fatalf("tags=%v assets=%v", resp.Data.Tags, resp.Data.Assets)

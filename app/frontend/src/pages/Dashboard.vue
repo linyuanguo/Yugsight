@@ -1,25 +1,17 @@
 <template>
   <div>
-    <!-- 阶段 4: 首页仪表盘内置 2 个 Tab ——
-         Tab1 概览仪表盘(资产/风险/任务/引擎 + 中心端运行状态)
-         Tab2 安全大屏(原独立 /bigscreen 全屏页能力全量迁入, 数据源不变)。
-         tab 状态放 URL query(与 Engrules 同一口径): 刷新/书签/旧 /bigscreen
-         重定向都能停在同一个 tab。 -->
-    <div class="tabs">
-      <div class="tab" :class="{ active: tab === 'overview' }" @click="setTab('overview')">概览仪表盘</div>
-      <div class="tab" :class="{ active: tab === 'screen' }" @click="setTab('screen')">安全大屏</div>
-    </div>
-
-    <BigScreen v-if="tab === 'screen'" />
-
-    <template v-else>
-      <PageHeader title="首页仪表盘" desc="资产 / 风险 / 任务 / 引擎 / 中心端运行状态 一屏概览">
+    <!-- 2026-09-28: 已移除内置 Tab2「安全大屏」—— 该能力全量迁到独立一级菜单
+         /bigscreen-pro(v138 起), Tab2 与旧 /bigscreen 重定向一并删除(见 router.js)。
+         页面只保留概览仪表盘, 不再有 tab 切换与 URL query 驱动。 -->
+      <PageHeader title="资产 / 风险 / 任务 / 引擎 / 中心端运行状态 一屏概览">
         <button class="btn sm" @click="loadAll"><span class="spinner" v-if="loading"></span>刷新</button>
       </PageHeader>
 
       <!-- 概览卡片 -->
       <div class="grid cols-5">
-        <StatCard label="资产总数" :value="assetsTotal" sub="主机维度(去重)" tone="blue" />
+        <!-- 2026-09-27: sub 显示"存活/总计"(主机口径 host=1, 排除镜像工件),
+             与资产页"只看存活"默认视图的数字对得上, 差异一眼可见 -->
+        <StatCard label="资产总数" :value="assetsTotal" :sub="'存活 ' + assetsAliveTotal + ' / 总计 ' + assetsTotal + ' (主机)'" tone="blue" />
         <StatCard label="漏洞总数" :value="vulnsTotal" :sub="`高危 ${highCount} / 严重 ${criticalCount}`" tone="red" />
         <StatCard label="扫描任务" :value="scansTotal" :sub="`运行中 ${runningCount} / 待执行 ${pendingCount} · 累计 ${histScansTotal}`" tone="orange" />
         <StatCard label="扫描引擎" :value="engineOk ? '正常' : '降级'" :sub="engineSub" :tone="engineOk ? 'green' : 'orange'" />
@@ -187,7 +179,7 @@
           <router-link class="btn" to="/console">启动实时扫描</router-link>
           <router-link class="btn" to="/console?tab=queue">管理调度任务</router-link>
           <router-link class="btn" to="/vulns">查看漏洞列表</router-link>
-          <button class="btn" @click="setTab('screen')">进入安全大屏</button>
+          <router-link class="btn" to="/bigscreen-pro">进入安全大屏</router-link>
         </div>
       </div>
 
@@ -215,16 +207,6 @@
             <span class="muted small">存档与下载</span>
           </label>
           <label class="sw">
-            <input type="checkbox" v-model="switches.report.templateManagement" @change="saveReport" />
-            <span>模板管理</span>
-            <span class="muted small">自建报告模板</span>
-          </label>
-          <label class="sw">
-            <input type="checkbox" v-model="switches.report.pdfExternal" @change="saveReport" />
-            <span>PDF 外部转换</span>
-            <span class="muted small">未装转换器自动回落打印</span>
-          </label>
-          <label class="sw">
             <input type="checkbox" v-model="switches.report.autoGenerate" @change="saveReport" />
             <span>扫描后自动生成报告</span>
             <span class="muted small">异步, 失败不影响扫描</span>
@@ -232,38 +214,26 @@
         </div>
         <div class="muted small" style="margin-top:8px">开关状态写入 exe 同目录 settings.json(该文件只用于保存参数)。</div>
       </div>
-    </template>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import StatCard from '../components/StatCard.vue'
 import Empty from '../components/Empty.vue'
-import BigScreen from './BigScreen.vue'
 import { api } from '../api/http'
 import { v2 } from '../api/http'
 
-const route = useRoute()
 const router = useRouter()
-
-// ===== Tab 状态(URL query 驱动, 与 Engrules 同一口径) =====
-// 只有 'screen' 是安全大屏 tab, 其它取值(含空)一律落到概览 —— 旧书签 / 不会失效
-const tab = computed(() => (route.query.tab === 'screen' ? 'screen' : 'overview'))
-
-// replace 而非 push: 切 tab 不该往历史栈里堆记录(浏览器后退应是"离开本页")
-function setTab(t) {
-  if (t === tab.value) return
-  router.replace({ path: '/', query: t === 'screen' ? { tab: 'screen' } : {} })
-}
 
 // ===== Tab1 概览数据(手动刷新) =====
 const loading = ref(false)
 const info = ref({})
 const env = ref(null)
 const assetsTotal = ref(0)
+const assetsAliveTotal = ref(0) // 存活主机数(资产卡 sub 用, 与"总计"同口径 host=1)
 const vulnsTotal = ref(0)
 const vulnsList = ref([])
 const scansTotal = ref(0)
@@ -315,10 +285,11 @@ const npcapOk = computed(() => !!env.value && (!env.value.npcap.supported || env
 async function loadAll() {
   loading.value = true
   try {
-    const [i, e, a, v, s, d, sc] = await Promise.allSettled([
+    const [i, e, a, aAlive, v, s, d, sc] = await Promise.allSettled([
       api('/api/info'),
       api('/api/env'),
-      v2('/assets?size=1'),
+      v2('/assets?size=1&host=1'),
+      v2('/assets?size=1&host=1&alive=1'),
       v2('/vulns?size=200'),
       v2('/scans?size=200'),
       v2('/db/status'),
@@ -326,7 +297,9 @@ async function loadAll() {
     ])
     if (i.status === 'fulfilled') info.value = i.value
     if (e.status === 'fulfilled') env.value = e.value
+    // 主机口径(host=1): 排除 Trivy 镜像工件等非 IP 资产, 与资产页"共 N 台主机"对齐
     if (a.status === 'fulfilled') assetsTotal.value = a.value.total
+    if (aAlive.status === 'fulfilled') assetsAliveTotal.value = aAlive.value.total
     if (v.status === 'fulfilled') {
       vulnsTotal.value = v.value.total
       vulnsList.value = v.value.list || []
@@ -382,7 +355,7 @@ const dbSummary = computed(() => {
 
 // barW / pct 对 null 的显式处理: 后端用 null 表示"尚无基线/未上报",
 // 与 0% 是两种含义(还没算出来 vs 真的空闲), 不能混为一谈 —— 首屏 CPU 显示 "-"
-function barW(v) { return v == null ? 0 : Math.max(2, Math.min(100, v)) }
+function barW(v) { return v == null ? '0%' : Math.max(2, Math.min(100, v)) + '%' }
 function pct(v) { return v == null ? '-' : Math.round(v) + '%' }
 function loadColor(v) {
   if (v == null) return 'var(--border2)'
@@ -469,8 +442,6 @@ async function saveReport() {
       method: 'POST',
       body: {
         enabled: switches.value.report.enabled,
-        templateManagement: switches.value.report.templateManagement,
-        pdfExternal: switches.value.report.pdfExternal,
         autoGenerate: switches.value.report.autoGenerate
       }
     })

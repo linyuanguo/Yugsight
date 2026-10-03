@@ -169,6 +169,8 @@ func paramsToScanReq(t *scheduler.Task) scanReq {
 		IP:                p.IP,
 		CIDR:              p.CIDR,
 		URL:               p.URL,
+		JobID:             p.JobID,
+		JobName:           p.JobName,
 		Ports:             p.Ports,
 		TimeoutMs:         p.Timeout,
 		Concurrency:       p.Concurrency,
@@ -183,6 +185,8 @@ func paramsToScanReq(t *scheduler.Task) scanReq {
 		CaptureFilter:     p.CaptureFilter,
 		AliveMode:         p.AliveMode,
 		WebDeep:           p.WebDeep,
+		TrivyTarget:       p.TrivyTarget,
+		TrivyArgs:         p.TrivyArgs,
 	}
 	// 目标兜底: 按类型回填(调度层已归一, 这里再兜一层防止手工构造的任务缺字段)
 	switch t.Kind {
@@ -193,6 +197,13 @@ func paramsToScanReq(t *scheduler.Task) scanReq {
 	case "web":
 		if req.URL == "" {
 			req.URL = firstNonEmptyStr(p.URL, p.Target)
+		}
+	case "image", "fs", "container":
+		// SCA(2026-09-27): 目标在 TrivyTarget。对旧任务兜底: 2026-09-27 之前前端
+		// 把镜像名错放进 ip 字段(排队链路根本扫不动), 这里从 IP/Target 回填,
+		// 让存量队列任务恢复可执行。
+		if req.TrivyTarget == "" {
+			req.TrivyTarget = firstNonEmptyStr(p.IP, p.Target)
 		}
 	default:
 		if req.IP == "" {
@@ -208,7 +219,17 @@ func paramsToScanReq(t *scheduler.Task) scanReq {
 // 前端任务列表就能看到"正在扫描 10.0.0.5"这类实时进度, 而不是只有一个转圈。
 func execOnLocal(ctx context.Context, t *scheduler.Task, progress func(string)) (string, error) {
 	req := paramsToScanReq(t)
-	target := firstNonEmptyStr(req.IP, req.CIDR, req.URL)
+	// 2026-09-26: 调度器本地执行的任务已由 persistSchedTask 按调度器任务 ID 落
+	// scan_tasks 表(状态随 schedOnEvent 回写), 这里标记跳过 runScanPipeline 的
+	// 二次登记, 否则同一次扫描会出现两条历史。
+	req.noHistory = true
+	// SCA(2026-09-27): image/fs/container 的目标在 TrivyTarget; 镜像/容器留空 =
+	// 自动枚举(实际枚举由 runScanPipeline→handleScan 的自动枚举逻辑做), 这里用
+	// 占位过"目标非空"校验, 任务列表展示也直观。
+	target := firstNonEmptyStr(req.IP, req.CIDR, req.URL, req.TrivyTarget)
+	if target == "" && (req.Type == "image" || req.Type == "container") {
+		target = scaAutoTarget
+	}
 	if target == "" {
 		return "", fmt.Errorf("任务目标为空")
 	}
@@ -375,7 +396,12 @@ func execOnProbe(ctx context.Context, t *scheduler.Task, progress func(string)) 
 		return "", fmt.Errorf("%w: %s", probe.ErrProbeOffline, t.Node)
 	}
 	req := paramsToScanReq(t)
-	target := firstNonEmptyStr(req.IP, req.CIDR, req.URL)
+	// SCA(2026-09-27): 同 execOnLocal —— 镜像/容器留空 = 自动枚举占位, 探针收到后
+	// 在自己主机上枚举(见 internal/probe/scanner 的 scaAutoTarget)。
+	target := firstNonEmptyStr(req.IP, req.CIDR, req.URL, req.TrivyTarget)
+	if target == "" && (req.Type == "image" || req.Type == "container") {
+		target = scaAutoTarget
+	}
 	if target == "" {
 		return "", fmt.Errorf("任务目标为空")
 	}
@@ -391,7 +417,7 @@ func execOnProbe(ctx context.Context, t *scheduler.Task, progress func(string)) 
 	}
 	// 探针任务是异步执行的(下发即返回)。这里等待结果或 ctx 取消:
 	// 探针回传结果后会由既有 onProbeResultIngest 落库, 调度器据此感知完成。
-	return waitProbeCompletion(ctx, d, t.ID, progress)
+	return waitProbeCompletion(ctx, d, t.Node, t.ID, progress)
 }
 
 // waitProbeCompletion 轮询探针任务状态直到终态。
@@ -399,7 +425,11 @@ func execOnProbe(ctx context.Context, t *scheduler.Task, progress func(string)) 
 // 为什么用轮询而不是回调: 探针结果回传链路(onProbeResultIngest)属于既有代码,
 // 改成回调会侵入那条稳定链路; 而探针任务表本身已持久化了状态, 轮询它是零侵入
 // 且天然支持"进程重启后仍在等待"的语义。间隔 2s 对扫描任务(分钟级)足够细。
-func waitProbeCompletion(ctx context.Context, d *db.Database, taskID string, progress func(string)) (string, error) {
+//
+// node 参数(2026-09-27 修): 取消时必须按探针 ID 找到连接发 MsgTaskCancel ——
+// 此前误传空串, Center.CancelTask 用 conns[""] 查连接恒为 nil, 通知永远发不出去,
+// 调度器取消后探针端扫描照跑(与"取消杀不死 trivy"同源)。
+func waitProbeCompletion(ctx context.Context, d *db.Database, node, taskID string, progress func(string)) (string, error) {
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	lastStatus := ""
@@ -408,7 +438,9 @@ func waitProbeCompletion(ctx context.Context, d *db.Database, taskID string, pro
 		case <-ctx.Done():
 			// 取消时通知探针停止(尽力而为, 失败不影响调度层状态)
 			if probeCenter != nil {
-				_ = probeCenter.CancelTask("", taskID)
+				if err := probeCenter.CancelTask(node, taskID); err != nil {
+					schedLogLine("取消探针任务通知失败(" + node + "/" + taskID + "): " + err.Error())
+				}
 			}
 			return "", ctx.Err()
 		case <-tick.C:
@@ -510,6 +542,8 @@ func dbStatusOf(e scheduler.Event) string {
 func enqueueScanRequest(req scanReq, emit func(string, any)) {
 	s := instanceScheduler()
 	params := scheduler.Params{
+		JobID:             req.JobID,
+		JobName:           req.JobName,
 		Ports:             req.Ports,
 		Timeout:           req.TimeoutMs,
 		Concurrency:       req.Concurrency,
@@ -523,8 +557,15 @@ func enqueueScanRequest(req scanReq, emit func(string, any)) {
 		CaptureFilter:     req.CaptureFilter,
 		CaptureMaxBytes:   req.CaptureMaxBytes,
 		WebDeep:           req.WebDeep,
+		// SCA(2026-09-27): trivy 目标此前没有入队通道(排队扫镜像必然失败), 补齐映射。
+		TrivyTarget:       req.TrivyTarget,
+		TrivyArgs:         req.TrivyArgs,
 	}
-	target := firstNonEmptyStr(req.IP, req.CIDR, req.URL)
+	// SCA: 目标在 TrivyTarget; 镜像/容器留空 = 自动枚举占位(执行层真正枚举)。
+	target := firstNonEmptyStr(req.IP, req.CIDR, req.URL, req.TrivyTarget)
+	if target == "" && (req.Type == "image" || req.Type == "container") {
+		target = scaAutoTarget
+	}
 	// 执行节点: queueNode="auto" 时由调度器挑最空闲探针; 未指定则本地执行。
 	// 注意与既有 execAt/probeNode 语义对齐: 若用户传了 execAt=probe, 沿用其节点。
 	node := strings.TrimSpace(req.QueueNode)
@@ -545,6 +586,10 @@ func enqueueScanRequest(req scanReq, emit func(string, any)) {
 		emit("done", map[string]any{"ok": false, "msg": "入队失败: " + err.Error()})
 		return
 	}
+	// 2026-09-26: 排队入队也落扫描历史(此前只有"直提交"路径落库, 经 /api/scan
+	// 排队提交的任务重启后在历史里彻底消失)。执行节点(本地/探针)都覆盖,
+	// 状态由 schedOnEvent 统一回写。
+	persistSchedTask(task, nil)
 	emit("status", map[string]any{
 		"msg":      fmt.Sprintf("任务已入队(队列位置 %d), 由调度器按并发与限速派发", len(s.Queued())),
 		"taskId":   task.ID,
@@ -729,13 +774,30 @@ func hSchedTaskList(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(q.Get("page"))
 	size, _ := strconv.Atoi(q.Get("size"))
 	items, total := s.List(q.Get("status"), page, size)
+	// 2026-10-02 用户口径: 筛选选项基于当前数据里实际存在的 —— 回带调度任务全量
+	// 里真实存在的状态(无任务的状态不进选项, 后期有了再出现)。List("",0,0)=
+	// 不过滤不分页=全量(调度器是内存态, 全量很小)。
+	all, _ := s.List("", 0, 0)
+	stSet := map[string]int{}
+	for _, t := range all {
+		if t != nil {
+			stSet[t.Status]++
+		}
+	}
+	statuses := make([]map[string]any, 0)
+	for _, st := range []string{"queued", "running", "paused", "success", "failed", "cancelled"} {
+		if stSet[st] > 0 {
+			statuses = append(statuses, map[string]any{"id": st, "count": stSet[st]})
+		}
+	}
 	schedOK(w, map[string]any{
-		"items": items,
-		"total": total,
-		"queue": s.Queued(),
-		"stats": s.Stats(),
-		"page":  page,
-		"size":  size,
+		"items":    items,
+		"total":    total,
+		"queue":    s.Queued(),
+		"stats":    s.Stats(),
+		"page":     page,
+		"size":     size,
+		"statuses": statuses,
 	})
 }
 
@@ -760,6 +822,9 @@ type schedSubmitReq struct {
 	// WebDeep Web 深度扫描(仅 kind=web 有效): 追加同源爬虫 + POST + 多类型注入探测。
 	// 默认 false; 选 webdeep 策略时由模板默认打开。
 	WebDeep bool `json:"webdeep"`
+	// TrivyTarget/TrivyArgs trivy SCA(仅 kind=image/fs/container 有效, 2026-09-27 补齐)。
+	TrivyTarget string `json:"trivyTarget"`
+	TrivyArgs   string `json:"trivyArgs"`
 	// Node 执行节点: 空 = 中心本地, "auto" = 自动挑最空闲探针, 其它 = 探针 ID
 	Node      string `json:"node"`
 	Priority  int    `json:"priority"`
@@ -782,6 +847,8 @@ func (r schedSubmitReq) toSchedulerParams() scheduler.Params {
 		CaptureDevice:     r.CaptureDevice,
 		CaptureFilter:     r.CaptureFilter,
 		WebDeep:           r.WebDeep,
+		TrivyTarget:       r.TrivyTarget,
+		TrivyArgs:         r.TrivyArgs,
 	}
 }
 
@@ -797,6 +864,14 @@ func hSchedSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s := instanceScheduler()
+	// SCA(2026-09-27): 镜像/容器任务的目标在 trivyTarget; 留空 = 自动枚举占位
+	// (与 enqueueScanRequest 同口径, 否则经本接口入队的 SCA 任务会因 Target 空被挡)。
+	if (req.Kind == "image" || req.Kind == "container") && strings.TrimSpace(req.Target) == "" {
+		req.Target = strings.TrimSpace(req.TrivyTarget)
+		if req.Target == "" {
+			req.Target = scaAutoTarget
+		}
+	}
 	// 节点预检(任务书: 探针负载过高时中心拒绝新任务下发)
 	if req.Node != "" && !strings.EqualFold(req.Node, "auto") {
 		if rej := s.CheckNode(req.Node, req.Kind, req.Capture); rej != nil {

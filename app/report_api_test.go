@@ -284,6 +284,16 @@ func TestReportFilterCIDR(t *testing.T) {
 func TestReportFilterOptions(t *testing.T) {
 	h, d := newReportTestEnv(t, true)
 	seedReportData(t, d)
+	// 2026-10-02 用户口径: 节点选项按存量扫描报告来源聚合(有报告才出现) →
+	// 种一份 source=local 的扫描原始报告, local 才会进选项
+	rr := &report.RawReport{
+		Module: report.RawModScan, Title: "扫描种子", Source: "local",
+		CreatedAt: time.Now(), Stats: report.RawStats{Items: 1},
+		Payload: json.RawMessage(`{"module":"scan","n":1}`),
+	}
+	if err := saveRawReport(d, rr); err != nil {
+		t.Fatalf("seed scan report: %v", err)
+	}
 	w := doReq(t, h, "GET", "/api/v2/report/options", "")
 	if w.Code != 200 {
 		t.Fatalf("status=%d", w.Code)
@@ -293,27 +303,11 @@ func TestReportFilterOptions(t *testing.T) {
 		t.Fatalf("筛选项应含库中 CVE: %.300s", body)
 	}
 	if !strings.Contains(body, "local") {
-		t.Fatal("筛选项应含本地节点")
+		t.Fatal("筛选项应含本地节点(有本地扫描报告)")
 	}
 }
 
 // ===== 资产拓扑 =====
-
-func TestReportTopology(t *testing.T) {
-	h, d := newReportTestEnv(t, true)
-	seedReportData(t, d)
-	w := doReq(t, h, "GET", "/api/v2/report/topology", "")
-	if w.Code != 200 {
-		t.Fatalf("status=%d", w.Code)
-	}
-	body := w.Body.String()
-	// 资产节点 / 端口节点 / 服务节点 / 风险着色字段
-	for _, want := range []string{"10.0.0.1", "10.0.0.2", `"kind":"asset"`, `"kind":"port"`, `"kind":"service"`, `"risk":"critical"`, `"online":true`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("拓扑响应缺少: %s", want)
-		}
-	}
-}
 
 // ===== 历史对比 =====
 

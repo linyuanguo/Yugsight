@@ -51,6 +51,14 @@ type Database struct {
 
 	// 渗透审计(独立于通用审计: 渗透命令全程留痕, 只增不删, 无删除路径)
 	pentaAudit *PentaAuditDAO
+
+	// 扫描作业(2026-09-25 三轮: 命名任务串起 深度扫描→弱口令→渗透 流程,
+	// 报告/原始报告按作业名分类)
+	jobs *JobDAO
+
+	// 节点告警推送(2026-09-28): 告警记录(含推送状态) + 推送日志(关联告警 ID)
+	nodeAlerts *NodeAlertDAO
+	pushLogs   *PushLogDAO
 }
 
 // Open 按配置打开数据库并完成表结构初始化。
@@ -154,6 +162,15 @@ func openFileDB(cfg Config) (*Database, error) {
 	if d.pentaAudit, err = newPentaAuditTable(table("penta_audit")); err != nil {
 		return nil, err
 	}
+	if d.jobs, err = newScanJobTable(table("scan_jobs")); err != nil {
+		return nil, err
+	}
+	if d.nodeAlerts, err = newNodeAlertTable(table("node_alerts")); err != nil {
+		return nil, err
+	}
+	if d.pushLogs, err = newPushLogTable(table("push_logs")); err != nil {
+		return nil, err
+	}
 
 	// 渗透审计一次性迁移: 旧版本 penta.* 混存通用审计表, 升级到独立表时搬移(幂等)。
 	// best-effort: 失败只记日志 —— 老记录留在通用表(其 isProtected 保护仍然生效,
@@ -164,9 +181,105 @@ func openFileDB(cfg Config) (*Database, error) {
 		logf(fmt.Sprintf("渗透审计表迁移完成: 从通用审计表移入 penta.* 记录 %d 条", n))
 	}
 
-	logf(fmt.Sprintf("数据库就绪: type=%s dir=%s 表=22(assets/vulns/whitelist/scan_tasks/users/sessions/configs/rules/cpe/audit_logs/probes/probe_tasks/reports/report_templates/monitor_samples/collect_samples/collect_events/raw_reports/ai_docs/penta_tasks/weak_password_dict/penta_audit)",
+	logf(fmt.Sprintf("数据库就绪: type=%s dir=%s 表=25(assets/vulns/whitelist/scan_tasks/users/sessions/configs/rules/cpe/audit_logs/probes/probe_tasks/reports/report_templates/monitor_samples/collect_samples/collect_events/raw_reports/ai_docs/penta_tasks/weak_password_dict/penta_audit/scan_jobs/node_alerts/push_logs)",
 		d.driver, d.dir))
 	return d, nil
+}
+
+// ClearAll 清空全部 25 张业务表(内存 + 磁盘), 返回清空总条数。
+//
+// 供"恢复出厂"(factory-reset)一次清光, 避免上层逐表调用样板。
+// best-effort: 单表失败不中断(与"降级不崩溃"一致), 只累加成功条数。
+//
+// 实现注意: 逐个用具体指针判 nil 再取方法值 —— 不能把 *DAO(nil) 装箱进
+// interface{ Clear() } 判空(typed-nil 坑, 见 bigscreen isNilAny 的记录)。
+func (d *Database) ClearAll() int {
+	if d == nil {
+		return 0
+	}
+	var fns []func() (int, error)
+	if d.assets != nil {
+		fns = append(fns, d.assets.Clear)
+	}
+	if d.vulns != nil {
+		fns = append(fns, d.vulns.Clear)
+	}
+	if d.whitelists != nil {
+		fns = append(fns, d.whitelists.Clear)
+	}
+	if d.scanTasks != nil {
+		fns = append(fns, d.scanTasks.Clear)
+	}
+	if d.users != nil {
+		fns = append(fns, d.users.Clear)
+	}
+	if d.sessions != nil {
+		fns = append(fns, d.sessions.Clear)
+	}
+	if d.configs != nil {
+		fns = append(fns, d.configs.Clear)
+	}
+	if d.rules != nil {
+		fns = append(fns, d.rules.Clear)
+	}
+	if d.cpes != nil {
+		fns = append(fns, d.cpes.Clear)
+	}
+	if d.audits != nil {
+		fns = append(fns, d.audits.Clear)
+	}
+	if d.probes != nil {
+		fns = append(fns, d.probes.Clear)
+	}
+	if d.probeTasks != nil {
+		fns = append(fns, d.probeTasks.Clear)
+	}
+	if d.reports != nil {
+		fns = append(fns, d.reports.Clear)
+	}
+	if d.reportTemplates != nil {
+		fns = append(fns, d.reportTemplates.Clear)
+	}
+	if d.monitorSamples != nil {
+		fns = append(fns, d.monitorSamples.Clear)
+	}
+	// CollectSample/CollectEvent 两 DAO 用命名内嵌字段 t(非匿名), 无方法提升, 走 .t.Clear。
+	if d.collectSamples != nil && d.collectSamples.t != nil {
+		fns = append(fns, d.collectSamples.t.Clear)
+	}
+	if d.collectEvents != nil && d.collectEvents.t != nil {
+		fns = append(fns, d.collectEvents.t.Clear)
+	}
+	if d.rawReports != nil {
+		fns = append(fns, d.rawReports.Clear)
+	}
+	if d.aiDocs != nil {
+		fns = append(fns, d.aiDocs.Clear)
+	}
+	if d.pentaTasks != nil {
+		fns = append(fns, d.pentaTasks.Clear)
+	}
+	if d.weakPassDict != nil {
+		fns = append(fns, d.weakPassDict.Clear)
+	}
+	if d.pentaAudit != nil {
+		fns = append(fns, d.pentaAudit.Clear)
+	}
+	if d.jobs != nil {
+		fns = append(fns, d.jobs.Clear)
+	}
+	if d.nodeAlerts != nil {
+		fns = append(fns, d.nodeAlerts.Clear)
+	}
+	if d.pushLogs != nil {
+		fns = append(fns, d.pushLogs.Clear)
+	}
+	total := 0
+	for _, f := range fns {
+		n, _ := f()
+		total += n
+	}
+	return total
 }
 
 // Type 驱动类型(sqlite / postgres)。
@@ -193,6 +306,8 @@ func (d *Database) Close() error {
 	d.pentaTasks = nil
 	d.weakPassDict = nil
 	d.pentaAudit = nil
+	d.jobs = nil
+	d.nodeAlerts, d.pushLogs = nil, nil
 	return nil
 }
 
@@ -239,6 +354,9 @@ func (d *Database) Stats() map[string]int {
 	add("penta_tasks", d.pentaTasks)
 	add("weak_password_dict", d.weakPassDict)
 	add("penta_audit", d.pentaAudit)
+	add("scan_jobs", d.jobs)
+	add("node_alerts", d.nodeAlerts)
+	add("push_logs", d.pushLogs)
 	return stats
 }
 
@@ -326,3 +444,12 @@ func (d *Database) WeakPassDict() *WeakPassDictDAO { return d.weakPassDict }
 
 // PentaAudits 渗透审计 DAO(独立表, 只增不删; 与通用审计 AuditDAO 物理隔离)。
 func (d *Database) PentaAudits() *PentaAuditDAO { return d.pentaAudit }
+
+// Jobs 扫描作业 DAO(2026-09-25 三轮: 命名任务编排 深度扫描→弱口令→渗透)。
+func (d *Database) Jobs() *JobDAO { return d.jobs }
+
+// NodeAlerts 节点告警记录 DAO(2026-09-28: 采集异常事件 → 告警 + 推送状态)。
+func (d *Database) NodeAlerts() *NodeAlertDAO { return d.nodeAlerts }
+
+// PushLogs 推送日志 DAO(2026-09-28: 推送发送明细, 关联告警 ID)。
+func (d *Database) PushLogs() *PushLogDAO { return d.pushLogs }

@@ -234,11 +234,20 @@ type flowArc struct {
 }
 
 type flowsResponse struct {
-	Center flowPoint      `json:"center"`
-	Arcs   []flowArc      `json:"arcs"`
-	Points []flowPoint    `json:"points"`
-	Stats  map[string]int `json:"stats"`
-	GeoIP  map[string]any `json:"geoip"`
+	Center   flowPoint      `json:"center"`
+	Arcs     []flowArc      `json:"arcs"`
+	Points   []flowPoint    `json:"points"`
+	Intranet []intranetSeg  `json:"intranet"` // 内网 IP 按 /16 聚合(地球无公网可定位时的替代视图)
+	Stats    map[string]int `json:"stats"`
+	GeoIP    map[string]any `json:"geoip"`
+}
+
+// intranetSeg 一个内网 /16 网段及其 IP 计数(地球替代视图的数据)。
+// 地球只能定位公网 IP, 内网安全扫描场景下公网 IP 稀少、弧线基本为空,
+// 前端据此切到"内网资产分布"视图, 用 /16 网段聚合展示资产集中在哪些内网段。
+type intranetSeg struct {
+	Net   string `json:"net"`
+	Count int    `json:"count"`
 }
 
 // cityKey 城市聚合键(经度+纬度, 展示近似点, 浮点直接做键足够稳定)。
@@ -332,14 +341,34 @@ type taskFlow struct {
 // arcs/points(地图空白而非报错) —— 大屏常驻, 数据缺失不该整屏 500。
 func buildFlows(d *db.Database, g *geoip.DB, cfg dashboardConfig) *flowsResponse {
 	resp := &flowsResponse{
-		Arcs:   []flowArc{},
-		Points: []flowPoint{},
-		Stats:  map[string]int{"known": 0, "unknown": 0, "private": 0},
+		Arcs:     []flowArc{},
+		Points:   []flowPoint{},
+		Intranet: []intranetSeg{},
+		Stats:    map[string]int{"known": 0, "unknown": 0, "private": 0},
 	}
 	v4, v6, c4, c6 := g.Loaded()
 	resp.GeoIP = map[string]any{"v4": v4, "v6": v6, "v4Count": c4, "v6Count": c6, "enabled": loadGeoIPConfig().Enabled}
 
 	cutoff := time.Now().AddDate(0, 0, -cfg.Days)
+
+	// 内网 IP 按 /16 网段聚合: 地球仅能定位公网 IP, 全内网场景(内网安全扫描的
+	// 主场景)下 arcs/points 必空, 前端据此切到"内网资产分布"替代视图。这里统一
+	// 收集扫描目标与资产里的私网段 IP(10/172.16-31/192.168), 按 /16 归并。
+	inetCount := map[string]int{}
+	addIntranet := func(ip string) {
+		p := net.ParseIP(strings.TrimSpace(ip))
+		if p == nil {
+			return
+		}
+		if p4 := p.To4(); p4 != nil {
+			isPrivate := p4[0] == 10 ||
+				(p4[0] == 172 && p4[1] >= 16 && p4[1] <= 31) ||
+				(p4[0] == 192 && p4[1] == 168)
+			if isPrivate {
+				inetCount[fmt.Sprintf("%d.%d.0.0/16", p4[0], p4[1])]++
+			}
+		}
+	}
 
 	// Location → 城市聚合键(名字取 城市>区域>国家>IP 的可用项)。
 	addCity := func(loc *geoip.Location) (cityKey, bool) {
@@ -398,6 +427,7 @@ func buildFlows(d *db.Database, g *geoip.DB, cfg dashboardConfig) *flowsResponse
 					resp.Stats["unknown"]++
 					continue
 				}
+				addIntranet(dstIP)
 				dstLoc := geoOf(g, dstIP)
 				if dstLoc == nil || !dstLoc.Known {
 					if dstLoc != nil && dstLoc.Private {
@@ -424,6 +454,7 @@ func buildFlows(d *db.Database, g *geoip.DB, cfg dashboardConfig) *flowsResponse
 					continue
 				}
 				if ip := firstIP(a.IP); ip != "" {
+					addIntranet(ip)
 					if k, ok := addCity(geoOf(g, ip)); ok {
 						cityCount[k]++
 					}
@@ -459,6 +490,22 @@ func buildFlows(d *db.Database, g *geoip.DB, cfg dashboardConfig) *flowsResponse
 		points = points[:cfg.TopCities]
 	}
 	resp.Points = points
+
+	// 5) 内网 /16 网段聚合(按计数降序, 截断 TopCities; 计数相同按网段名稳定排序)
+	inet := make([]intranetSeg, 0, len(inetCount))
+	for n, c := range inetCount {
+		inet = append(inet, intranetSeg{Net: n, Count: c})
+	}
+	sort.Slice(inet, func(i, j int) bool {
+		if inet[i].Count != inet[j].Count {
+			return inet[i].Count > inet[j].Count
+		}
+		return inet[i].Net < inet[j].Net
+	})
+	if len(inet) > cfg.TopCities {
+		inet = inet[:cfg.TopCities]
+	}
+	resp.Intranet = inet
 
 	return resp
 }

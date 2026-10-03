@@ -248,7 +248,33 @@ func hPentaTasks(w http.ResponseWriter, r *http.Request) {
 			server.FailInternal(w, err.Error())
 			return
 		}
-		server.OK(w, map[string]any{"list": list, "total": total})
+		// 2026-10-02 用户口径: 筛选选项基于当前数据里实际存在的 —— 回带渗透任务
+		// 全量里真实存在的状态/风险等级(无数据的选项不出现, 后期有了再出现)
+		all, _ := d.PentaTasks().List()
+		stSet := map[string]int{}
+		riskSet := map[string]int{}
+		for _, t := range all {
+			if t == nil {
+				continue
+			}
+			stSet[t.Status]++
+			if t.RiskLevel != "" {
+				riskSet[t.RiskLevel]++
+			}
+		}
+		statuses := make([]map[string]any, 0)
+		for _, st := range []string{"pending", "running", "done", "failed"} {
+			if stSet[st] > 0 {
+				statuses = append(statuses, map[string]any{"id": st, "count": stSet[st]})
+			}
+		}
+		risks := make([]map[string]any, 0)
+		for _, rk := range []string{"critical", "high", "medium", "low", "info"} {
+			if riskSet[rk] > 0 {
+				risks = append(risks, map[string]any{"id": rk, "count": riskSet[rk]})
+			}
+		}
+		server.OK(w, map[string]any{"list": list, "total": total, "statuses": statuses, "risks": risks})
 
 	case http.MethodPost:
 		var in struct {
@@ -261,6 +287,7 @@ func hPentaTasks(w http.ResponseWriter, r *http.Request) {
 			TemplateID string `json:"templateId"`
 			Note       string `json:"note"`
 			Severity   string `json:"severity"` // 初始风险等级(手动创建时自选)
+			Job        string `json:"job"`      // 扫描任务名(可选, 报告按任务名关联)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			server.FailBadRequest(w, "请求格式错误: "+err.Error())
@@ -269,6 +296,16 @@ func hPentaTasks(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(in.Target) == "" {
 			server.FailBadRequest(w, "目标不能为空")
 			return
+		}
+		// 任务名(可选): 非法名拒绝(与扫描登记同口径); 合法名登记进任务名登记簿,
+		// 让"控制台下一步渗透"建的任务能挂回任务名下(报告按任务名关联)
+		jobName := strings.TrimSpace(in.Job)
+		if jobName != "" && !validTaskName(jobName) {
+			server.FailBadRequest(w, "任务名非法(中英文/数字/空格/-_./, 1-64 字)")
+			return
+		}
+		if jobName != "" {
+			_, _ = registerScanTask(jobName, in.Target)
 		}
 		if in.Title == "" {
 			in.Title = in.Name
@@ -291,6 +328,7 @@ func hPentaTasks(w http.ResponseWriter, r *http.Request) {
 			RiskLevel:  in.Severity,
 			Note:       in.Note,
 			Source:     "manual",
+			Job:        jobName,
 			Operator:   currentUser(),
 		}}
 		if err := d.PentaTasks().Create(t); err != nil {
@@ -667,6 +705,10 @@ func hPentaRun(w http.ResponseWriter, r *http.Request) {
 		logLine("渗透任务结果落库失败: " + err.Error())
 	}
 	pentaSetRunning(t.ID, false)
+
+	// 原始报告自动存档(module=penta, 按任务名分类): 与弱口令/扫描同口径,
+	// 失败只记日志不影响执行结果。
+	savePentaRawReport(d, &task)
 
 	logPentaAudit(d, r, "penta.task.finish", t.ID,
 		fmt.Sprintf("target=%s status=%s exp=%s %s", t.Target, task.Status, orEmpty(task.Exploitability), outcome.Summary))

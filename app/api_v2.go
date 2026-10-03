@@ -13,10 +13,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -125,10 +127,14 @@ func registerV2Routes(srv *server.Server, getDB func() *db.Database) {
 		server.OK(w, map[string]any{"name": appName, "version": appVersion, "time": time.Now().Format(time.RFC3339)})
 	})
 
+	// 拓扑链路真实数据(2026-09-29 阶段 B; 只读聚合, 详见 topology_links_api.go)
+	registerTopologyLinksRoutes(srv)
+	registerTopoViewRoutes(srv)
+
 	// 写操作统一挂 RBAC 中间件(免登录模式下两者均直通, 规则 6):
 	//   adminOrOperator = admin + operator(操作员) —— 业务写操作(资产/漏洞/白名单/
 	//     任务/探针/引擎/报告)都是"操作员按设计拥有"的能力;
-	//   adminOnly = 仅 admin —— 授权管理页专属(用户账号/会话吊销/审计配置与清理),
+	//   adminOnly = 仅 admin —— 授权与模型页专属(用户账号/会话吊销/审计配置与清理),
 	//     账号体系是提权红线, 操作员同样不能碰。
 	// 读路由(各 GET)保持 requireAuth, auditor 只读角色正常使用。
 	// ===== 资产管理: 增删改查 + 标签管理 =====
@@ -137,11 +143,19 @@ func registerV2Routes(srv *server.Server, getDB func() *db.Database) {
 	srv.Get("/api/v2/assets/{id}", requireAuth(hV2AssetGet))
 	srv.Put("/api/v2/assets/{id}", requireAuth(adminOrOperator(hV2AssetUpdate)))
 	srv.Delete("/api/v2/assets/{id}", requireAuth(adminOrOperator(hV2AssetDelete)))
+	srv.Delete("/api/v2/assets/dead", requireAuth(adminOrOperator(hV2AssetCleanDead)))
+	// 批量删除选中(前端"删除选中"按钮): 精确路径优先于 {id} 模式, 无冲突
+	srv.Post("/api/v2/assets/batch-delete", requireAuth(adminOrOperator(hV2AssetBatchDelete)))
 	srv.Post("/api/v2/assets/{id}/tags", requireAuth(adminOrOperator(hV2AssetTagsAdd)))
 	srv.Delete("/api/v2/assets/{id}/tags", requireAuth(adminOrOperator(hV2AssetTagsRemove)))
+	// 代理 ARP 幽灵资产: 预览(只读) + 清理(破坏性, 需 operator 以上; 前端先预览确认再删, 见 arp_ghost.go)
+	srv.Get("/api/v2/assets/arp-ghosts", requireAuth(hV2ArpGhostPreview))
+	srv.Post("/api/v2/assets/arp-ghosts/cleanup", requireAuth(adminOrOperator(hV2ArpGhostCleanup)))
 
 	// ===== 漏洞查询: 分页 / 多维筛选 / 详情 / 删除 / 清空 =====
 	srv.Get("/api/v2/vulns", requireAuth(hV2VulnList))
+	// 精确路径优先于 {id} 模式, 无冲突(与 raw/batch-delete 同口径)
+	srv.Get("/api/v2/vulns/options", requireAuth(hV2VulnOptions))
 	srv.Post("/api/v2/vulns", requireAuth(adminOrOperator(hV2VulnUpsert)))
 	srv.Get("/api/v2/vulns/{id}", requireAuth(hV2VulnGet))
 	srv.Put("/api/v2/vulns/{id}", requireAuth(adminOrOperator(hV2VulnUpdate)))
@@ -172,18 +186,31 @@ func registerV2Routes(srv *server.Server, getDB func() *db.Database) {
 	// 集合级 DELETE = 清空全部扫描任务历史记录(首页"清空历史记录"按钮;
 	// 破坏性动作: 前端二次确认 + 后端记审计。只清任务表, 不动资产/漏洞)
 	srv.Delete("/api/v2/scans", requireAuth(adminOrOperator(hV2ScanClearAll)))
+	// 批量删除选中(前端"扫描历史"列表勾选; 与 assets/raw 批量删除同口径)
+	srv.Post("/api/v2/scans/batch-delete", requireAuth(adminOrOperator(hV2ScanBatchDelete)))
+	// 取消运行中的扫描(2026-09-27: 扫描历史页"取消"按钮; 本地/探针/调度三路径统一入口,
+	// 实现见 scan_history.go hV2ScanCancel)
+	srv.Post("/api/v2/scans/{id}/cancel", requireAuth(adminOrOperator(hV2ScanCancel)))
 
-	// ===== 用户会话管理(基于既有登录会话; 属授权管理页能力, 保持 adminOnly) =====
+	// ===== 用户会话管理(基于既有登录会话; 属授权与模型页能力, 保持 adminOnly) =====
 	srv.Get("/api/v2/sessions", requireAuth(hV2SessionsList))
 	srv.Delete("/api/v2/sessions/{id}", requireAuth(adminOnly(hV2SessionRevoke)))
 
-	// ===== 审计日志(配置与清理是"授权管理"能力, 保持 adminOnly) =====
+	// ===== 审计日志(配置与清理是"授权与模型"能力, 保持 adminOnly) =====
 	srv.Get("/api/v2/audit", requireAuth(hV2AuditList))
 	srv.Get("/api/v2/audit/config", requireAuth(hV2AuditConfigGet))
 	srv.Post("/api/v2/audit/config", requireAuth(adminOnly(hV2AuditConfigSet)))
 	// 清理: 不带参数 = 清空全部; ?days=N 只清 N 天前。清理动作本身会留一条审计记录。
 	srv.Delete("/api/v2/audit", requireAuth(adminOnly(hV2AuditClear)))
 	srv.Delete("/api/v2/audit/{id}", requireAuth(adminOnly(hV2AuditDeleteOne)))
+
+	// 恢复出厂(授权与模型页"服务管理"区; adminOnly 破坏性红线, 清空全部运行期数据)。
+	// cleanEnv=true 时额外清 bin/agents/logs, 用于打 dist 分发包前。
+	srv.Post("/api/v2/factory-reset", requireAuth(adminOnly(hV2FactoryReset)))
+
+	// ===== 品牌自定义(授权与模型页"品牌自定义"面板; 2026-09-28) =====
+	// 读 requireAuth(登录角色可见), 写 adminOnly(与同页用户/审计配置同口径)。
+	RegisterBrandRoutes(srv)
 
 	// ===== 数据库状态 =====
 	srv.Get("/api/v2/db/status", requireAuth(hV2DBStatus))
@@ -223,6 +250,11 @@ func registerV2Routes(srv *server.Server, getDB func() *db.Database) {
 	// SNMP 网络设备监控继续走 monitor 包, 本组是节点监控页的扩展采集协议。
 	registerNodeRoutes(srv)
 
+	// ===== 扫描作业(命名任务编排: 深度扫描→弱口令→渗透→完成) =====
+	// 作业会真实发起扫描流量, 故写操作(创建/取消/删除)挂 adminOrOperator;
+	// 报告中心据此"按作业名生成报告 / 按作业名分类原始报告"。
+	registerJobRoutes(srv)
+
 	// ===== 弱口令字典可视化(内置 349 + 自定义; 读 requireAuth, 写 adminOnly) =====
 	registerWeakPassDictRoutes(srv)
 
@@ -246,12 +278,29 @@ func v2NeedDB(w http.ResponseWriter) *db.Database {
 }
 
 // decodeJSON 解析请求体; 失败统一 400。
+// 兼容"被二次 JSON.stringify 的 body"(历史前端 bug: 已序列化的字符串被再序列化一次,
+// 服务端收到 JSON 字符串字面量 "{\"a\":1}"): 首解码失败且原始字节以引号开头时,
+// 先解出内层字符串再解一次。让新旧前端(含未强刷的缓存旧页)都能正常保存。
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		server.FailBadRequest(w, "请求格式错误: "+err.Error())
+	raw, rerr := io.ReadAll(r.Body)
+	if rerr != nil {
+		server.FailBadRequest(w, "请求体读取失败: "+rerr.Error())
 		return false
 	}
-	return true
+	uerr := json.Unmarshal(raw, v)
+	if uerr == nil {
+		return true
+	}
+	// 兜底: body 是 JSON 字符串字面量(外层被引号包一层), 解开内层 JSON 再解一次
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+		var inner string
+		if json.Unmarshal(raw, &inner) == nil && inner != "" &&
+			json.Unmarshal([]byte(inner), v) == nil {
+			return true
+		}
+	}
+	server.FailBadRequest(w, "请求格式错误: "+uerr.Error())
+	return false
 }
 
 // parsePage 解析分页参数(page 从 1 起, size 默认 20 上限 200)。
@@ -371,6 +420,31 @@ func hV2AssetList(w http.ResponseWriter, r *http.Request) {
 	if tag := q.Get("tag"); tag != "" {
 		list, _ = d.Assets().FindByTag(tag)
 	}
+	// 只看存活筛选(前端"只看存活"开关, 默认开): alive=1 只留 Alive=true,
+	// alive=0 只留 Alive=false。在 ip/tag 基础上对当前 list 追加过滤(基于
+	// 已有结果而非重查全表, 保证多条件 AND)。
+	if av := q.Get("alive"); av != "" {
+		onlyAlive := av != "0"
+		filtered := make([]*db.Asset, 0, len(list))
+		for _, a := range list {
+			if a.Alive == onlyAlive {
+				filtered = append(filtered, a)
+			}
+		}
+		list = filtered
+	}
+	// 主机口径筛选: host=1 只留 IP 字段是合法 IP 的条目。资产表混有 SCA 工件
+	// (Trivy 镜像/文件扫描按工件标识入账, 非 IP), 仪表盘"资产总数(主机维度)"
+	// 用这个口径, 与资产页"共 N 台主机"对齐; 列表页默认不带, 工件仍可见(带标签)。
+	if q.Get("host") == "1" {
+		filtered := make([]*db.Asset, 0, len(list))
+		for _, a := range list {
+			if net.ParseIP(a.IP) != nil {
+				filtered = append(filtered, a)
+			}
+		}
+		list = filtered
+	}
 	server.OK(w, map[string]any{
 		"list":  paginate(list, page, size),
 		"total": len(list), "page": page, "size": size,
@@ -469,6 +543,62 @@ func hV2AssetDelete(w http.ResponseWriter, r *http.Request) {
 	server.OK(w, map[string]any{"deleted": true})
 }
 
+// hV2AssetBatchDelete POST /api/v2/assets/batch-delete {ids} 批量删除选中资产。
+//
+// 与 hV2AssetDelete 同权限(adminOrOperator); 上限 500(与 penta 批量删除同口径)。
+// 逐条删、单条失败不阻断其余(与 penta batch 同范式); 审计一条汇总留痕。
+func hV2AssetBatchDelete(w http.ResponseWriter, r *http.Request) {
+	d := v2NeedDB(w)
+	if d == nil {
+		return
+	}
+	var in struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || len(in.IDs) == 0 {
+		server.FailBadRequest(w, "ids 不能为空")
+		return
+	}
+	if len(in.IDs) > 500 {
+		server.FailBadRequest(w, "单次批量上限 500 条")
+		return
+	}
+	// 按 id 去重(前端选中态理论上无重复, 防御重复提交)
+	seen := make(map[string]bool, len(in.IDs))
+	n := 0
+	for _, id := range in.IDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		if ok, err := d.Assets().Delete(id); err == nil && ok {
+			n++
+		}
+	}
+	logAudit(d, r, "asset.batch_delete", "", fmt.Sprintf("批量删除 %d/%d 条", n, len(seen)))
+	server.OK(w, map[string]any{"deleted": n})
+}
+
+// hV2AssetCleanDead DELETE /api/v2/assets/dead 批量删除所有未存活(Alive=false)资产。
+//
+// 语义: 清理"从未存活过"的探测噪声。存活过的资产 Alive 永不翻案
+// (upsertProbeAsset 只 true 覆盖), 故 Alive=false 恰好全是没响应过的 IP,
+// 清理不会误删"曾上线后来下线"的主机(它们 Alive=true)。
+func hV2AssetCleanDead(w http.ResponseWriter, r *http.Request) {
+	d := v2NeedDB(w)
+	if d == nil {
+		return
+	}
+	n, err := d.Assets().DeleteDead()
+	if err != nil {
+		server.FailInternal(w, err.Error())
+		return
+	}
+	logAudit(d, r, "asset.clean_dead", "", fmt.Sprintf("deleted=%d", n))
+	server.OK(w, map[string]any{"deleted": n})
+}
+
 // hV2AssetTagsAdd POST /api/v2/assets/{id}/tags {tags: [...]}
 func hV2AssetTagsAdd(w http.ResponseWriter, r *http.Request) {
 	d := v2NeedDB(w)
@@ -553,6 +683,48 @@ func hV2VulnList(w http.ResponseWriter, r *http.Request) {
 		"list":  list,
 		"total": total, "page": page, "size": size,
 	})
+}
+
+// hV2VulnOptions GET /api/v2/vulns/options —— 漏洞列表筛选选项。
+// 2026-10-02 用户口径: 筛选选项基于当前数据里实际存在的值 —— 等级只返回漏洞
+// 库中存在的等级; 状态按用户两态口径(开放=非 fixed)只返回有数据的态。
+// 列表是分页接口, 选项须从全量库聚合(不能只看当前页)。
+func hV2VulnOptions(w http.ResponseWriter, r *http.Request) {
+	d := v2NeedDB(w)
+	if d == nil {
+		return
+	}
+	sevSet := map[string]bool{}
+	openCount, fixedCount := 0, 0
+	if dao := d.Vulns(); dao != nil {
+		if list, err := dao.Search(db.VulnQuery{}); err == nil {
+			for _, v := range list {
+				if v == nil {
+					continue
+				}
+				sevSet[models.NormalizeSeverity(v.Severity)] = true
+				if models.IsFixedStatus(v.Status) {
+					fixedCount++
+				} else {
+					openCount++
+				}
+			}
+		}
+	}
+	severities := make([]string, 0)
+	for _, s := range []string{models.SeverityCritical, models.SeverityHigh, models.SeverityMedium, models.SeverityLow, models.SeverityInfo} {
+		if sevSet[s] {
+			severities = append(severities, s)
+		}
+	}
+	statuses := make([]map[string]any, 0)
+	if openCount > 0 {
+		statuses = append(statuses, map[string]any{"id": models.VulnStatusOpen, "count": openCount})
+	}
+	if fixedCount > 0 {
+		statuses = append(statuses, map[string]any{"id": models.VulnStatusFixed, "count": fixedCount})
+	}
+	server.OK(w, map[string]any{"severities": severities, "statuses": statuses})
 }
 
 // hV2VulnUpsert POST /api/v2/vulns 漏洞结果写入(扫描结果回传, 按稳定 ID 幂等)
@@ -810,6 +982,14 @@ func hV2ScanCreate(w http.ResponseWriter, r *http.Request) {
 	server.OK(w, t)
 }
 
+// scanListItem 扫描历史列表项 = 任务记录 + 探针实时进度(2026-09-27: 用户口径
+// "扫描历史里能看到扫描进度")。探针任务的进度在 probe_tasks 表(随探针进度消息
+// 更新), 本地扫描的进度在 SSE 流里(不落表, 本字段为空属正常)。
+type scanListItem struct {
+	*db.ScanTask
+	ProbeProgress string `json:"probeProgress,omitempty"`
+}
+
 // hV2ScanList GET /api/v2/scans 列表 ?status=&page=&size=
 func hV2ScanList(w http.ResponseWriter, r *http.Request) {
 	d := v2NeedDB(w)
@@ -826,9 +1006,37 @@ func hV2ScanList(w http.ResponseWriter, r *http.Request) {
 	if s := q.Get("status"); s != "" {
 		list, _ = d.ScanTasks().ByStatus(s)
 	}
+	// 文件引擎 List 是插入序(最旧在前) —— 扫描历史页按"最近的在前"展示,
+	// 统一倒序(createdAt 缺失的排在最前, 稳定排序)
+	sort.SliceStable(list, func(i, j int) bool { return list[j].CreatedAt.Before(list[i].CreatedAt) })
+	// 进度只对"运行中的探针任务"实时取(进度只在运行中变化, 且运行中的任务很少,
+	// 避免每次列表都逐条 join 探针任务表)。
+	pageItems := paginate(list, page, size)
+	items := make([]scanListItem, 0, len(pageItems))
+	for _, t := range pageItems {
+		item := scanListItem{ScanTask: t}
+		if t.Status == db.TaskRunning && t.ProbeNode != "" && d.ProbeTasks() != nil {
+			if pt, perr := d.ProbeTasks().Get(t.ID); perr == nil && pt != nil {
+				item.ProbeProgress = pt.Progress
+			}
+		}
+		items = append(items, item)
+	}
+	// 2026-10-02 用户口径: 筛选选项基于当前数据里实际存在的 —— 回带扫描任务
+	// 全量里真实存在的状态(无数据的状态不进选项, 后期有了再出现)。CountByStatus
+	// 是单遍计数(不拷贝实体), 全量口径不受 status 过滤影响。
+	statuses := make([]map[string]any, 0)
+	if counts, err := d.ScanTasks().CountByStatus(); err == nil {
+		for _, st := range []string{db.TaskRunning, db.TaskSuccess, db.TaskFailed, db.TaskCancelled, db.TaskPending} {
+			if counts[st] > 0 {
+				statuses = append(statuses, map[string]any{"id": st, "count": counts[st]})
+			}
+		}
+	}
 	server.OK(w, map[string]any{
-		"list":  paginate(list, page, size),
-		"total": len(list), "page": page, "size": size,
+		"list":     items,
+		"total":    len(list), "page": page, "size": size,
+		"statuses": statuses,
 	})
 }
 

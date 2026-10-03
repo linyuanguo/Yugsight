@@ -291,23 +291,33 @@ try {
             # 自动拷一份会导致"改了仓库根那份却不生效"的经典困惑。
             $runtimeRes = @(
                 # 2026-09-24 仓库整理: 构建输入资产统一收进 build/(Npcap 安装器从仓库根移入)
-                @{ Src = (Join-Path $Root 'build\npcap-1.86.exe'); Desc = 'Npcap 安装器(抓包驱动一键安装用)' }
+                # 2026-09-29 用户要求: 安装器随外部引擎归拢到 bin/, 未装 Npcap 的机器
+                # 可据此一键安装(envdetect findInstaller 同时扫 exe 目录与 bin/)
+                @{ Src = (Join-Path $Root 'build\npcap-1.86.exe'); Sub = 'bin'; Desc = 'Npcap 安装器(抓包驱动一键安装用, 落 bin/)' }
             )
             foreach ($res in $runtimeRes) {
                 if (Test-Path $res.Src) {
-                    Copy-Item $res.Src (Join-Path $OutAbs (Split-Path $res.Src -Leaf)) -Force
+                    $dstDir = $OutAbs
+                    if ($res.Sub) {
+                        $dstDir = Join-Path $OutAbs $res.Sub
+                        if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Force -Path $dstDir | Out-Null }
+                    }
+                    Copy-Item $res.Src (Join-Path $dstDir (Split-Path $res.Src -Leaf)) -Force
                     Write-Host ("      附带: {0}" -f $res.Desc) -ForegroundColor DarkGray
                 }
             }
-            # agents/ 是探针分发包目录, 中心端 Web 下载页据此提供下载。
-            # 用镜像而非移动: 仓库根的 agents/ 仍可被脚本直接更新, dist/ 这份供运行期读取。
-            $agentsSrc = Join-Path $Root 'agents'
-            if (Test-Path $agentsSrc) {
-                $agentsDst = Join-Path $OutAbs 'agents'
-                if (-not (Test-Path $agentsDst)) { New-Item -ItemType Directory -Force -Path $agentsDst | Out-Null }
-                Copy-Item (Join-Path $agentsSrc '*') $agentsDst -Force -Recurse
-                $n = (Get-ChildItem $agentsDst -File -ErrorAction SilentlyContinue | Measure-Object).Count
-                Write-Host ("      附带: agents/ 探针包 {0} 个" -f $n) -ForegroundColor DarkGray
+            # data/agents/ 是探针分发包目录(2026-09-29 起归入 data, 与 cert/ 一并收拢),
+            # 中心端 Web 下载页据此提供下载。
+            # 【2026-09-29 用户要求】探针构建产物直接输出到 dist/data/agents
+            # (build-agents.ps1 默认输出目录已改为 ..\dist\data\agents), 不再放仓库根
+            # agents/。这里只确认目录就位, 缺失/为空时提示先构建探针, 不再从仓库根镜像。
+            $agentsDst = Join-Path $OutAbs 'data\agents'
+            if (-not (Test-Path $agentsDst)) { New-Item -ItemType Directory -Force -Path $agentsDst | Out-Null }
+            $n = (Get-ChildItem $agentsDst -File -ErrorAction SilentlyContinue | Measure-Object).Count
+            if ($n -gt 0) {
+                Write-Host ("      附带: data\agents/ 探针包 {0} 个" -f $n) -ForegroundColor DarkGray
+            } else {
+                Write-Host "      提示: dist\data\agents 暂无探针包, 探针下载页不可用; 请运行 scripts\build-agents.ps1 构建" -ForegroundColor DarkYellow
             }
             # build/geoip(IP 地理段表, 任务 10c)与 build/globe(three.js/globe.gl/贴图, 任务 10d)
             # 是运行期按需读取的数据/前端资源(不嵌入二进制, 见 geoip/ 与 dashboard_api.go 头注释):
@@ -326,28 +336,8 @@ try {
                     Write-Host ("      跳过: build\{0} 不存在(地理映射/3D 地球将降级, 可跑 scripts\geoip_sync.go 生成)" -f $resDir) -ForegroundColor DarkYellow
                 }
             }
-            # build/report_templates(报告模板包, 二期报告中心)。
-            # 与 geoip/globe 的关键差别: 这是**用户可写目录**(模板管理会往里写自定义
-            # 模板), 因此只补缺失文件, 绝不覆盖已存在的 —— 升级时冲掉用户自己做的
-            # 模板是不可逆丢失, 而"少一个示例模板"毫无损失。
-            # 2026-09-24 dist 目录整理: 镜像到 res/report_templates/(内置数据资源统一收进 res/)。
-            $rtSrc = Join-Path $Root 'build\report_templates'
-            if (Test-Path $rtSrc) {
-                $rtDst = Join-Path $OutAbs 'res\report_templates'
-                if (-not (Test-Path $rtDst)) { New-Item -ItemType Directory -Force -Path $rtDst | Out-Null }
-                $added = 0
-                Get-ChildItem $rtSrc -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-                    $rel = $_.FullName.Substring($rtSrc.Length).TrimStart('\', '/')
-                    $target = Join-Path $rtDst $rel
-                    if (-not (Test-Path $target)) {
-                        $d = Split-Path $target -Parent
-                        if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
-                        Copy-Item $_.FullName $target -Force
-                        $added++
-                    }
-                }
-                Write-Host ("      附带: report_templates/ 新增 {0} 个文件(已存在的不覆盖)" -f $added) -ForegroundColor DarkGray
-            }
+            # 2026-09-25: Word 模板迁到 data/outp/(运行期用户数据, 服务启动时
+            # ensureWordTplDir 自动生成默认模板), 构建脚本不再镜像 report_templates。
         }
     }
 }
@@ -357,6 +347,75 @@ finally {
     if ($null -ne $envBackup.GOOS) { $env:GOOS = $envBackup.GOOS } else { Remove-Item Env:\GOOS -ErrorAction SilentlyContinue }
     if ($null -ne $envBackup.GOARCH) { $env:GOARCH = $envBackup.GOARCH } else { Remove-Item Env:\GOARCH -ErrorAction SilentlyContinue }
     if ($null -ne $envBackup.CGO_ENABLED) { $env:CGO_ENABLED = $envBackup.CGO_ENABLED } else { Remove-Item Env:\CGO_ENABLED -ErrorAction SilentlyContinue }
+}
+
+# ===== 证书管理工具(登录页"安装证书"按钮的下载目标) =====
+# 纯 C 单文件实现(cmd/certtool/): 原生 .rc 嵌 comctl32 v6 manifest(TaskDialog 自定义
+# 三按钮=安装证书/卸载证书/退出) + 内嵌 rootCA.crt 资源 + ShellExecute "runas" 提权跑
+# certutil。为何纯 C: 本机 Insider 26200 裁剪构建下 Go syso 注入 manifest 不可靠、
+# CreateWindowExW 直接失败, Go 版已弃用; C 用 .rc 原生嵌 manifest, 在本机最稳。
+# 编译需 gcc+windres(MinGW/TDM-GCC); 缺失或失败不阻断主程序交付 —— 降级为登录页
+# "安装证书"按钮 404, 用户仍可用"手动导入 rootCA.crt"。
+Write-Host ''
+Write-Host '构建证书管理工具 YugsightCertTool.exe (纯 C: TaskDialog + certutil)' -ForegroundColor Cyan
+$staticDir = Join-Path $OutAbs 'static'
+if (-not (Test-Path $staticDir)) { New-Item -ItemType Directory -Force -Path $staticDir | Out-Null }
+$certtoolOut = Join-Path $staticDir 'YugsightCertTool.exe'
+$ctDir = Join-Path $Root 'cmd\certtool'
+
+# ===== 注入根证书(内嵌进 C exe 的 RT_RCDATA 资源) =====
+# 优先取本中心自签根证书 dist/data/cert/rootCA.crt(装上后浏览器信任), 缺失时用
+# cmd/certtool/ 里提交的占位证书并告警(此时装的**不是**本中心证书, 需先启用 TLS
+# 启动一次中心端生成证书, 再重新构建)。
+$certSrc = Join-Path $OutAbs 'data\cert\rootCA.crt'
+$certDst = Join-Path $ctDir 'rootCA.crt'
+if (Test-Path $certSrc) {
+    Copy-Item $certSrc $certDst -Force
+    Write-Host '      内嵌根证书: dist\data\cert\rootCA.crt (本中心自签根证书)' -ForegroundColor DarkGray
+} else {
+    Write-Host '      警告: 未找到 dist\data\cert\rootCA.crt, 使用占位证书(工具装的将不是本中心证书; 请先启用 TLS 启动中心端生成证书后重新构建)' -ForegroundColor Yellow
+}
+
+# ===== 生成 embedded_pem.h(内嵌根证书 C 字符串常量, 每次构建自动同步) =====
+# 为什么必须每次构建生成: 根证书在中心端重签时整体换新(新密钥新指纹), 旧逻辑只手工生成
+# 过一次 —— 证书重签后工具里仍是旧证书, certutil 装它报 0x8007000d(旧版遗留证书不是
+# 当前自签根, "无法将非根证书添加到根存储")。现改为构建时从实际使用的根证书文件同步,
+# 彻底杜绝"工具装的不是本中心证书"。PEM 内容只含 base64 与 ---- 分隔线, 无需 C 转义。
+$certForPem = if (Test-Path $certSrc) { $certSrc } else { $certDst }
+$pemHdr = New-Object System.Collections.Generic.List[string]
+$pemHdr.Add('/* Embedded rootCA.crt (auto-generated by scripts/build.ps1 from the active root cert).')
+$pemHdr.Add('   中心端重签根证书后, 下次构建自动同步本文件; 请勿手工编辑。 */')
+$pemHdr.Add('static const char *EMBEDDED_PEM =')
+foreach ($line in [System.IO.File]::ReadAllLines($certForPem)) {
+    $pemHdr.Add(('    "' + $line + '\n"'))
+}
+$pemHdr.Add('    "";')
+[System.IO.File]::WriteAllText((Join-Path $ctDir 'embedded_pem.h'),
+    ($pemHdr -join "`r`n") + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+
+# ===== 用 gcc + windres 编译 C 证书工具(内嵌 comctl32 v6 manifest + rootCA.crt 资源) =====
+$gcc = Get-Command 'gcc.exe' -ErrorAction SilentlyContinue
+$windres = Get-Command 'windres.exe' -ErrorAction SilentlyContinue
+$ctC = Join-Path $ctDir 'certtool_dlg.c'
+if ($gcc -and $windres -and (Test-Path $ctC) -and (Test-Path $certDst)) {
+    $resObj = Join-Path $ctDir 'certtool_dlg_res.o'
+    & $windres.Source (Join-Path $ctDir 'certtool_dlg.rc') -O coff -o $resObj 2>&1 | Out-Null
+    if (Test-Path $resObj) {
+        & $gcc.Source $ctC $resObj -o $certtoolOut -mwindows -lcomctl32 -lcrypt32 -lshell32 -static -s 2>&1
+        if (Test-Path $certtoolOut) {
+            $kb = [math]::Round((Get-Item $certtoolOut).Length / 1KB, 1)
+            Write-Host ("OK    YugsightCertTool.exe ({0} KB) -> static/" -f $kb) -ForegroundColor Green
+            # 旧的降级 helper 已并入本 exe, 清掉 static/ 里可能残留的旧文件
+            Remove-Item (Join-Path $staticDir 'certtool_dlg.exe') -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Host '警告: YugsightCertTool.exe 编译失败(登录页"安装证书"暂不可用, "手动导入 rootCA.crt" 仍可用)' -ForegroundColor Yellow
+        }
+        Remove-Item $resObj -Force -ErrorAction SilentlyContinue
+    } else {
+        Write-Host '警告: windres 生成资源对象失败, 证书工具未构建(登录页"安装证书"将 404, "手动导入 rootCA.crt" 仍可用)' -ForegroundColor Yellow
+    }
+} else {
+    Write-Host '警告: 未找到 gcc/windres 或源码/证书, 跳过 YugsightCertTool.exe(登录页"安装证书"将 404, "手动导入 rootCA.crt" 仍可用)' -ForegroundColor Yellow
 }
 
 Write-Host ''

@@ -279,22 +279,32 @@ func TestMonitorCollectNow(t *testing.T) {
 	}
 }
 
-// TestIfaceRate 速率差分: 正常差分 / 回绕归零 / 缺帧归零。
+// TestIfaceRate 速率差分: 正常差分(÷帧间隔) / 回绕归零 / 缺帧归零 / 间隔非正归零。
 func TestIfaceRate(t *testing.T) {
 	prev := &IfaceSample{In: 1000, Out: 500}
 	cur := &IfaceSample{In: 2000, Out: 700}
-	in, out := IfaceRate(cur, prev)
-	if in != 1000 || out != 200 {
+	// 10s 间隔: (2000-1000)/10=100 B/s, (700-500)/10=20 B/s
+	in, out := IfaceRate(cur, prev, 10*time.Second)
+	if in != 100 || out != 20 {
 		t.Fatalf("差分错误: in=%d out=%d", in, out)
+	}
+	// 60s 轮询口径: 增量 1_620_000 B / 60s = 27000 B/s; 300_000 B / 60s = 5000 B/s
+	in60, out60 := IfaceRate(&IfaceSample{In: 1621000, Out: 300500}, prev, 60*time.Second)
+	if in60 != 27000 || out60 != 5000 {
+		t.Fatalf("60s 间隔差分错误: in=%d out=%d", in60, out60)
 	}
 	// 计数器回绕(设备重启清零): 不报负速率
 	cur2 := &IfaceSample{In: 50, Out: 10}
-	in2, out2 := IfaceRate(cur2, prev)
+	in2, out2 := IfaceRate(cur2, prev, 10*time.Second)
 	if in2 != 0 || out2 != 0 {
 		t.Fatalf("回绕应归零, got in=%d out=%d", in2, out2)
 	}
-	if in3, out3 := IfaceRate(nil, prev); in3 != 0 || out3 != 0 {
+	if in3, out3 := IfaceRate(nil, prev, 10*time.Second); in3 != 0 || out3 != 0 {
 		t.Fatal("缺帧应归零")
+	}
+	// 间隔非正(同帧/时间异常): 归零防除零
+	if in4, out4 := IfaceRate(cur, prev, 0); in4 != 0 || out4 != 0 {
+		t.Fatalf("间隔非正应归零, got in=%d out=%d", in4, out4)
 	}
 }
 

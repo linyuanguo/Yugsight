@@ -33,6 +33,9 @@ type ServerConfig struct {
 	HeartbeatSec int    `json:"heartbeatSec"` // 推荐心跳间隔(秒), 默认 15
 	OfflineSec   int    `json:"offlineSec"`   // 超过该秒数无心跳判离线, 默认 3*心跳
 	MaxProbes    int    `json:"maxProbes"`    // 最大并发探针连接数, 默认 200
+	// 2026-09-26: 性能指标上报周期(秒), 默认 30 —— 注册应答里下发给探针
+	// (用户口径: 指标不要实时发, 累积 30 秒发一次, 时间中心端可下发)。
+	MetricsSec int `json:"metricsSec"`
 }
 
 // verOrUnknown 版本号为空时给个人话说法(探针未上报版本属正常, 不该显示空白)。
@@ -223,6 +226,9 @@ func NewCenter(cfg ServerConfig) *Center {
 	}
 	if cfg.MaxProbes <= 0 {
 		cfg.MaxProbes = 200
+	}
+	if cfg.MetricsSec <= 0 {
+		cfg.MetricsSec = 30
 	}
 	return &Center{
 		cfg:       cfg,
@@ -424,6 +430,7 @@ func (s *Center) serveConnInner(nc net.Conn) {
 		Type:         MsgRegisterOK,
 		ID:           id,
 		HeartbeatSec: s.cfg.HeartbeatSec,
+		MetricsSec:   s.cfg.MetricsSec, // 2026-09-26: 指标上报周期随注册下发(探针据此门控采样)
 		Message:      "注册成功",
 		AgentVersion: agentVersionOf(upd),
 		Update:       upd,
@@ -681,6 +688,7 @@ type Stat struct {
 	HeartbeatSec  int    `json:"heartbeatSec"`
 	OfflineSec    int    `json:"offlineSec"`
 	MaxProbes     int    `json:"maxProbes"`
+	MetricsSec    int    `json:"metricsSec"`
 }
 
 // Stats 服务统计(前端状态卡片)。
@@ -688,6 +696,7 @@ func (s *Center) Stats() Stat {
 	s.mu.RLock()
 	running := s.ln != nil && !s.closed
 	n := len(s.conns)
+	heartbeatSec, offlineSec, maxProbes, metricsSec := s.cfg.HeartbeatSec, s.cfg.OfflineSec, s.cfg.MaxProbes, s.cfg.MetricsSec
 	s.mu.RUnlock()
 	return Stat{
 		Running:       running,
@@ -695,9 +704,31 @@ func (s *Center) Stats() Stat {
 		StartedAt:     s.startedAt.Format("2006-01-02 15:04:05"),
 		OnlineCount:   n,
 		TokenRequired: s.cfg.Token != "",
-		HeartbeatSec:  s.cfg.HeartbeatSec,
-		OfflineSec:    s.cfg.OfflineSec,
-		MaxProbes:     s.cfg.MaxProbes,
+		HeartbeatSec:  heartbeatSec,
+		OfflineSec:    offlineSec,
+		MaxProbes:     maxProbes,
+		MetricsSec:    metricsSec,
+	}
+}
+
+// UpdateRuntime 热更新运行参数(心跳间隔/指标周期/离线判定), 2026-09-26 探针
+// 管理页"上报参数"保存时调用。监听地址/密钥/最大连接数属启动参数不变(需重启)。
+// 生效时机: 新注册的探针立即按新值(注册应答读当前 cfg); 已在线探针在下次
+// 重连/重启注册时应用 —— 与既有 HeartbeatSec 下发口径一致。
+func (s *Center) UpdateRuntime(heartbeatSec, metricsSec, offlineSec int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if heartbeatSec > 0 {
+		s.cfg.HeartbeatSec = heartbeatSec
+	}
+	if metricsSec > 0 {
+		s.cfg.MetricsSec = metricsSec
+	}
+	if offlineSec > 0 {
+		s.cfg.OfflineSec = offlineSec
+	} else if heartbeatSec > 0 {
+		// 离线判定跟随心跳: 心跳改了而离线判定留 0 = 用户意图"用默认 3 倍"
+		s.cfg.OfflineSec = s.cfg.HeartbeatSec * 3
 	}
 }
 

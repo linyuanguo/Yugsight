@@ -44,7 +44,7 @@ func handleEnvInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if st.Npcap.Installer == "" {
-		jsonErr(w, http.StatusBadRequest, "未找到 Npcap 安装器: 请先将 npcap-setup.exe(或 npcap-*.exe 官方安装器)放到项目根目录(exe 同目录)")
+		jsonErr(w, http.StatusBadRequest, "未找到 Npcap 安装器: 请先将 npcap-setup.exe(或 npcap-*.exe 官方安装器)放到 exe 同目录或 exe 同目录 bin/ 下(默认随包内置于 bin/)")
 		return
 	}
 	// 先停抓包释放 wpcap.dll 占用, 否则安装器替换文件时会失败

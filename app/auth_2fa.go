@@ -97,7 +97,7 @@ func twoFAUpsertSeed(user string) (seed string, err error) {
 		// 角色显式给 admin: 能走到这里的用户必在 authStore(旧账号库)里 —— 旧
 		// 单用户体系下就是全权限, 注册路径(handleRegister)同口径对齐 admin
 		// ("原来什么权限, 升级后什么权限")。db.NewUser 默认 auditor, 不显式
-		// 覆盖会把旧管理员锁进只读角色(写接口 403 + 授权管理菜单消失,
+		// 覆盖会把旧管理员锁进只读角色(写接口 403 + 授权与模型菜单消失,
 		// 2026-09-24 真机踩坑)。
 		u = db.NewUser(user, "")
 		u.Role = db.RoleAdmin
@@ -196,7 +196,7 @@ func http401Need2FA(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": "请输入动态验证码", "need2fa": true})
 }
 
-// 【已删除的死接口】旧设置页(授权管理 2FA 卡片)的 3 条 requireAuth 路由
+// 【已删除的死接口】旧设置页(授权与模型 2FA 卡片)的 3 条 requireAuth 路由
 // /api/auth/2fa/status|seed|toggle 在"码值内联登录页"重做后前端零调用,
 // 2026-09-21 收尾清理时整体移除(验收口径: 不留死接口)。启用/停用统一走
 // 登录前接口 /api/auth/2fa/enable|disable, 码值走 /api/auth/2fa/code。
@@ -208,7 +208,7 @@ func trimCode(s string) string { return strings.TrimSpace(s) }
 //
 // 单管理员离线内网工具, 动态码本就展示在登录页(用户"看得到才输得进"), 因此
 // 码值读取与启用/停用不走 requireAuth —— 与 /api/login、/api/auth/status 同口径。
-// 旧版两步登录把码值放在"授权管理"页(需登录后才能进), 登录页提示"码值见授权
+// 旧版两步登录把码值放在"授权与模型"页(需登录后才能进), 登录页提示"码值见授权
 // 管理页"实为死循环; 本次改为码值内联登录页, 启用/停用也随之落到登录页。
 
 // handle2FACode GET /api/auth/2fa/code?user=<name> → {enabled, code, remain}

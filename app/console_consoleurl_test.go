@@ -116,6 +116,11 @@ func TestConsoleURLLineText(t *testing.T) {
 	if !strings.Contains(line, "http://192.168.1.143:8420") {
 		t.Fatal("顶栏必须包含 URL 本身(点击检测靠它)")
 	}
+	// 顶栏必须带版本号(多版本并存排查时用户只盯这一行), 且 URL 与版本号不粘连
+	// (中间至少留空格, 否则 Ctrl+点击的 URL 检测会把版本号一起吞进链接)。
+	if !strings.Contains(line, "v"+appVersion) {
+		t.Fatalf("顶栏必须显示版本号, 实际: %q", line)
+	}
 
 	// 极窄窗口: 必须截断到不超宽, 绝不能折行
 	narrow := consoleURLLineText(30)

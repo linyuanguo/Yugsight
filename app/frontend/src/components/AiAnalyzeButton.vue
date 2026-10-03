@@ -10,6 +10,9 @@
 //   2. 点击 → POST /api/ai/analyze {reportId?} / {module?};
 //   3. 研判结果回写报告中心(raw_reports 的 ai 三字段), 弹窗展示并
 //      提供"报告中心查看"入口。
+//      例外(2026-10-02 用户口径: 节点监控不生成原始报告): module=monitor/
+//      collect 时后端内存现场分析、不落 raw_reports —— 弹窗照常展示, 但不提供
+//      "报告中心查看"入口(没有对应报告可看)。
 //
 // props:
 //   module    业务模块: capture / scan / weakpass / monitor / collect
@@ -33,6 +36,10 @@ const switchKey = computed(() => {
   return 'scan'
 })
 
+// 2026-10-02: 节点监控模块(monitor/collect)不生成原始报告(用户口径)——
+// AI 分析为内存现场分析, 不存 raw_reports; 弹窗文案与"去报告中心"入口据此调整
+const isMonitorMod = computed(() => props.module === 'monitor' || props.module === 'collect')
+
 const st = ref(null)
 const busy = ref(false)
 const result = ref(null)
@@ -53,7 +60,7 @@ const usable = computed(() =>
 )
 const disabledTip = computed(() => {
   if (!st.value) return 'AI 状态读取失败'
-  if (!st.value.enabled) return 'AI 未启用(系统配置 → AI 配置 → 测试并保存)'
+  if (!st.value.enabled) return 'AI 未启用(系统配置 → AI 配置 → 保存)'
   return '该模块的 AI 分析已被管理员关闭(系统配置 → AI 配置 → 模块总开关)'
 })
 
@@ -117,11 +124,12 @@ function fmtAI(d) {
           <summary class="muted small">分析元数据(模型/模板/RAG/记忆, 存报告中心)</summary>
           <pre class="mono small">{{ JSON.stringify(fmtAI(result.aiData), null, 2) }}</pre>
         </details>
-        <div class="muted small">研判结果已存入报告中心对应报告(原始数据 + AI 研判可同时查看)。</div>
+        <div class="muted small" v-if="!isMonitorMod">研判结果已存入报告中心对应报告(原始数据 + AI 研判可同时查看)。</div>
+        <div class="muted small" v-else>节点监控不生成原始报告(仅记日志): 研判结果只在本弹窗展示, 不存入报告中心。</div>
       </template>
       <template #footer>
         <button class="btn" @click="result = null">关闭</button>
-        <router-link class="btn primary" to="/reports">去报告中心查看</router-link>
+        <router-link v-if="!isMonitorMod" class="btn primary" to="/reports?tab=raw">去报告中心查看(原始报告)</router-link>
       </template>
     </Modal>
   </span>

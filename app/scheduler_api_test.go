@@ -659,3 +659,29 @@ func TestSchedDisabledDoesNotTakeOverScan(t *testing.T) {
 	}
 	_ = req
 }
+
+// TestParamsToScanReqTrivy 覆盖: 排队任务的 trivy SCA 参数映射(2026-09-27 补齐)。
+//
+// 守的契约: image/fs/container 排队任务的 TrivyTarget/TrivyArgs 必须传得到执行层 ——
+// 此前排队扫镜像必然失败(目标进不去); 以及旧任务兜底(镜像名错放 ip 字段的任务
+// 仍能恢复可执行)。
+func TestParamsToScanReqTrivy(t *testing.T) {
+	// 正常映射: trivyTarget/trivyArgs 原样透传
+	task := &scheduler.Task{Kind: "image", Params: scheduler.Params{TrivyTarget: "nginx:1.25", TrivyArgs: "--scanners misconfig,secret"}}
+	req := paramsToScanReq(task)
+	if req.Type != "image" || req.TrivyTarget != "nginx:1.25" || req.TrivyArgs != "--scanners misconfig,secret" {
+		t.Fatalf("SCA 参数映射不符: %+v", req)
+	}
+	// 旧任务兜底: 2026-09-27 之前前端把镜像名放进 ip 字段 —— 从 IP/Target 回填 TrivyTarget
+	task2 := &scheduler.Task{Kind: "fs", Target: "/opt/repo", Params: scheduler.Params{IP: "/opt/repo"}}
+	req2 := paramsToScanReq(task2)
+	if req2.TrivyTarget != "/opt/repo" {
+		t.Fatalf("旧任务(目标在 ip 字段)应回填到 TrivyTarget, 实际 %q", req2.TrivyTarget)
+	}
+	// 非 SCA 类型: ip 兜底口径不变
+	task3 := &scheduler.Task{Kind: "port", Target: "10.0.0.1", Params: scheduler.Params{Target: "10.0.0.1"}}
+	req3 := paramsToScanReq(task3)
+	if req3.IP != "10.0.0.1" {
+		t.Fatalf("port 任务 IP 兜底口径被破坏: %+v", req3)
+	}
+}

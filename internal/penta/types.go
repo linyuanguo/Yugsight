@@ -131,6 +131,13 @@ type StepSpec struct {
 	// ---- external ----
 	Bin  string   `json:"bin,omitempty" yaml:"bin"`  // bin/ 目录下的引擎名前缀
 	Args []string `json:"args,omitempty" yaml:"args"` // 参数, 支持占位符
+
+	// Risk 该步命中时意味着什么(隐患描述, 执行日志的"风险"行直接引用)。
+	//
+	// 为什么放在模板数据里: "渗透到了什么程度、有什么隐患"是每类探针自己的
+	// 业务语义(未授权 Redis 与路径穿越的隐患完全不同), 引擎不该按类型猜文案;
+	// weakpass 步骤的口令明细由引擎在命中时动态补充(见 engine.go)。
+	Risk string `json:"risk,omitempty" yaml:"risk"`
 }
 
 // Template EXP 模板(数据驱动)。
@@ -152,6 +159,8 @@ type StepResult struct {
 	Hit        bool   `json:"hit"`
 	Output     string `json:"output,omitempty"`     // 输出片段(截断)
 	Evidence   string `json:"evidence,omitempty"`   // 请求/响应证据(截断)
+	// Risk 命中时的隐患描述(未命中为空) —— 日志"风险"行与前端步骤列表共用
+	Risk       string `json:"risk,omitempty"`
 	Err        string `json:"err,omitempty"`        // 执行错误(区别于"未命中")
 	DurationMs int64  `json:"durationMs"`
 }
@@ -178,6 +187,9 @@ type Task struct {
 	CVE      string `json:"cve,omitempty"`
 	Title    string `json:"title,omitempty"` // 漏洞名称(展示与报告用)
 	Source   string `json:"source,omitempty"` // manual | vuln
+	// Job 扫描任务名(2026-09-25: 控制台"下一步渗透"带任务名建任务, 报告中心
+	// "按任务名生成报告"的渗透章节按它过滤; 空 = 独立渗透任务)
+	Job string `json:"job,omitempty"`
 	Status   string `json:"status"`
 	TemplateID string `json:"templateId,omitempty"`
 

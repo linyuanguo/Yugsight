@@ -48,7 +48,10 @@
         <table class="table">
           <thead>
             <tr>
-              <th>状态</th><th>名称</th><th>地址</th><th>凭据</th>
+              <!-- 2026-09-27: 新增 IP 地址/MAC 地址列(与设备名称/状态并列);
+                   同时修正原"地址"列表头错位(该列实际内容是 SNMP 版本, 改名为"版本",
+                   表头与单元格一一对齐) -->
+              <th>状态</th><th>名称</th><th>IP 地址</th><th>MAC 地址</th><th>版本</th>
               <th>CPU</th><th>内存</th><th>流量(每周期)</th><th>接口 up/总</th><th>最近采集</th><th class="a-r">操作</th>
             </tr>
           </thead>
@@ -56,16 +59,25 @@
             <tr v-for="t in targets" :key="t.id">
               <td><span class="dot" :class="t.online ? 'on' : 'off'"></span></td>
               <td><div>{{ t.name || t.addr }}</div><div class="muted small mono" v-if="t.lastErr">{{ t.lastErr }}</div></td>
-              <td class="mono muted">{{ t.version }}<span v-if="t.v3User"> · {{ t.v3User }}</span></td>
+              <td class="mono small">{{ t.addr || '-' }}</td>
+              <!-- MAC 来自 SNMP ifPhysAddress(首个 up 接口); 设备不支持时显示 '-' -->
+              <td class="mono small">{{ t.mac || '-' }}</td>
+              <!-- 2026-10-01: 内置"中心端(本机)"(source=center)不是 SNMP 目标, 版本列显示"本机" -->
+              <td class="mono muted"><span v-if="t.source === 'center'">本机</span><span v-else>{{ t.version }}<span v-if="t.v3User"> · {{ t.v3User }}</span></span></td>
               <td class="mono">{{ t.cpuLoad ? t.cpuLoad + '%' : '-' }}</td>
               <td class="mono">{{ memUsedPct(t) }}</td>
               <td class="mono small">{{ fmtSpeed(t.inRateBps) }}↓ / {{ fmtSpeed(t.outRateBps) }}↑</td>
-              <td class="mono">{{ t.ifUp }}/{{ t.ifaceCount }}</td>
+              <!-- 内置中心端没有 SNMP 接口表(接口数指标不适用于主机) -->
+              <td class="mono"><span v-if="t.source === 'center'">—</span><span v-else>{{ t.ifUp }}/{{ t.ifaceCount }}</span></td>
               <td class="mono small muted">{{ fmtDT(t.lastAt) }}</td>
               <td class="a-r">
+                <!-- 内置中心端: 不落配置, 编辑/删除在后端无对应目标(会报"目标不存在"), 故不给出入口 -->
                 <div class="row-actions">
-                  <button class="btn xs" @click="openEdit(t)">编辑</button>
-                  <button class="btn xs danger" @click="del(t)">删除</button>
+                  <span v-if="t.source === 'center'" class="muted small">内置</span>
+                  <template v-else>
+                    <button class="btn xs" @click="openEdit(t)">编辑</button>
+                    <button class="btn xs danger" @click="del(t)">删除</button>
+                  </template>
                 </div>
               </td>
             </tr>
@@ -156,9 +168,23 @@ import PageHeader from '../components/PageHeader.vue'
 import Modal from '../components/Modal.vue'
 import { v2 } from '../api/http'
 import { fmtDT, fmtSpeed } from '../utils'
+import { setPageData } from '../assistant/context'
 
 const status = ref({ enabled: false, running: false, intervalSec: 60, lastRound: null })
 const targets = ref([])
+// 小 Y 助手(2026-09-27): 节点监控"网络设备"Tab 的关键数据(设备在线状态/告警)
+setPageData('nodemonitor:net', () => ({
+  enabled: !!status.value.enabled,
+  intervalSec: status.value.intervalSec || 0,
+  devices: targets.value.slice(0, 50).map(t => ({
+    name: t.name || t.addr,
+    addr: t.addr || '',
+    online: !!t.online,
+    cpu: t.cpuLoad != null ? t.cpuLoad + '%' : '',
+    mem: t.memPct != null ? t.memPct + '%' : '',
+    lastErr: t.lastErr || ''
+  }))
+}))
 const collecting = ref(false)
 const savingConfig = ref(false)
 const cfgInterval = ref(60)

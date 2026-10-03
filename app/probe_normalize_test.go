@@ -176,6 +176,54 @@ func TestIngestProbeResultPersists(t *testing.T) {
 	}
 }
 
+// TestIngestProbeResultFiltersArpWatchSelf arp-watch 自我噪声剔除:
+// 探针 ARP 监测观测到的"自己"(本机 IP)与默认网关不入资产表, 网段真实主机保留;
+// 探针主动扫自己(非 arp-watch 标签)的资产不受影响。守"资产表不常驻永远不存活
+// 的噪声条目"契约(2026-09-27 用户反馈: 仪表盘资产数与资产页对不上)。
+func TestIngestProbeResultFiltersArpWatchSelf(t *testing.T) {
+	d := setupProbeIngestDB(t)
+
+	// 探针注册上报的节点信息: 本机 IP + 默认网关(落库, ingest 时据此剔除)
+	p := &db.Probe{ID: "probe-self", Status: db.ProbeOnline,
+		NodeInfo: map[string]any{
+			"localIps": []any{"172.31.21.51"},
+			"gateway":  "172.31.16.1",
+		}}
+	if _, err := d.Probes().Upsert(p); err != nil {
+		t.Fatalf("upsert probe: %v", err)
+	}
+
+	rep := normalizer.ProbeReport{
+		NodeID: "probe-self",
+		ScanID: "scan-arp",
+		Time:   time.Now(),
+		Assets: []normalizer.ProbeAsset{
+			{IP: "172.31.16.1", MAC: "aa:aa:aa:aa:aa:aa", Tags: []string{"arp-watch"}}, // 网关 -> 剔除
+			{IP: "172.31.21.51", MAC: "bb:bb:bb:bb:bb:bb", Tags: []string{"arp-watch"}}, // 自己 -> 剔除
+			{IP: "172.31.21.51", Ports: []int{22}}, // 探针主动扫自己: 归一化与上行按 IP 合并为一条(带 arp-watch 标签) -> 一并剔除(探针自己不该进中心台账)
+			{IP: "172.31.16.9", MAC: "cc:cc:cc:cc:cc:cc", Tags: []string{"arp-watch"}}, // 网段真实主机 -> 保留
+		},
+	}
+	stat := ingestProbeResult("probe-self", &probe.TaskResult{
+		TaskID: "task-arp", Status: probe.TaskDone, Report: rep,
+	})
+	if stat == nil {
+		t.Fatal("归一化应返回统计")
+	}
+	if stat.Assets != 1 {
+		t.Fatalf("应入库 1 个资产(网关/自我 被剔), 实际 %d", stat.Assets)
+	}
+	if got, _ := d.Assets().FindByIP("172.31.16.1"); len(got) != 0 {
+		t.Fatalf("网关不应入账: %+v", got)
+	}
+	if got, _ := d.Assets().FindByIP("172.31.21.51"); len(got) != 0 {
+		t.Fatalf("探针自身不应入账: %+v", got)
+	}
+	if got, _ := d.Assets().FindByIP("172.31.16.9"); len(got) != 1 {
+		t.Fatalf("网段真实主机应入账: n=%d", len(got))
+	}
+}
+
 // TestIngestProbeResultDedup 重复上报同一漏洞不应导致记录增长
 // (同资产+同 CVE 归一化为同一条, 状态标记为重复)。
 func TestIngestProbeResultDedup(t *testing.T) {

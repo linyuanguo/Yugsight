@@ -1,6 +1,7 @@
 package agentexec
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -97,7 +98,7 @@ func TestExpandCIDR(t *testing.T) {
 // 中心端只能看到"超时无响应", 无法知道是"能力缺失"还是"网络不可达"。
 // 因此断言的是 Result.Status/Error, 不是函数返回值。
 func TestRunUnsupportedKind(t *testing.T) {
-	res, err := Run(&probe.TaskAssign{TaskID: "t1", Kind: "synscan", Target: "10.0.0.1"}, func(string) {})
+	res, err := Run(context.Background(), &probe.TaskAssign{TaskID: "t1", Kind: "synscan", Target: "10.0.0.1"}, func(string) {})
 	if err != nil {
 		t.Fatalf("任务失败应通过结果表达, 不应返回 error: %v", err)
 	}
@@ -109,9 +110,28 @@ func TestRunUnsupportedKind(t *testing.T) {
 	}
 }
 
+// TestSupportedKindSCA SCA 类型(image/fs/container)必须在 supportedKind 白名单里。
+//
+// 守的是"agentexec 白名单与 probe/scanner.Run 的 switch 分支保持一致"的契约 ——
+// agentexec 是探针任务入口的守门员, 若漏加 SCA 类型, 中心端下发的 image 任务会被
+// "探针不支持的任务类型"在入口就拒绝, 探针的 trivy 能力根本用不上(表面看像中心端
+// 没下发, 实际是探针自己挡了)。2026-09-26 远程扫容器联调时踩到: scanner.Run 加了
+// image 分支, 忘了同步这里的白名单。
+func TestSupportedKindSCA(t *testing.T) {
+	for _, k := range []string{"image", "fs", "container"} {
+		if !supportedKind(k) {
+			t.Errorf("supportedKind(%q) 应为 true(SCA 类型探针需支持, 与 scanner.Run 一致)", k)
+		}
+	}
+	// 反向: 真不支持的类型仍拒绝(避免白名单被误放宽到任意字符串)。
+	if supportedKind("synscan") {
+		t.Error("未知类型 synscan 不应被支持")
+	}
+}
+
 // TestRunPortEmptyTarget 空目标必须回传失败结果, 且不发起任何真实扫描。
 func TestRunPortEmptyTarget(t *testing.T) {
-	res, err := Run(&probe.TaskAssign{TaskID: "t2", Kind: "port", Target: "   "}, func(string) {})
+	res, err := Run(context.Background(), &probe.TaskAssign{TaskID: "t2", Kind: "port", Target: "   "}, func(string) {})
 	if err != nil {
 		t.Fatalf("任务失败应通过结果表达, 不应返回 error: %v", err)
 	}
@@ -128,7 +148,7 @@ func TestRunPortEmptyTarget(t *testing.T) {
 func TestRunProgressCallback(t *testing.T) {
 	var msgs []string
 	// 目标用保留测试网段, 不发起真实外网扫描; 端口给 1 个以尽快返回。
-	_, err := Run(&probe.TaskAssign{
+	_, err := Run(context.Background(), &probe.TaskAssign{
 		TaskID: "t3", Kind: "port", Target: "127.0.0.1", Ports: "1",
 	}, func(m string) { msgs = append(msgs, m) })
 	if err != nil {

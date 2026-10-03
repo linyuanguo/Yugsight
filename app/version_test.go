@@ -13,8 +13,10 @@ import (
 	"testing"
 )
 
-// versionRe 版本号形态: 数字点分, 至少两段(与 scripts/version.ps1 的口径一致)
-var versionRe = regexp.MustCompile(`^\d+(\.\d+)+$`)
+// versionRe 版本号形态: 纯数字(与 scripts/version.ps1 的口径一致)。
+// 2026-09-26 起 VERSION 从"1.0.x 数字点分"改为纯数字(如 106, 每次构建 +1),
+// 各显示点自行拼 v 前缀 —— 正则随之对齐, 否则源码兜底值(106)恒判非法。
+var versionRe = regexp.MustCompile(`^\d+$`)
 
 // TestAppVersionFormat 版本号必须是合法的数字点分形态。
 //
@@ -31,7 +33,7 @@ func TestAppVersionFormat(t *testing.T) {
 		t.Fatalf("appVersion 带 UTF-8 BOM(构建脚本写 VERSION 时应使用无 BOM 编码): %q", appVersion)
 	}
 	if !versionRe.MatchString(appVersion) {
-		t.Fatalf("appVersion 形态非法: %q(应为 1.0.0 这样的数字点分形态)", appVersion)
+		t.Fatalf("appVersion 形态非法: %q(应为 106 这样的纯数字形态)", appVersion)
 	}
 }
 

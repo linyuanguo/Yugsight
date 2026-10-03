@@ -87,6 +87,10 @@ const (
 	secCollect   = "collect" // 节点监控采集底座(阶段 1)
 	secPenta     = "penta"   // 渗透工作台(阶段 5, 默认开启, 见 PentaConfig 注释)
 	secNVD       = "nvd"     // NVD API Key(一键同步用, 可选; 缺省匿名限速档)
+	secArpProxy  = "arpproxy" // 代理 ARP 幽灵资产排除(exclude 默认 true, 见 arp_ghost.go)
+	secBrand     = "brand"   // 品牌自定义(系统名称/页脚版权, 默认 = 原始项目, 见 brand.go)
+	secNodePush  = "nodepush" // 节点告警推送(目标 + 规则, 见 node_push.go)
+	secHttps     = "https"   // HTTPS 访问白名单(空 = 不限制, 配 IP/网段 = 只放行列表内, 见 https_api.go)
 )
 
 var (
@@ -118,6 +122,11 @@ func loadSettings() map[string]json.RawMessage {
 		return m
 	}
 	settingsMu.RUnlock()
+
+	// 一次性把旧位置(exe 同目录)的 settings.json 迁入 data/。必须在 ReadFile 前:
+	// 见 migrateSettingsToData 注释。sync.Once 保证并发首次加载只迁移一次,
+	// 且 Do 会阻塞其它调用方直到迁移完成, 后续 ReadFile 拿到的是迁移后的新路径。
+	migrateSettingsOnce.Do(migrateSettingsToData)
 
 	m := map[string]json.RawMessage{}
 	// 必须走 settingsFilePath() 而不是直接拼 exe 目录: 后者不认测试注入口
@@ -185,15 +194,45 @@ const legacyDatabaseFile = "config.json"
 // 迁移不能把新配置覆盖回旧值。原文件改名 .migrated 而非删除 —— 迁移是
 // 不可逆的写操作, 留一份同名备份, 出问题能一眼找回。
 func migrateLegacyConfigs(m map[string]json.RawMessage) {
-	dir := filepath.Dir(settingsFilePath())
+	// 历史单文件配置原本散落在 exe 同目录; 2026-09-29 settings.json 迁入 data/ 后,
+	// 老机器上尚未迁移的历史单文件可能仍在 exe 同目录, 也可能被用户挪到了 settings
+	// 所在目录。两处都扫, 按文件名唯一, 谁先命中谁生效(命中即 break, 不会重复计)。
+	dirs := legacySearchDirs()
 	migrated := 0
 	for _, l := range legacyConfigFiles {
-		migrated += migrateOneLegacy(m, filepath.Join(dir, l.file), l.section, "")
+		for _, dir := range dirs {
+			if migrateOneLegacy(m, filepath.Join(dir, l.file), l.section, "") > 0 {
+				migrated++
+				break
+			}
+		}
 	}
-	migrated += migrateOneLegacy(m, filepath.Join(dir, legacyDatabaseFile), secDatabase, "database")
+	for _, dir := range dirs {
+		if migrateOneLegacy(m, filepath.Join(dir, legacyDatabaseFile), secDatabase, "database") > 0 {
+			migrated++
+			break
+		}
+	}
 	if migrated > 0 {
 		logLine(fmt.Sprintf("配置收敛: %d 个历史单文件配置已迁入 %s(原文件改名 *.migrated 保留备份)", migrated, settingsFileName))
 	}
+}
+
+// legacySearchDirs 历史单文件配置的可能位置: exe 同目录 + settings 所在目录(去重)。
+func legacySearchDirs() []string {
+	set := map[string]struct{}{}
+	out := []string{}
+	for _, d := range []string{exeDir(), filepath.Dir(settingsFilePath())} {
+		if d == "" {
+			continue
+		}
+		if _, ok := set[d]; ok {
+			continue
+		}
+		set[d] = struct{}{}
+		out = append(out, d)
+	}
+	return out
 }
 
 // migrateOneLegacy 迁移单个历史文件; sub 非空表示取该文件的这个子节。
@@ -247,7 +286,7 @@ func settingsSectionNames(m map[string]json.RawMessage) []string {
 	}
 	// 固定顺序展示: 按预定义节序排, 未知节追加在后
 	order := []string{secEngine, secAI, secCapture, secUpdater, secProbe,
-		secScheduler, secReport, secScreen, secDatabase, secAuth, secWhitelist, secAuthCheck, secTLS, secAudit, secMonitor, secDashboard, secGeoIP, secCollect, secPenta, secNVD}
+		secScheduler, secReport, secScreen, secDatabase, secAuth, secWhitelist, secAuthCheck, secTLS, secAudit, secMonitor, secDashboard, secGeoIP, secCollect, secPenta, secNVD, secArpProxy, secBrand}
 	var sorted, rest []string
 	for _, name := range order {
 		for _, got := range out {
@@ -295,16 +334,46 @@ func section(name, legacyName string) ([]byte, bool) {
 }
 
 // settingsFilePath settings.json 的完整路径(供测试与提示信息使用)。
+//
+// 2026-09-29 起落在 exe 同目录的 data/ 子目录(用户数据目录): 配置"随用户电脑",
+// 归入 data/ 后更新/替换 exe 不会波及它; 缺失时由 ensureSettingsDefaults 在
+// data/ 下自动生成全默认配置。旧位置(exe 同目录 settings.json)由
+// migrateSettingsToData 在首次加载时一次性迁入 data/。
 func settingsFilePath() string {
 	// 测试注入口: 把配置指到临时目录, 避免测试污染真实 exe 目录的 settings.json
 	if p := testSettingsPath(); p != "" {
 		return p
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return settingsFileName
+	return filepath.Join(exeDir(), "data", settingsFileName)
+}
+
+var migrateSettingsOnce sync.Once
+
+// migrateSettingsToData 一次性把旧位置(exe 同目录)的 settings.json 迁入 data/。
+//
+// 必须放在 loadSettings 里(sync.Once 触发)而非 main 里显式调用: 启动最早期
+// initLog→loadLogConfig 就会触发 loadSettings, 那时若直接读新路径, 旧配置还没
+// 迁过来会按"空配置"缓存, 用户旧配置静默丢失。在读取前完成迁移即可保证顺序无关。
+// 新位置已存在则跳过(绝不覆盖); 旧位置不存在=全新安装, 交给 ensureSettingsDefaults。
+func migrateSettingsToData() {
+	base := exeDir()
+	newPath := filepath.Join(base, "data", settingsFileName)
+	oldPath := filepath.Join(base, settingsFileName)
+	if _, err := os.Stat(newPath); err == nil {
+		return // data/ 下已有配置: 无需迁移
 	}
-	return filepath.Join(filepath.Dir(exe), settingsFileName)
+	if _, err := os.Stat(oldPath); err != nil {
+		return // 旧位置也没有: 全新安装, 后续在 data/ 生成默认
+	}
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
+		logLine("settings.json 迁移失败(建 data/ 目录): " + err.Error())
+		return
+	}
+	if err := os.Rename(oldPath, newPath); err != nil {
+		logLine("settings.json 迁移失败(exe 同目录 -> data/): " + err.Error() + " (请手动移动)")
+		return
+	}
+	logLine("settings.json 已迁入 data/ 目录(配置随用户数据, 旧位置不再使用)")
 }
 
 var settingsPathOverride atomic.Value // string, 空 = 用真实路径
@@ -369,6 +438,11 @@ func writeSection(name string, v any) error {
 	defer settingsMu.Unlock()
 
 	path := settingsFilePath()
+	// 2026-09-29 settings.json 迁入 data/ 后, data/ 子目录在极端时序下(缓存被清但
+	// 文件还没由 ensureSettingsDefaults 生成)可能不存在, 写前确保父目录就位。
+	if dir := filepath.Dir(path); dir != "" {
+		_ = os.MkdirAll(dir, 0o755)
+	}
 	// 重新读盘而非用内存缓存: 内存缓存是启动时快照, 而 settings.json 可能被
 	// 用户在运行期编辑过(项目允许改配置后重启生效, 但这里不能假设用户没动过)。
 	// 读盘能拿到"当前真实内容", 避免用陈旧快照覆盖用户的新修改。

@@ -17,9 +17,10 @@
 // /api/v2/report/status 之外的接口统一返回"未启用"提示; 不影响任何既有流程。
 //
 // Word 模板(用户 2026-09-20 要求): 报告以 Word 模板为单一来源, 同一模板输出
-// word/html/pdf 三种格式; 模板文件放 exe 同目录 res/report_templates/(外部资源,
-// 不嵌入二进制, 与 agents/、templates/ 同约定), 内置模板恒可用。文件管理
-// API 在 report_word_api.go。
+// word/html/pdf 三种格式; 模板文件放 exe 同目录 data/outp/(运行期用户数据,
+// 2026-09-25 从 res/report_templates 迁入 —— res/ 是构建期只读资源, 用户可写
+// 的模板不该放会被升级覆盖的位置), 内置模板恒可用。文件管理 API 在
+// report_word_api.go, 可视化排版编辑器在 report_tpl_visual_api.go。
 
 package main
 
@@ -64,14 +65,6 @@ type ReportConfig struct {
 	Accent string `json:"accent"`
 	// ShowRaw 报告中是否默认展开原始请求/响应
 	ShowRaw bool `json:"showRaw"`
-	// TemplateManagement 模板管理开关(二期报告中心): 开启后允许创建/删除
-	// 模板包(会写 exe 同目录 res/report_templates/)。指针区分"未配置"与显式 false,
-	// 默认关 —— 目录写权限不该默认开放。
-	TemplateManagement *bool `json:"templateManagement,omitempty"`
-	// PDFExternal PDF 走外部转换器(wkhtmltopdf / LibreOffice)而非浏览器打印通道。
-	// 默认关: 转换器缺失是常态, 关着时 PDF 恒走"自动唤起打印"的 HTML 页面,
-	// 零依赖且一定可用; 开启后转换器不存在也只是降级回打印通道(不失败)。
-	PDFExternal *bool `json:"pdfExternal,omitempty"`
 
 	// ===== 报告中心二期: 原始结构化报告(业务模块执行后的原始结果) =====
 	// AutoSave 业务模块执行完成后是否自动存入报告中心(默认开: 二期核心需求
@@ -93,7 +86,7 @@ func DefaultReportConfig() ReportConfig {
 		MaxArchive: 500,
 		MaxRaw:     500,
 		Subtitle:   "网络安全扫描与漏洞评估报告",
-		Accent:     "#4f46e5",
+		Accent:     "#1f3a5f", // 默认主题色(2026-09-26: 原靛蓝太亮眼, 改沉稳深蓝)
 	}
 }
 
@@ -212,16 +205,6 @@ func resetReportConfigForTest() {
 // reportEnabled 报告引擎是否启用。
 func reportEnabled() bool { return loadReportConfig().Enabled }
 
-// pdfExternalEnabled 是否尝试用外部转换器出真 PDF。
-//
-// 默认开启: 转换器不存在时 ConvertHTMLToPDF 只是返回 ErrNoPDFConverter, 装配层
-// 自动回落浏览器打印通道 —— 开着没有任何副作用, 关着反而让"装了 wkhtmltopdf
-// 却出不了真 PDF"变成一个需要查配置的问题。
-func pdfExternalEnabled() bool {
-	cfg := loadReportConfig()
-	return cfg.PDFExternal == nil || *cfg.PDFExternal
-}
-
 // reportLogLine 报告模块日志并入 yugsight.log(与 probe/scheduler 同格式)。
 func reportLogLine(msg string) {
 	logLine("[报告] " + msg)
@@ -311,7 +294,40 @@ func buildReportSnapshot(d *db.Database, req reportRequest) (*report.Snapshot, r
 		return nil, report.SnapshotStats{}, fmt.Errorf("数据库不可用")
 	}
 	cfg := loadReportConfig()
+
+	// ---- 任务名维度: 按扫描任务名过滤 ----
+	// 2026-09-25 四轮换口径后, 任务名登记簿 ID = 任务名(控制台的命名扫描
+	// 自动登记), 报告按任务名聚合该名下所有步骤(快速发现/主机漏扫/web漏扫/
+	// 弱口令/渗透)的结果。登记记录不存在(已删)则直接报错 —— 用户明确选了
+	// 某任务名却生成全量报告会误导(报告内容与所选任务名不符)。未选 = 全量。
+	var jobID, jobName string
+	// 多选任务: 单值 JobID 与多值 JobIDs 合并去重, 报告取各作业结果的并集
+	jobIDs := normalizeJobIDs(req.JobID, req.JobIDs)
+	jobIDSet := make(map[string]bool, len(jobIDs))
+	for _, jid := range jobIDs {
+		jobIDSet[jid] = true
+	}
+	if len(jobIDs) > 0 {
+		dao := d.Jobs()
+		if dao == nil {
+			return nil, report.SnapshotStats{}, fmt.Errorf("任务名登记簿不可用, 无法按任务名生成报告")
+		}
+		names := make([]string, 0, len(jobIDs))
+		for _, jid := range jobIDs {
+			job, err := dao.Get(jid)
+			if err != nil || job == nil {
+				return nil, report.SnapshotStats{}, fmt.Errorf("扫描任务 %s 不存在(可能已删除), 请重新选择", jid)
+			}
+			names = append(names, job.Name)
+		}
+		jobID = strings.Join(jobIDs, "、")
+		jobName = strings.Join(names, "、")
+	}
+
 	title := strings.TrimSpace(req.Title)
+	if title == "" && jobName != "" {
+		title = jobName // 按作业生成时, 标题默认取任务名
+	}
 	if title == "" {
 		title = "Yugsight 安全扫描报告"
 	}
@@ -331,6 +347,9 @@ func buildReportSnapshot(d *db.Database, req reportRequest) (*report.Snapshot, r
 		for _, a := range list {
 			if a == nil {
 				continue
+			}
+			if len(jobIDSet) > 0 && !hasAnyJob(a.Jobs, jobIDSet) {
+				continue // 只保留属于所选任一作业的资产(资产 Jobs 与作业集合有交集)
 			}
 			snap.Assets = append(snap.Assets, &a.Asset)
 		}
@@ -354,6 +373,9 @@ func buildReportSnapshot(d *db.Database, req reportRequest) (*report.Snapshot, r
 			if v == nil {
 				continue
 			}
+			if len(jobIDSet) > 0 && !jobIDSet[stripJobPrefix(v.ScanTaskID)] {
+				continue // 只保留所选作业批次产出的漏洞(ScanTaskID="job-<id>")
+			}
 			vv := v.Vuln // 复制一份, 避免就地改 Source 污染数据库对象
 			vv.Source = reportSourceLabel(vv.Source, nodeByIP[models.NormIP(vv.AssetIP)])
 			snap.Vulns = append(snap.Vulns, &vv)
@@ -372,6 +394,9 @@ func buildReportSnapshot(d *db.Database, req reportRequest) (*report.Snapshot, r
 		for _, t := range list {
 			if t == nil || t.Status != "done" || t.Exploitability == "" {
 				continue
+			}
+			if len(jobIDSet) > 0 && !jobIDSet[t.Job] {
+				continue // 按任务名: 只取带所选作业名的渗透任务(无则整段为空)
 			}
 			snap.Penta = append(snap.Penta, report.PentaEntry{
 				TaskID:         t.ID,
@@ -422,6 +447,9 @@ func buildReportSnapshot(d *db.Database, req reportRequest) (*report.Snapshot, r
 		no := false
 		cfgFilter.ExcludeFalsePositive = &no
 	}
+	// 作业维度记入快照(存档可回溯报告来自哪个作业; 实际数据过滤已在上面各循环完成)
+	cfgFilter.JobID = jobID
+	cfgFilter.JobName = jobName
 
 	filtered, stats := cfgFilter.Apply(snap)
 	if filtered == nil {
@@ -429,6 +457,37 @@ func buildReportSnapshot(d *db.Database, req reportRequest) (*report.Snapshot, r
 	}
 	filtered.Tool = snap.Tool
 	return filtered, stats, nil
+}
+
+// hasAnyJob 资产是否属于任一扫描作业(Assets.Jobs 与作业集合有交集)。
+func hasAnyJob(jobs []string, set map[string]bool) bool {
+	for _, j := range jobs {
+		if set[j] {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeJobIDs 合并单值 JobID 与多值 JobIDs, 去空去重, 保持顺序。
+func normalizeJobIDs(single string, multi []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, j := range append([]string{single}, multi...) {
+		j = strings.TrimSpace(j)
+		if j == "" || seen[j] {
+			continue
+		}
+		seen[j] = true
+		out = append(out, j)
+	}
+	return out
+}
+
+// stripJobPrefix 去掉漏洞 ScanTaskID 的 "job-" 前缀(报告按作业过滤时, 漏洞
+// ScanTaskID 存的是 "job-<任务名>")。
+func stripJobPrefix(s string) string {
+	return strings.TrimPrefix(s, "job-")
 }
 
 // reportSourceLabel 生成漏洞的来源标签, 把探针节点信息带进 Source 字段。
@@ -467,7 +526,7 @@ type reportRequest struct {
 	// Format 输出格式: word / html / pdf / json (默认 html; 前端默认 word)。
 	// word/html/pdf 三种格式都由 Word 模板渲染(同一模板三种出口)。
 	Format string `json:"format"`
-	// WordTemplate Word 模板名(exe 同目录 res/report_templates/ 下的 .docx, 不含扩展名;
+	// WordTemplate Word 模板名(exe 同目录 data/outp/ 下的 .docx, 不含扩展名;
 	// 空 / "builtin" = 内置模板)
 	WordTemplate string `json:"wordTemplate"`
 	// TemplateID 旧版 HTML 自定义模板 ID(遗留路径: 非空时走旧 Render 流程,
@@ -475,16 +534,18 @@ type reportRequest struct {
 	TemplateID string `json:"templateId"`
 	// Header 自定义页眉页脚(为空则用模板/默认)
 	Header report.Header `json:"header"`
-	// PackID 模板包 ID(report_templates/ 下的目录名; 空 / default = 内置模板)。
-	// 与 WordTemplate 二选一, PackID 优先 —— 模板包是二期的主路径(HTML/Word/PDF
-	// 三出口 + config.yaml 元信息), 旧 WordTemplate 保留兼容既有调用。
-	PackID string `json:"packId"`
 	// Archive 是否落库存档(默认 true: 报告存档是本模块的核心要求)
 	Archive *bool `json:"archive"`
 	// Note 存档备注
 	Note string `json:"note"`
 	// Inline 是否内联返回(前端预览); false = 以附件下载
 	Inline bool `json:"inline"`
+	// JobID 按扫描任务名生成(单任务, 兼容旧请求): 非空时报告只含该任务名下所有
+	// 步骤的结果(资产/漏洞/渗透按任务名标记过滤), 标题默认取任务名。
+	JobID string `json:"jobId"`
+	// JobIDs 多任务多选(2026-09-26): 勾选多个作业, 漏洞/资产/渗透取并集合并进
+	// 同一份报告。与单值 JobID 合并去重(兼容旧请求)。
+	JobIDs []string `json:"jobIds"`
 }
 
 // ===== 报告生成(核心) =====
@@ -524,21 +585,8 @@ func generateReport(d *db.Database, req reportRequest, operator string) (*report
 		Status:    report.StatusReady,
 		Filter:    req.Filter,
 		Stats:     stats,
+		JobIDs:    normalizeJobIDs(req.JobID, req.JobIDs),
 		Note:      req.Note,
-	}
-
-	// ---- 路径 0: 模板包(二期主路径, 显式 packId 指定且非内置时) ----
-	if req.PackID != "" && req.PackID != report.BuiltinPackID {
-		pack, perr := loadPackByID(req.PackID)
-		if perr != nil {
-			return nil, perr
-		}
-		if err := renderWithPack(arch, pack, snap, stats, cfg, req); err != nil {
-			return nil, err
-		}
-		arch.Header = report.EffectiveHeader(req.Header)
-		arch.Validate()
-		return arch, nil
 	}
 
 	// ---- 路径 2: 遗留 HTML 自定义模板(TemplateID 显式指定时) ----
@@ -577,23 +625,68 @@ func generateReport(d *db.Database, req reportRequest, operator string) (*report
 	if wtplName == "" {
 		wtplName = report.BuiltinWordTemplateName
 	}
+	vcfg, _ := loadVisualTplConfig(wtplName) // 只读一次(旧代码读了三次)
 
-	// 页眉页脚: 请求指定 > 内置默认(Word 模板没有页眉页脚概念, 由 HTML 出口承载)
+	// 页眉页脚: 请求指定 > 可视化模板默认 > 内置默认
+	// (Word 模板没有页眉页脚概念, 由 HTML 出口承载; 可视化模板的页眉/页脚/
+	//  免责声明存在 .visual.json 里, 请求显式给了就用请求的)
 	if req.HeaderHeaderIsZero() {
 		req.Header = report.Header{}
 	}
+	if vcfg != nil {
+		if req.Header.HeaderCenter == "" && vcfg.Header != "" {
+			req.Header.HeaderCenter = report.RichPlainText(vcfg.Header)
+		}
+		if req.Header.FooterCenter == "" && vcfg.Footer != "" {
+			req.Header.FooterCenter = report.RichPlainText(vcfg.Footer)
+		}
+		if req.Header.Disclaimer == "" && vcfg.Disclaimer != "" {
+			req.Header.Disclaimer = report.RichPlainText(vcfg.Disclaimer)
+		}
+	}
 	header := report.EffectiveHeader(req.Header)
 
-	// 占位符取值(标准集 + 配置里的副标题)
+	// 占位符取值(标准集 + 模板可编辑覆盖, 2026-09-25 二轮用户清单: 标题/报告人/
+	// 检测工具/生成时间 "可编辑也可自动生成")
 	values := report.PlaceholderValues(snap, stats)
 	values["subtitle"] = cfg.Subtitle
+	if vcfg != nil {
+		if vcfg.Subtitle != "" {
+			values["subtitle"] = report.RichPlainText(vcfg.Subtitle)
+		}
+		if vcfg.Title != "" {
+			values["title"] = report.RichPlainText(vcfg.Title)
+		}
+		if vcfg.Operator != "" {
+			values["operator"] = report.RichPlainText(vcfg.Operator)
+		}
+		if vcfg.Tool != "" {
+			values["tool"] = report.RichPlainText(vcfg.Tool)
+		}
+		if vcfg.TimeMode == "custom" && vcfg.TimeText != "" {
+			values["time"] = report.RichPlainText(vcfg.TimeText)
+		}
+	}
 	expandedHeader := report.ExpandHeaderValues(header, values)
 
-	// 模板封面 + 数据章节
-	full := report.InsertSections(tplBlocks, report.SectionBlocks(snap, stats, header.Disclaimer))
+	// 模板封面 + 数据章节(可视化模板按 .visual.json 的章节选择/顺序渲染;
+	// 版权/免责声明三态见 sectionOptionsFromVisual, 与模板预览共用同一实现,
+	// 避免两条路径章节口径漂移)
+	var sectionBlocks []report.Block
+	if vcfg != nil {
+		sectionBlocks = report.SectionBlocksWithOptions(snap, stats, header.Disclaimer, sectionOptionsFromVisual(vcfg))
+	} else {
+		sectionBlocks = report.SectionBlocks(snap, stats, header.Disclaimer)
+	}
+	full := report.InsertSections(tplBlocks, sectionBlocks)
 	full = report.ReplacePlaceholders(full, values)
 
 	page := report.WordPage{Title: snap.Title, Header: expandedHeader, Accent: cfg.Accent}
+	if vcfg != nil {
+		// 页眉/页脚中段富文本(已清洗, RenderWordReport 原样注入 HTML 出口)
+		page.HeaderHTML = vcfg.Header
+		page.FooterHTML = vcfg.Footer
+	}
 	switch format {
 	case report.FormatWord:
 		docx, err := report.WriteDocx(full, report.DocxMeta{Title: snap.Title, Author: snap.Operator})
@@ -620,6 +713,28 @@ func generateReport(d *db.Database, req reportRequest, operator string) (*report
 	return arch, nil
 }
 
+// richTextBlocks 富文本片段 → 段落块序列(按换行拆段, 用于版权/免责声明章节
+// 注入)。base 是每段默认格式(小字灰); 片段内标签逐项覆盖。
+func richTextBlocks(frag string, base report.Run) []report.Block {
+	runs := report.HTMLToRuns(frag, base)
+	var blocks []report.Block
+	var cur []report.Run
+	for _, r := range runs {
+		if r.Text == "\n" {
+			if len(cur) > 0 {
+				blocks = append(blocks, report.Block{Kind: "p", Runs: cur})
+				cur = nil
+			}
+			continue
+		}
+		cur = append(cur, r)
+	}
+	if len(cur) > 0 {
+		blocks = append(blocks, report.Block{Kind: "p", Runs: cur})
+	}
+	return blocks
+}
+
 // loadWordTemplateBlocks 按名称取 Word 模板块序列:
 // 空 / "builtin" = 内置模板; 其它 = exe 同目录 res/report_templates/<name>.docx。
 func loadWordTemplateBlocks(name string) ([]report.Block, error) {
@@ -641,15 +756,60 @@ func loadWordTemplateBlocks(name string) ([]report.Block, error) {
 	return blocks, nil
 }
 
-// wordTplDir Word 模板目录(exe 同目录 res/report_templates/; 声明为变量便于测试
-// 改指临时目录, 同 reportConfigPath 的既有手法。2026-09-24 dist 目录整理:
-// 内置数据资源收进 res/)。
+// wordTplDir Word 模板目录(exe 同目录 data/outp/; 声明为变量便于测试
+// 改指临时目录, 同 reportConfigPath 的既有手法)。
+//
+// 2026-09-25 用户口径: 模板(含可视化编辑器保存的)统一放 data/outp ——
+// 模板是"运行期用户数据"(用户会编辑/增删), 与 res/ 的定位相反: res/ 是
+// 构建期镜像的只读内置资源, 升级重建可能被覆盖; data/ 才是跨升级的用户数据区
+// (与 data/*.jsonl 同一约定)。
 var wordTplDir = func() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "res/report_templates"
+		return filepath.Join("data", "outp")
 	}
-	return filepath.Join(filepath.Dir(exe), "res", "report_templates")
+	return filepath.Join(filepath.Dir(exe), "data", "outp")
+}
+
+// ensureWordTplDir 启动时确保模板目录存在, 缺失时生成默认模板
+// (2026-09-25 用户口径: "如果没有就生成一个默认的")。
+// 只补缺失、绝不覆盖已存在 —— 覆盖用户编辑过的模板是不可逆数据丢失
+// (与 build.ps1 处理 report_templates 的口径一致)。
+//
+// 默认模板 = 内置排版导出为 default.docx + 配套 default.visual.json
+// (可视化编辑器打开 default 时有配置可回显; 用户也可拿 default.docx 直接
+// 用 Word 改排版后另存为新模板)。
+func ensureWordTplDir() {
+	dir := wordTplDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		reportLogLine(fmt.Sprintf("WARN 模板目录创建失败 dir=%s err=%v", dir, err))
+		return
+	}
+	defDocx := filepath.Join(dir, "default.docx")
+	if _, err := os.Stat(defDocx); err == nil {
+		return
+	}
+	data, err := report.WriteDocx(report.BuiltinWordTemplate(), report.DocxMeta{Title: "default"})
+	if err != nil {
+		reportLogLine(fmt.Sprintf("WARN 默认模板生成失败 err=%v", err))
+		return
+	}
+	if err := writeAtomicFile(defDocx, data); err != nil {
+		reportLogLine(fmt.Sprintf("WARN 默认模板写入失败 err=%v", err))
+		return
+	}
+	// 配套可视化配置(名称用 default 而非 builtin: builtin 是内置保留名,
+	// 不可作为磁盘模板名保存)
+	cfg := builtinVisualTpl()
+	cfg.Name = "default"
+	cfg.UpdatedAt = time.Now()
+	if cfgBytes, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+		if err := writeAtomicFile(filepath.Join(dir, "default.visual.json"), cfgBytes); err != nil {
+			reportLogLine(fmt.Sprintf("WARN 默认模板配置写入失败 err=%v", err))
+			return
+		}
+	}
+	reportLogLine(fmt.Sprintf("默认 Word 模板已生成: %s", dir))
 }
 
 // validWordTplName 模板名校验: 只允许普通文件名(防目录穿越/特殊字符)。
@@ -779,16 +939,17 @@ type reportDateRange struct {
 }
 
 // collectFilterOptions 从库中收集筛选项(降级: 库不可用返回空集合)。
+// 2026-10-02 用户口径: 筛选选项基于当前数据里实际存在的值 —— 风险等级只返回
+// 漏洞库中存在的等级, 探针节点只返回有扫描报告的节点(此前等级固定 5 级全量、
+// 节点=探针注册表全量, 没数据的也出现在选项里)。
 func collectFilterOptions(d *db.Database) reportFilterOptions {
-	opt := reportFilterOptions{
-		Severities: []string{models.SeverityCritical, models.SeverityHigh, models.SeverityMedium, models.SeverityLow, models.SeverityInfo},
-		Nodes:      []nodeOption{{ID: "local", Name: "中心本地"}},
-	}
+	opt := reportFilterOptions{}
 	if d == nil {
 		return opt
 	}
-	// CVE 列表(去重, 最多 200 个避免下拉框撑爆)
+	// 漏洞聚合: CVE(去重, 最多 200 个避免下拉框撑爆) / 风险等级(按存量去重) / 时间范围
 	cveSet := map[string]bool{}
+	sevSet := map[string]bool{}
 	if dao := d.Vulns(); dao != nil {
 		if list, err := dao.List(); err == nil {
 			for _, v := range list {
@@ -798,6 +959,7 @@ func collectFilterOptions(d *db.Database) reportFilterOptions {
 				if c := report.CVEOf(&v.Vuln); c != "" {
 					cveSet[c] = true
 				}
+				sevSet[models.NormalizeSeverity(v.Severity)] = true
 				t := v.FoundAt
 				if !t.IsZero() {
 					if opt.DateRange.Earliest.IsZero() || t.Before(opt.DateRange.Earliest) {
@@ -817,14 +979,53 @@ func collectFilterOptions(d *db.Database) reportFilterOptions {
 	if len(opt.CVEs) > 200 {
 		opt.CVEs = opt.CVEs[:200]
 	}
-	// 探针节点(CH 端注册表; 表为空说明当前是单机部署)
+	// 风险等级: 固定顺序里只留漏洞库中真实存在的
+	for _, s := range []string{models.SeverityCritical, models.SeverityHigh, models.SeverityMedium, models.SeverityLow, models.SeverityInfo} {
+		if sevSet[s] {
+			opt.Severities = append(opt.Severities, s)
+		}
+	}
+	// 探针节点: 按存量扫描原始报告的来源聚合(local / probe:<节点ID>),
+	// 有报告才出现; 节点名从注册表查, 查不到(探针已删/下线)显 ID, 历史报告仍可筛
+	nodeSet := map[string]bool{}
+	if dao := d.RawReports(); dao != nil {
+		if list, err := dao.List(); err == nil {
+			for _, rr := range list {
+				if rr == nil || rr.Module != report.RawModScan {
+					continue
+				}
+				src := strings.TrimSpace(rr.Source)
+				if src == "" {
+					continue
+				}
+				if strings.HasPrefix(src, "probe:") {
+					nodeSet[strings.TrimPrefix(src, "probe:")] = true
+				} else {
+					nodeSet["local"] = true
+				}
+			}
+		}
+	}
+	if nodeSet["local"] {
+		opt.Nodes = append(opt.Nodes, nodeOption{ID: "local", Name: "中心本地"})
+	}
 	if dao := d.Probes(); dao != nil {
 		if list, err := dao.List(); err == nil {
+			known := map[string]bool{}
 			for _, p := range list {
 				if p == nil || p.ID == "" {
 					continue
 				}
-				opt.Nodes = append(opt.Nodes, nodeOption{ID: p.ID, Name: firstNonEmptyStr(p.Name, p.ID)})
+				known[p.ID] = true
+				if nodeSet[p.ID] {
+					opt.Nodes = append(opt.Nodes, nodeOption{ID: p.ID, Name: firstNonEmptyStr(p.Name, p.ID)})
+				}
+			}
+			// 有报告但注册表里已没有的节点: 显 ID 兜底
+			for id := range nodeSet {
+				if id != "local" && !known[id] {
+					opt.Nodes = append(opt.Nodes, nodeOption{ID: id, Name: id})
+				}
 			}
 		}
 	}
@@ -847,25 +1048,32 @@ type reportCompareRequest struct {
 	Title string `json:"title"`
 }
 
-// buildArchiveSnapshot 由存档记录还原快照。
+// rebuildArchiveSnapshot 按存档记录的筛选条件(含多任务选择)重新取数, 还原一份
+// 带漏洞明细的快照 —— 供"存档对比"做漏洞级差异(新增/修复/仍存在)。
 //
-// 局限说明(必须如实告知用户): 存档只保存了渲染产物与统计, 漏洞明细随报告
-// 一起过滤后保存 —— 因此"以存档为基线"的对比精度受当时筛选条件影响。
-// 生产路径推荐用扫描任务维度对比(见 handleReportCompare 的 baseId 前缀 "st:")。
-func buildArchiveSnapshot(d *db.Database, id string) (*report.Snapshot, error) {
+// 局限(如实告知): 漏洞在多轮扫描间被 Upsert 覆盖(稳定 ID 去重), 因此重建的快照
+// 反映的是"这些条件当前在库中的漏洞"; 若原任务的漏洞此后被修复/删除, 与当时生成
+// 的报告会有出入。对比结论基于当前库, 前提是对应漏洞数据仍在库中。
+func rebuildArchiveSnapshot(d *db.Database, id string) (*report.Snapshot, report.SnapshotStats, error) {
 	if d == nil || d.Reports() == nil {
-		return nil, fmt.Errorf("报告存档存储不可用")
+		return nil, report.SnapshotStats{}, fmt.Errorf("报告存档存储不可用")
 	}
 	arch, err := d.Reports().Get(id)
 	if err != nil || arch == nil {
-		return nil, fmt.Errorf("存档不存在: %s", id)
+		return nil, report.SnapshotStats{}, fmt.Errorf("存档不存在: %s", id)
 	}
-	return &report.Snapshot{
-		Title:     arch.Title,
-		Operator:  arch.Operator,
-		CreatedAt: arch.CreatedAt,
-		Vulns:     nil, // 存档不含漏洞明细对象, 只用于展示统计
-	}, nil
+	// 多任务存档用 JobIDs(权威); 单任务/旧存档回退 Filter.JobID
+	req := reportRequest{
+		Title:    arch.Title,
+		Operator: arch.Operator,
+		Filter:   arch.Filter,
+	}
+	if len(arch.JobIDs) > 0 {
+		req.JobIDs = arch.JobIDs
+	} else if arch.Filter.JobID != "" {
+		req.JobID = arch.Filter.JobID
+	}
+	return buildReportSnapshot(d, req)
 }
 
 // compareByVulnSnapshot 以"当前库中满足条件的漏洞"为某一次扫描的漏洞集合。
@@ -979,15 +1187,17 @@ func registerReportRoutes(srv *server.Server) {
 	srv.Post("/api/v2/report/preview", requireAuth(hReportPreview))
 	srv.Post("/api/v2/report/compare", requireAuth(hReportCompare))
 	srv.Get("/api/v2/report/history", requireAuth(hReportHistory))
-	srv.Get("/api/v2/report/topology", requireAuth(hReportTopology))
+	srv.Get("/api/v2/report/{id}/preview", requireAuth(hReportPreviewByID))
+	// 注: 资产拓扑不再有独立接口 —— 用户口径(2026-09-25)拓扑只是原始报告内容的
+	// 列表化视图, 随原始报告详情展示, 不做独立页面/接口。
 	// 旧版 HTML 模板管理(遗留路径: 请求带 templateId 时使用)
 	srv.Get("/api/v2/report/templates", requireAuth(hReportTemplateList))
 	srv.Post("/api/v2/report/templates", requireAuth(adminOrOperator(hReportTemplateSave)))
 	srv.Delete("/api/v2/report/templates/{id}", requireAuth(adminOrOperator(hReportTemplateDelete)))
-	// Word 模板管理(word/html/pdf 三种格式的渲染来源, report_word_api.go)
+	// Word 模板管理(word/html/pdf 三种格式的渲染来源, report_word_api.go
+	// + 可视化排版编辑器 report_tpl_visual_api.go)
 	registerWordTplRoutes(srv)
-	// 模板包管理(二期: 目录式模板 + config.yaml 元信息 + 三出口, report_pack_api.go)
-	registerPackRoutes(srv)
+	registerVisualTplRoutes(srv)
 	// 报告中心二期: 原始结构化报告(业务模块执行后的原始结果 + 多报告合并)
 	registerRawReportRoutes(srv)
 }
@@ -1001,9 +1211,6 @@ func reportStatusPayload(d *db.Database) map[string]any {
 		"enabled":    cfg.Enabled,
 		"configPath": pathrel.Short(settingsFilePath()),
 		"maxArchive": cfg.MaxArchive,
-		// 前端开关按这两个值回显(默认开, nil 视为开)
-		"templateManagement": packManagementEnabled(),
-		"pdfExternal":        pdfExternalEnabled(),
 		// 报告中心二期: 原始报告自动存档开关(默认开, nil 视为开) + 存储上限
 		"autoSave": cfg.AutoSave == nil || *cfg.AutoSave,
 		"maxRaw":   cfg.MaxRaw,
@@ -1251,9 +1458,99 @@ func hReportDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	fname := sanitizeFilename(a.Title) + "_" + a.CreatedAt.Format("20060102_150405") + "." + ext
 	w.Header().Set("Content-Type", ctype)
-	w.Header().Set("Content-Disposition", disposition+`; filename="`+fname+`"`)
+	// 2026-09-25 修"下载文件名带问号": 报告标题是中文, 裸 UTF-8 塞进
+	// filename="..."(RFC 6266 要求 ASCII) → 浏览器按 Latin-1/系统码页解码,
+	// 每个中文字都变 "?"。正解是 RFC 5987: filename*=UTF-8''<百分号编码>
+	// (Chrome/Edge/Firefox 均支持), 同时留 ASCII 回退 filename 给老客户端。
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf("%s; filename=\"%s\"; filename*=UTF-8''%s", disposition, asciiFilename(fname), url.PathEscape(fname)))
 	logAudit(d, r, "report.download", a.ID, a.Title)
 	_, _ = w.Write(body)
+}
+
+// hReportPreviewByID GET /api/v2/report/{id}/preview 存档报告页内预览(2026-09-25:
+// 用户要求"报告存档不只是下载, 还能页面查看")。
+//
+// 与 download 的差异: 永远 inline(浏览器内直接渲染, 不触发下载)、带 no-store
+// (预览的是存档正文, 不允许缓存串号)。可渲染性由内容类型决定:
+//   - html(含 PDF 打印页) → text/html, 前端塞 iframe;
+//   - 真 PDF(ContentB64) → application/pdf, 浏览器自带 PDF 查看器, 同样 iframe;
+//   - word(docx) → 浏览器渲染不了 docx, 但存档正文就是我们自己 WriteDocx 出去的
+//     块序列, ReadDocx 解析回块 → RenderWordReport 转成自包含 HTML 在 iframe 里
+//     看(2026-09-25 用户要求"Word 也要能页内打开, 不要只给下载")。解析失败
+//     (正文损坏/非本工具产出) 才回退 octet-stream + X-Yugsight-Preview:
+//     unsupported, 前端据此转下载。
+func hReportPreviewByID(w http.ResponseWriter, r *http.Request) {
+	d, _ := requireReportEnabled(w)
+	if d == nil {
+		return
+	}
+	if d.Reports() == nil {
+		server.Fail(w, http.StatusServiceUnavailable, server.CodeDBUnavailable, "报告存档存储不可用")
+		return
+	}
+	a, err := d.Reports().Get(r.PathValue("id"))
+	if err != nil || a == nil {
+		server.FailNotFound(w, "报告存档不存在")
+		return
+	}
+	format := strings.ToLower(a.Format)
+	hasBin := strings.TrimSpace(a.ContentB64) != ""
+	switch format {
+	case report.FormatWord:
+		decoded, derr := base64.StdEncoding.DecodeString(a.ContentB64)
+		if derr != nil || len(decoded) == 0 {
+			server.FailInternal(w, "Word 报告正文损坏(存档时未写入二进制内容)")
+			return
+		}
+		// 块序列解析回 HTML(与生成时同一渲染器, 所见即存档)。页眉页脚只影响
+		// 打印输出(屏幕隐藏), 传 EffectiveHeader 兜底默认即可, 无需重算占位符。
+		blocks, perr := report.ReadDocx(decoded)
+		if perr != nil || len(blocks) == 0 {
+			// 解析不了(正文损坏/非本工具产出的 docx): 如实回二进制, 前端转下载
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", "inline")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Yugsight-Preview", "unsupported")
+			_, _ = w.Write(decoded)
+			break
+		}
+		page := report.WordPage{Title: a.Title, Header: report.EffectiveHeader(a.Header)}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Yugsight-Preview", "word-html")
+		_, _ = w.Write([]byte(report.RenderWordReport(blocks, page)))
+	case report.FormatPDF:
+		if hasBin {
+			decoded, _ := base64.StdEncoding.DecodeString(a.ContentB64)
+			w.Header().Set("Content-Type", "application/pdf")
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write(decoded)
+			return
+		}
+		fallthrough // 打印页 = HTML, 走默认分支
+	default:
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(a.Content))
+	}
+	logAudit(d, r, "report.preview", a.ID, a.Title)
+}
+
+// filenameStar 值已并入上面的 Sprintf(url.PathEscape); ASCII 回退:
+// 去掉全部非 ASCII 字符(中文标题 → 只剩时间戳与扩展名)。
+func asciiFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x80 && !strings.ContainsRune(`\/:*?"<>|`, r) {
+			b.WriteRune(r)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" {
+		return "yugsight_report"
+	}
+	return out
 }
 
 // sanitizeFilename 清理文件名中的非法字符(Windows 不允许 \ / : * ? " < > |)。
@@ -1344,28 +1641,6 @@ func hReportHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// hReportTopology GET /api/v2/report/topology 资产拓扑数据(前端画布)。
-//
-// 与报告中的拓扑同一算法(report.BuildTopology), 保证"页面看到的"与
-// "报告里印的"完全一致 —— 两套实现必然漂移, 这是被迫踩过的教训。
-func hReportTopology(w http.ResponseWriter, r *http.Request) {
-	d, _ := requireReportEnabled(w)
-	if d == nil {
-		return
-	}
-	f := reportFilterFromQuery(r.URL.Query())
-	snap, stats, err := buildReportSnapshot(d, reportRequest{Filter: f})
-	if err != nil {
-		server.FailInternal(w, err.Error())
-		return
-	}
-	topo := snap.Topology
-	if topo == nil {
-		topo = report.BuildTopology(snap.Assets, snap.Vulns)
-	}
-	server.OK(w, map[string]any{"topology": topo, "stats": stats})
-}
-
 // hReportCompare POST /api/v2/report/compare 历史扫描对比。
 //
 // 两种模式:
@@ -1392,6 +1667,7 @@ func hReportCompare(w http.ResponseWriter, r *http.Request) {
 	var baseVulns, targetVulns []*models.Vuln
 	var err error
 	baseName, targetName := "基线", "本次"
+	mode := "window"
 
 	if !from.IsZero() {
 		// 时间窗模式: 基线窗口 = 目标窗之前同等长度的一段
@@ -1414,21 +1690,22 @@ func hReportCompare(w http.ResponseWriter, r *http.Request) {
 		baseName = "基线轮次 " + baseFrom.Format("2006-01-02 15:04") + " ~ " + baseTo.Format("2006-01-02 15:04")
 		targetName = "目标轮次 " + from.Format("2006-01-02 15:04") + " ~ " + to.Format("2006-01-02 15:04")
 	} else if req.BaseID != "" && req.TargetID != "" {
-		// 存档模式: 两侧存档的统计与筛选条件作对照(存档不保存漏洞明细对象,
-		// 因此这里明确用统计数字对比, 并返回说明)
-		b, berr := buildArchiveSnapshot(d, req.BaseID)
+		// 存档模式(2026-09-26): 按各自存档的筛选条件重建快照(含漏洞明细),
+		// 做漏洞级差异对比(用户口径: 历史对比应对存档做对比, 而非无根据的时间窗)。
+		// 前提: 对应漏洞仍在库中(见 rebuildArchiveSnapshot 注释)。
+		b, _, berr := rebuildArchiveSnapshot(d, req.BaseID)
 		if berr != nil {
 			server.FailNotFound(w, berr.Error())
 			return
 		}
-		t, terr := buildArchiveSnapshot(d, req.TargetID)
+		t, _, terr := rebuildArchiveSnapshot(d, req.TargetID)
 		if terr != nil {
 			server.FailNotFound(w, terr.Error())
 			return
 		}
-		diff := report.Compare(b, t, req.BaseID, req.TargetID)
-		server.OK(w, map[string]any{"diff": diff, "mode": "archive", "note": "存档对比仅比较统计口径（存档不保留漏洞明细）"})
-		return
+		baseVulns, targetVulns = b.Vulns, t.Vulns
+		baseName, targetName = b.Title, t.Title
+		mode = "archive"
 	} else {
 		server.FailBadRequest(w, "请提供 from/to 时间窗, 或 baseId/targetId 存档对")
 		return
@@ -1437,24 +1714,31 @@ func hReportCompare(w http.ResponseWriter, r *http.Request) {
 	diff := compareScans(d, baseVulns, targetVulns, baseName, targetName)
 	diff.BaseID, diff.TargetID = firstNonEmptyStr(req.BaseID, "window-base"), firstNonEmptyStr(req.TargetID, "window-target")
 
-	// 可选: 把对比结果存为报告存档(便于复盘与审计留痕)
+	// 可选: 把对比结果存为报告存档(便于复盘与审计留痕); 返回存档 ID 供前端查看
+	var archiveID string
 	if req.Save {
-		if err := saveCompareArchive(d, diff, req.Title, currentUser()); err != nil {
+		if id, err := saveCompareArchive(d, diff, req.Title, currentUser()); err != nil {
 			reportLogLine("对比结果存档失败: " + err.Error())
+		} else {
+			archiveID = id
 		}
 	}
 	logAudit(d, r, "report.compare", diff.BaseID, fmt.Sprintf("新增%d 修复%d 仍存在%d", diff.Stats.NewCount, diff.Stats.FixedCount, diff.Stats.PersistedCount))
-	server.OK(w, map[string]any{"diff": diff, "mode": "window"})
+	resp := map[string]any{"diff": diff, "mode": mode}
+	if archiveID != "" {
+		resp["archiveId"] = archiveID
+	}
+	server.OK(w, resp)
 }
 
-// saveCompareArchive 把对比结果渲染为 HTML 并存档。
-func saveCompareArchive(d *db.Database, diff *report.Diff, title, operator string) error {
+// saveCompareArchive 把对比结果渲染为 HTML 并存档, 返回存档 ID(前端"查看对比报告"用)。
+func saveCompareArchive(d *db.Database, diff *report.Diff, title, operator string) (string, error) {
 	if strings.TrimSpace(title) == "" {
 		title = "扫描对比报告 " + diff.TargetName
 	}
 	html, err := report.RenderDiff(diff, title, appName+" v"+appVersion, report.EffectiveHeader(report.Header{}))
 	if err != nil {
-		return err
+		return "", err
 	}
 	arch := &report.Archive{
 		Title:     title,
@@ -1467,7 +1751,10 @@ func saveCompareArchive(d *db.Database, diff *report.Diff, title, operator strin
 		Note:      fmt.Sprintf("对比报告: 新增 %d / 已修复 %d / 仍存在 %d", diff.Stats.NewCount, diff.Stats.FixedCount, diff.Stats.PersistedCount),
 	}
 	arch.Validate()
-	return saveReportArchive(d, arch)
+	if err := saveReportArchive(d, arch); err != nil {
+		return "", err
+	}
+	return arch.ID, nil
 }
 
 // ===== 模板管理 =====

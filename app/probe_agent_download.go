@@ -11,14 +11,14 @@
 //
 //  1. 二进制不打包进主程序: 单个 agent 约 6-7MB, 四平台全嵌入会让中心端 exe
 //     凭空膨胀 25MB 以上, 且升级 agent 就得重新编译中心端。改为运行时从
-//     exe 同目录 agents/ 目录读取(与 bin/ 外部引擎、templates/ 模板同一约定)。
+//     exe 同目录 data/agents/ 目录读取(与 bin/ 外部引擎、templates/ 模板同一约定)。
 //  2. 目录缺失/文件不存在一律降级: 接口返回"未分发"而不是 500/panic(规则 3/4),
 //     前端据此展示部署指引, 不会误以为功能坏了。
 //  3. 文件名兼容主程序与独立程序两种命名: 显式约定 yugsight-agent_{os}_{arch}[.exe],
 //     同时前缀匹配 yugsight_agent_/agent_ 等常见手改写法(与 rule_updater 的
 //     命名容忍风格一致), 降低"我明明放了文件却提示缺失"的困惑。
 //  4. 防目录穿越: os/arch 只允许白名单取值, 文件名由白名单拼出后仍校验 base,
-//     确保不越出 agents/ 目录(接口虽走 requireAuth, 但白名单是更强的不变式)。
+//     确保不越出 data/agents/ 目录(接口虽走 requireAuth, 但白名单是更强的不变式)。
 package main
 
 import (
@@ -67,16 +67,17 @@ var agentPlatforms = []struct {
 // 却提示未分发"的错判。带 - 的优先(标准命名), 顺序即优先级。
 var agentNamePrefixes = []string{"yugsight-agent", "yugsight_agent", "yugsightagent", "agent"}
 
-// agentDownloadDir agent 安装包目录(exe 同目录 agents/)。
+// agentDownloadDir agent 安装包目录(exe 同目录 data/agents/, 2026-09-29 起归入
+// data/ —— 探针包与 cert/ 一并收拢到 data 目录, 与运行时数据同处)。
 //
 // 声明为变量(非函数)以便测试改指临时目录 —— 与 reportCfgPath、rulesExternalDir
 // 同一手法, 否则用例一跑就会去读开发机真实目录, 断言随环境漂移。
 var agentDownloadDir = func() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "agents"
+		return filepath.Join("data", "agents")
 	}
-	return filepath.Join(filepath.Dir(exe), "agents")
+	return filepath.Join(filepath.Dir(exe), "data", "agents")
 }
 
 // ===== 平台解析与文件定位 =====
@@ -93,7 +94,7 @@ func agentPlatform(osName, arch string) (string, string, string, string, bool) {
 	return "", "", "", "", false
 }
 
-// findAgentBinary 在 agents/ 目录中定位指定平台的 agent 二进制。
+// findAgentBinary 在 data/agents/ 目录中定位指定平台的 agent 二进制。
 //
 // 返回 (路径, 文件名, 是否存在)。顺序:
 //  1. 显式约定名 yugsight-agent_{os}_{arch}[.exe](精确命中优先);
@@ -163,7 +164,7 @@ func agentFileIn(dir string, entries []os.DirEntry, want string) (string, string
 			continue
 		}
 		p := filepath.Join(dir, e.Name())
-		// 防目录穿越: 拼出的路径必须仍在 agents/ 内(文件名来自目录枚举, 属双保险)
+		// 防目录穿越: 拼出的路径必须仍在 data/agents/ 内(文件名来自目录枚举, 属双保险)
 		if filepath.Dir(p) != filepath.Clean(dir) {
 			continue
 		}
@@ -172,7 +173,7 @@ func agentFileIn(dir string, entries []os.DirEntry, want string) (string, string
 	return "", "", false
 }
 
-// listAgentPackages 列出 agents/ 目录中当前可下载的 agent 包。
+// listAgentPackages 列出 data/agents/ 目录中当前可下载的 agent 包。
 //
 // 用于 /api/v2/probe/agent/list: 前端据此渲染"哪些平台可下载", 避免用户
 // 逐个点击才发现包没上传。文件名无法判定平台时仍列出(标注 platform 为空),
@@ -249,7 +250,7 @@ func looksLikeAgent(name string) bool {
 // 一堆命令却不知道该在哪台机器上敲)。
 func agentDownloadHint() string {
 	hint := fmt.Sprintf("未在 %s 找到 yugsight-agent 安装包。请先编译并放入该目录: "+
-		"go build -trimpath -ldflags \"-s -w\" -o agents/yugsight-agent_windows_amd64.exe ./cmd/agent "+
+		"go build -trimpath -ldflags \"-s -w\" -o data/agents/yugsight-agent_windows_amd64.exe ./cmd/agent "+
 		"(命名约定 yugsight-agent_{os}_{arch}[.exe], 支持 windows/linux/darwin × amd64/arm64)",
 		agentDownloadDir())
 	if agentpkg.Supported() {
@@ -264,10 +265,10 @@ func agentDownloadHint() string {
 
 // ===== 就地补包(中心端自己编译探针) =====
 //
-// 背景: 探针包按约定要由开发机脚本产出后放进 agents/, 但中心端常常是一台没有
+// 背景: 探针包按约定要由开发机脚本产出后放进 data/agents/, 但中心端常常是一台没有
 // 项目脚本的服务器 —— 页面提示"未分发"就成了死结。这里给中心端两条自救路径,
 // 都不联网: 先把 GOCACHE 里已有的构建产物拷出来(零成本), 不行再调 go build。
-// 全部失败时回传明确原因 + 可复制的命令, 不改变 agents/ 目录里的既有文件。
+// 全部失败时回传明确原因 + 可复制的命令, 不改变 data/agents/ 目录里的既有文件。
 
 var agentBuildMu sync.Mutex
 
@@ -294,7 +295,7 @@ func buildAgentForPlatform(osName, arch string) agentpkg.CmdResult {
 		return agentpkg.CmdResult{
 			OK: false,
 			Error: fmt.Sprintf("只能在中心端本机补出 %s/%s 的探针包; %s/%s 请用构建脚本产出"+
-				"(powershell -File scripts/build-agents.ps1)后放入 agents/ 目录",
+				"(powershell -File scripts/build-agents.ps1)后放入 data/agents/ 目录",
 				hostOS, hostArch, osName, arch),
 		}
 	}
@@ -303,7 +304,7 @@ func buildAgentForPlatform(osName, arch string) agentpkg.CmdResult {
 	}
 	dir := agentDownloadDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return agentpkg.CmdResult{OK: false, Error: "创建 agents/ 目录失败: " + err.Error()}
+		return agentpkg.CmdResult{OK: false, Error: "创建 data/agents/ 目录失败: " + err.Error()}
 	}
 	out := filepath.Join(dir, agentOutputName(osName, arch))
 
@@ -377,7 +378,7 @@ func hAgentBuild(w http.ResponseWriter, r *http.Request) {
 		"command": res.Command,
 		"output":  res.Output,
 		"seconds": res.Seconds,
-		"note":    "已放入 agents/ 目录, 现在可以直接下载分发",
+		"note":    "已放入 data/agents/ 目录, 现在可以直接下载分发",
 	})
 }
 
@@ -436,7 +437,7 @@ func agentBuildCapability(hostOS, hostArch string) map[string]any {
 	out["canBuild"] = toolOK && repoOK
 	switch {
 	case !toolOK && !repoOK:
-		out["ready"] = "本机缺少 Go 工具链与源码目录, 请在开发机用 scripts/build-agents.ps1 产出后放入 agents/"
+		out["ready"] = "本机缺少 Go 工具链与源码目录, 请在开发机用 scripts/build-agents.ps1 产出后放入 data/agents/"
 	case !toolOK:
 		out["ready"] = "本机未找到 Go 工具链(需 Go 1.25+ 且在 PATH 中), 已找到源码目录 " + repo
 	case !repoOK:
@@ -529,6 +530,9 @@ func hAgentGuide(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("常见问题:\n")
 	b.WriteString("- 提示\"未配置中心端地址\": probe.json 未找到或地址为空, 用 -center 显式指定。\n")
 	b.WriteString("- 提示\"密钥错误\": 中心端 probe.json 的 center.token 与 -token 必须一致。\n")
+	b.WriteString("- 中心端地址变了(换网/VPN 导致 IP 变化): 探针不会自动切换,\n")
+	b.WriteString("  重新跑一次一键安装命令即可(地址自动更新为当前 IP, 旧服务地址被覆盖, 开机自启保留, 无需手改文件)。\n")
+	b.WriteString("  手动部署的(无 systemd 环境)用新地址重跑启动命令。\n")
 	b.WriteString("- Windows 记事本保存的 JSON 带 BOM 也能识别(已做容错), 但建议直接用命令行参数。\n")
 	b.WriteString("- Windows 卸载: 双击 C:\\YugsightAgent 目录下的「卸载探针.exe」即可\n")
 	b.WriteString("  (自动停止探针 + 删除开机自启 + 删除安装目录); 或手工: 结束 yugsight-agent\n")

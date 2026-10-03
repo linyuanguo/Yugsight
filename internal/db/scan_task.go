@@ -23,6 +23,9 @@ type ScanTask struct {
 	ID         string          `json:"id"`
 	Type       string          `json:"type"` // ip|port|web|host
 	Target     string          `json:"target"`
+	// 2026-09-27: 扫描任务名单列(用户口径: 历史页要直接看到任务名, 它也是报告聚合键)。
+	// 此前埋在 Params JSON 里, 探针下发路径甚至根本没存, 历史页无从展示。
+	JobName    string          `json:"jobName,omitempty"`
 	Params     json.RawMessage `json:"params,omitempty"` // 扫描参数(原样保存)
 	Status     string          `json:"status"`
 	Result     string          `json:"result,omitempty"` // 结果摘要

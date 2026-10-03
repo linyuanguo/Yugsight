@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"yugsight/internal/dockerlist"
 	"yugsight/internal/engine/parsers"
 	"yugsight/internal/normalizer"
 )
@@ -200,6 +202,136 @@ func (t *Task) runTrivy(ctx context.Context, bin, target string, progress Progre
 	}
 	n := t.ingestParsedBatch("", batch)
 	progress.Emit(fmt.Sprintf("trivycore 完成: 合并资产 %d 项, 漏洞 %d 条", n.assets, n.vulns))
+}
+
+// scaAutoTarget SCA 自动枚举占位(2026-09-27): 中心端对 image/container 任务
+// 目标留空时下发该值(见 app/probe_api.go 的同名常量, 跨包契约必须同值)。
+// 收到占位 = 在本机 docker images / docker ps 全量枚举逐个扫。
+const scaAutoTarget = "自动枚举"
+
+// SCAEngineTimeout SCA 单目标(trivy 单次执行)超时上限(2026-09-27 E2E 实测校准):
+// 默认引擎超时 5 分钟对大镜像不够 —— neo4j:5.26(数 GB)扫描超 5 分钟被掐
+// (13 镜像自动枚举 E2E 中 2/13 因此失败)。取 max(配置值, 15 分钟): 只是抬高
+// 单目标上限, 多目标仍逐个串行, 不会让整批失控。
+const SCAEngineTimeout = 15 * time.Minute
+
+// scaEngineTimeout 本次 SCA 单目标执行的超时: 不低于 SCAEngineTimeout,
+// 用户显式配置更长时尊重配置。
+func scaEngineTimeout(cfg Config) time.Duration {
+	if cfg.Timeout.Engine > SCAEngineTimeout {
+		return cfg.Timeout.Engine
+	}
+	return SCAEngineTimeout
+}
+
+// scaTargets 计算本次 SCA 任务的 trivy 目标列表(2026-09-27 自动枚举):
+// image/container 目标为空或"自动枚举"占位 → 枚举本机全部 Docker 镜像/运行中
+// 容器(trivy 跑在本机, 直接本机枚举, 无需跨机通道); 其它情况(fs 或显式目标)
+// → 单目标。枚举失败返回 error(任务如实标失败 —— 不能静默成"扫描无发现")。
+func (t *Task) scaTargets(ctx context.Context) (sub string, targets []string, err error) {
+	sub, target := t.scaSubTarget()
+	kind := strings.ToLower(t.Kind)
+	if kind == "image" || kind == "container" {
+		if target == "" || target == scaAutoTarget {
+			label, cmd, lister := "Docker 镜像", "images", dockerlist.ListImages
+			if kind == "container" {
+				label, cmd, lister = "运行中容器", "ps", dockerlist.ListContainers
+			}
+			t.progress.Emit("未指定目标, 自动枚举本机" + label + "(docker " + cmd + ")...")
+			targets, err = lister(ctx)
+			if err != nil {
+				return sub, nil, fmt.Errorf("自动枚举本机%s失败: %w", label, err)
+			}
+			if len(targets) == 0 {
+				return sub, nil, fmt.Errorf("本机没有可扫的%s(docker 列表为空)", label)
+			}
+			t.progress.Emit(fmt.Sprintf("检测到 %d 个%s: %s", len(targets), label, strings.Join(targets, ", ")))
+			return sub, targets, nil
+		}
+	}
+	if target == "" {
+		return sub, nil, errors.New("SCA 目标为空(镜像名 / 本地路径 / 容器名)")
+	}
+	return sub, []string{target}, nil
+}
+
+// scanSca 独立的 SCA 扫描入口(image / fs / container 三种 Kind 共用)。
+//
+// 与 runTrivy 的区别: runTrivy 是 host/web 流程里"按目标形态顺带跑 trivy"的增强,
+// 用启发式判断子命令(含 ":" 就当镜像); scanSca 是"目标本身就是本地文件/镜像/容器"
+// 的独立任务, 子命令由 Kind 明确指定 —— 关键在 container 不靠启发式(否则运行中
+// 容器名 "web-1" 无冒号会被误判成 fs 而找不到路径)。
+//
+// 2026-09-27 起支持多目标(自动枚举): 逐目标执行 trivy, 单目标失败不中断后续
+// (失败原因逐个记入), 全部跑完后再按"是否有任何失败"决定是否标任务失败 ——
+// 中心端据此区分"扫描无发现"与"部分/全部目标扫描失败", 已收集结果不丢
+// (agentexec 会把部分结果与失败原因一并回传)。
+//
+// 结果并入任务上下文(资产 + 漏洞), 与 host 扫描的落库口径一致; 无 IP 时 ingestParsedBatch
+// 的 fallbackIP 传空, 由 trivy 解析结果自带(镜像/文件通常无 IP, 走空 IP 落库时按资产名归一)。
+func (t *Task) scanSca(ctx context.Context, progress Progress, bin string) error {
+	sub, targets, err := t.scaTargets(ctx)
+	if err != nil {
+		progress.Emit(err.Error())
+		return err
+	}
+	var failures []string
+	for i, target := range targets {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr // 取消: 不再跑剩余目标, 由 Run/agentexec 按取消口径收尾
+		}
+		if len(targets) > 1 {
+			progress.Emit(fmt.Sprintf("[%d/%d] 扫描目标: %s", i+1, len(targets), target))
+		}
+		args := []string{sub, "-f", "json", "-q"}
+		if extra := t.extraArgs("trivyArgs"); len(extra) > 0 {
+			args = append(args, extra...)
+		}
+		args = append(args, target)
+
+		progress.Emit(fmt.Sprintf("SCA trivycore(%s): %s", sub, strings.Join(args, " ")))
+		// SCA 单目标专用超时(大镜像扫描 >5 分钟, 见 SCAEngineTimeout 注释)
+		out, rerr := runCmd(ctx, scaEngineTimeout(t.cfg), bin, args...)
+		if rerr != nil {
+			// 执行失败(镜像拉不到 / 路径不存在 / 容器名错)逐个记录后继续下一目标 ——
+			// 多目标时单点失败不该让整批白跑; 结束时汇总为任务失败(见下方 return)。
+			failures = append(failures, target+": "+truncate(rerr.Error(), 200))
+			progress.Emit(fmt.Sprintf("trivycore 执行失败(%s): %s", target, truncate(rerr.Error(), 300)))
+			continue
+		}
+		batch, perr := parsers.ParseTrivy(out)
+		if perr != nil {
+			failures = append(failures, target+": 输出解析失败 "+truncate(perr.Error(), 200))
+			progress.Emit(fmt.Sprintf("trivycore 输出解析失败(%s): %s", target, truncate(perr.Error(), 200)))
+			continue
+		}
+		n := t.ingestParsedBatch("", batch)
+		progress.Emit(fmt.Sprintf("trivycore 完成(%s): 合并资产 %d 项, 漏洞 %d 条", sub, n.assets, n.vulns))
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("%d/%d 个目标扫描失败: %s", len(failures), len(targets), strings.Join(failures, "; "))
+	}
+	return nil
+}
+
+// scaSubTarget 按 Kind 返回 trivy 子命令与净目标(去掉 image:/fs:/container: 前缀, 若有)。
+//
+// 中心端下发时 target 一般是净目标(镜像名/路径/容器名), 这里 TrimPrefix 只是防御
+// 用户/脚本直传了带前缀的串 —— 两种口径都能吃下。
+func (t *Task) scaSubTarget() (sub, target string) {
+	raw := strings.TrimSpace(t.Target)
+	switch strings.ToLower(t.Kind) {
+	case "image":
+		sub = "image"
+		target = strings.TrimPrefix(raw, "image:")
+	case "container":
+		sub = "container"
+		target = strings.TrimPrefix(raw, "container:")
+	default: // fs
+		sub = "fs"
+		target = strings.TrimPrefix(raw, "fs:")
+	}
+	return sub, strings.TrimSpace(target)
 }
 
 // runZap 用 zapcore 扫描 Web 目标。

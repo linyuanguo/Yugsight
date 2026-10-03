@@ -38,10 +38,11 @@ const (
 	RawModWeakPass = "weakpass" // 弱口令检测
 	RawModMonitor  = "monitor"  // 节点监控(SNMP 设备监控 + 节点采集)
 	RawModMerged   = "merged"   // 多报告合并的汇总报告
+	RawModPenta    = "penta"    // 渗透验证(2026-09-25 三轮: 作业渗透阶段留档)
 )
 
 // RawModules 全部来源模块(固定顺序: 列表统计/合并分组的展示顺序)。
-var RawModules = []string{RawModCapture, RawModScan, RawModWeakPass, RawModMonitor, RawModMerged}
+var RawModules = []string{RawModCapture, RawModScan, RawModWeakPass, RawModMonitor, RawModPenta, RawModMerged}
 
 // IsKnownRawModule 是否为已知的来源模块。
 func IsKnownRawModule(m string) bool {
@@ -64,6 +65,8 @@ func RawModuleLabel(m string) string {
 		return "弱口令检测"
 	case RawModMonitor:
 		return "节点监控"
+	case RawModPenta:
+		return "渗透验证"
 	case RawModMerged:
 		return "合并报告"
 	}
@@ -106,6 +109,8 @@ type RawReport struct {
 	Tags []string `json:"tags,omitempty"`
 	// Target 主目标(展示与检索用, 如网段/URL/设备地址)
 	Target string `json:"target,omitempty"`
+	// Job 所属扫描作业名(2026-09-25 三轮: 原始报告按任务名分类, 空 = 独立扫描)
+	Job string `json:"job,omitempty"`
 	// Assets 涉及的资产 IP(资产筛选维度)
 	Assets []string `json:"assets,omitempty"`
 	// DurationMs 执行耗时(监控类快照为 0)

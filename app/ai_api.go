@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -334,6 +335,30 @@ func promptMeta(cfg *ai.Config) map[string]any {
 	return out
 }
 
+// decodeAIBody 解析请求体到 v。兼容"被二次 JSON.stringify 的 body"(前端历史 bug:
+// 已序列化的字符串被再序列化一次, 服务端收到 JSON 字符串字面量 "{\"a\":1}"):
+// 首解码失败且原始字节以引号开头时, 解开内层 JSON 再解一次。让新旧前端
+// (含未强刷的缓存旧页)都能正常保存, 与 api_v2.go 的 decodeJSON 同口径。
+func decodeAIBody(r *http.Request, v any) error {
+	raw, rerr := io.ReadAll(r.Body)
+	if rerr != nil {
+		return rerr
+	}
+	uerr := json.Unmarshal(raw, v)
+	if uerr == nil {
+		return nil
+	}
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+		var inner string
+		if json.Unmarshal(raw, &inner) == nil && inner != "" {
+			if json.Unmarshal([]byte(inner), v) == nil {
+				return nil
+			}
+		}
+	}
+	return uerr
+}
+
 // handleAIConfigSave POST /api/ai/config
 //
 // 保存基础参数 + 模块总开关。指针字段区分"传了"与"没传"(没传的保持
@@ -347,6 +372,7 @@ func handleAIConfigSave(w http.ResponseWriter, r *http.Request) {
 		APIBase     string  `json:"apiBase"`
 		APIKey      string  `json:"apiKey"`
 		Model       string  `json:"model"`
+		Enabled     *bool   `json:"enabled"`
 		TimeoutSec  *int    `json:"timeoutSec"`
 		MaxContext  *int    `json:"maxContext"`
 		MaxTokens   *int    `json:"maxTokens"`
@@ -354,12 +380,17 @@ func handleAIConfigSave(w http.ResponseWriter, r *http.Request) {
 		TopP        *float64 `json:"topP"`
 		Modules     *ai.ModuleSwitches `json:"modules"`
 	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
+	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
 	cfg := ai.CurrentConfig()
 	b := cfg.BasicConfig
+	// 前端"保存"按钮显式带 enabled=true 即启用 AI; 仅传模块开关时不带此字段,
+	// 保持当前启用态(模块开关与"是否启用 AI"是两个独立维度)。
+	if req.Enabled != nil {
+		b.Enabled = *req.Enabled
+	}
 	if strings.TrimSpace(req.APIBase) != "" {
 		b.APIBase = strings.TrimSpace(req.APIBase)
 	}
@@ -440,7 +471,7 @@ func handleAITemplateSave(w http.ResponseWriter, r *http.Request) {
 		RAG     *bool   `json:"rag"`
 		TopK    *int    `json:"topK"`
 	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
+	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
@@ -493,7 +524,7 @@ func handleAITemplateReset(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Key string `json:"key"`
 	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
+	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
@@ -592,7 +623,7 @@ func handleAIRAGConfig(w http.ResponseWriter, r *http.Request) {
 		Embedding *ai.EmbeddingConfig `json:"embedding"`
 		Reranker  *ai.RerankerConfig  `json:"reranker"`
 	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
+	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
@@ -696,7 +727,7 @@ func handleAIRAGDocUpload(w http.ResponseWriter, r *http.Request) {
 		Category string `json:"category"`
 		Content  string `json:"content"`
 	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
+	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
@@ -851,7 +882,7 @@ func handleAIMemorySave(w http.ResponseWriter, r *http.Request) {
 		Compress     *bool         `json:"compress"`
 		Scopes       *ai.MemoryScopes `json:"scopes"`
 	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
+	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
@@ -1038,7 +1069,7 @@ func handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 		ReportID string `json:"reportId"`
 		Module   string `json:"module"`
 	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
+	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
 		return
 	}
@@ -1069,9 +1100,14 @@ func handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 			jsonErr(w, http.StatusConflict, err.Error())
 			return
 		}
-		if err := saveRawReport(d, rr); err != nil {
-			jsonErr(w, http.StatusInternalServerError, "报告存档失败: "+err.Error())
-			return
+		// 2026-10-02 用户口径: 节点监控(monitor/collect)不生成原始报告 —— 此前点
+		// 一次"AI 分析(告警)"就往 raw_reports 存一份, 是报告中心被刷屏的来源之一。
+		// 改为内存现场分析: 研判结果随响应返回(前端弹窗展示), 不落 raw_reports。
+		if req.Module != report.RawModMonitor && req.Module != "collect" {
+			if err := saveRawReport(d, rr); err != nil {
+				jsonErr(w, http.StatusInternalServerError, "报告存档失败: "+err.Error())
+				return
+			}
 		}
 	default:
 		jsonErr(w, http.StatusBadRequest, "需指定 reportId 或 module")
@@ -1084,7 +1120,17 @@ func handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	// 整体分析时长: 以配置的"请求超时(秒)"为准, 但一次完整分析(脱敏 + RAG 检索 +
+	// 记忆库 + 长回答流式)远超单次默认 60s, 下限给到 10 分钟、上限 30 分钟防挂死。
+	// http.Client 已不再单独设超时, 整体截止统一由本 ctx 控制(见 ai_analyzer.go)。
+	analyzeSec := cfg.TimeoutSec
+	if analyzeSec < 600 {
+		analyzeSec = 600
+	}
+	if analyzeSec > 1800 {
+		analyzeSec = 1800
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(analyzeSec)*time.Second)
 	defer cancel()
 	res, err := ai.Analyze(ctx, ai.Input{
 		Module:  rr.Module,
@@ -1095,7 +1141,13 @@ func handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		// LLM 失败不写报告(半截结果落库比没有更糟 —— 用户会当结论看)
-		jsonErr(w, http.StatusBadGateway, "AI 分析失败: "+err.Error())
+		msg := err.Error()
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "context canceled") {
+			jsonErr(w, http.StatusBadGateway,
+				fmt.Sprintf("AI 分析超时(允许 %d 秒仍未返回), 请在 AI 配置页调大「请求超时(秒)」后重试", analyzeSec))
+			return
+		}
+		jsonErr(w, http.StatusBadGateway, "AI 分析失败: "+msg)
 		return
 	}
 
@@ -1197,6 +1249,8 @@ func RegisterAIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/ai/memory", requireAuth(handleAIMemory))
 	mux.HandleFunc("POST /api/ai/memory", requireAuth(adminOrOperator(handleAIMemorySave)))
 	mux.HandleFunc("POST /api/ai/analyze", requireAuth(adminOrOperator(handleAIAnalyze)))
+	// 小 Y 问答助手(2026-09-27, 见 ai_assistant_api.go)
+	registerAssistantRoutes(mux)
 }
 
 // InitAI 启动装配(在 main 里 db 打开后调用):

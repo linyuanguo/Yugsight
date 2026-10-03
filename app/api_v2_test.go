@@ -180,6 +180,101 @@ func TestV2AssetCRUD(t *testing.T) {
 	}
 }
 
+// TestV2AssetAliveFilterAndClean 资产"只看存活"筛选 + 清理未存活接口。
+// 守契约: alive 筛选口径(=1 只存活 / =0 只未存活) + 清理只删 Alive=false
+// (曾上线后下线的 Alive=true 不受影响) + 清理幂等(二次删 0)。
+func TestV2AssetAliveFilterAndClean(t *testing.T) {
+	h, d := newV2TestEnv(t)
+	for _, ip := range []string{"192.168.5.1", "192.168.5.2"} {
+		a := db.NewAsset(ip)
+		a.Alive = true
+		if _, err := d.Assets().Upsert(a); err != nil {
+			t.Fatalf("upsert %s: %v", ip, err)
+		}
+	}
+	for _, ip := range []string{"192.168.5.3", "192.168.5.4"} {
+		a := db.NewAsset(ip)
+		a.Alive = false
+		if _, err := d.Assets().Upsert(a); err != nil {
+			t.Fatalf("upsert %s: %v", ip, err)
+		}
+	}
+	// 全量
+	w := doReq(t, h, "GET", "/api/v2/assets", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":4`) {
+		t.Fatalf("全量应 4 台: %s", w.Body.String())
+	}
+	// 只看存活(只留 Alive=true, 不含未存活)
+	w = doReq(t, h, "GET", "/api/v2/assets?alive=1", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":2`) {
+		t.Fatalf("alive=1 应 2 台: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "192.168.5.3") {
+		t.Fatalf("alive=1 不应含未存活: %s", w.Body.String())
+	}
+	// 只看未存活
+	w = doReq(t, h, "GET", "/api/v2/assets?alive=0", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":2`) {
+		t.Fatalf("alive=0 应 2 台: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "192.168.5.1") {
+		t.Fatalf("alive=0 不应含存活: %s", w.Body.String())
+	}
+	// 清理未存活(返回删除数)
+	w = doReq(t, h, "DELETE", "/api/v2/assets/dead", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"deleted":2`) {
+		t.Fatalf("清理应删 2: %s", w.Body.String())
+	}
+	// 清理后只剩存活的
+	w = doReq(t, h, "GET", "/api/v2/assets", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":2`) {
+		t.Fatalf("清理后应剩 2 台存活: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "192.168.5.1") {
+		t.Fatalf("存活资产应保留: %s", w.Body.String())
+	}
+	// 二次清理: 无未存活可删(幂等)
+	w = doReq(t, h, "DELETE", "/api/v2/assets/dead", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"deleted":0`) {
+		t.Fatalf("二次清理应删 0: %s", w.Body.String())
+	}
+}
+
+// TestV2AssetHostFilter 主机口径筛选: host=1 只留 IP 字段为合法 IP 的条目。
+// 守仪表盘"资产总数(主机维度)"与资产页"共 N 台主机"对齐的契约 —— 镜像工件
+// (Trivy 按工件标识入账)被数进主机数会让两处数字对不上。
+func TestV2AssetHostFilter(t *testing.T) {
+	h, d := newV2TestEnv(t)
+	for _, ip := range []string{"192.168.6.1", "192.168.6.2"} {
+		a := db.NewAsset(ip)
+		a.Alive = true
+		if _, err := d.Assets().Upsert(a); err != nil {
+			t.Fatalf("upsert %s: %v", ip, err)
+		}
+	}
+	if _, err := d.Assets().Upsert(db.NewAsset("nginx:1.25-alpine")); err != nil {
+		t.Fatalf("upsert 工件: %v", err)
+	}
+	// 不带 host: 工件可见(列表页不隐藏 SCA 资产)
+	w := doReq(t, h, "GET", "/api/v2/assets", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":3`) {
+		t.Fatalf("全量应 3 条(含工件): %s", w.Body.String())
+	}
+	// host=1: 只留主机
+	w = doReq(t, h, "GET", "/api/v2/assets?host=1", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":2`) {
+		t.Fatalf("host=1 应 2 台主机: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "nginx:1.25-alpine") {
+		t.Fatalf("host=1 不应含工件: %s", w.Body.String())
+	}
+	// host=1 与 alive 组合(AND)
+	w = doReq(t, h, "GET", "/api/v2/assets?host=1&alive=1", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"total":2`) {
+		t.Fatalf("host=1&alive=1 应 2 台(两台均存活): %s", w.Body.String())
+	}
+}
+
 // jsonPath 从 JSON 响应中提取 data 下的路径(测试辅助, 支持数组下标如 list.0.id)。
 func jsonPath(body, path string) (string, bool) {
 	var m map[string]any

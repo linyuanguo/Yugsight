@@ -31,6 +31,11 @@ const (
 	// EngineNuclei 官方 nuclei 引擎(可选外部引擎: 内置引擎只能跑 HTTP 模板,
 	// 装官方引擎后可使用 network/dns/ssl 等更多协议; 由引擎下载模块按 nucleicore.exe 装入)
 	EngineNuclei = "nucleicore"
+	// EngineBuiltin 内置引擎(编译进二进制, 恒就绪, 永远不缺失不降级)。
+	// 2026-10-01 用户反馈: 仪表盘/引擎页只显示 4 个外部引擎"就绪", 问"内置的
+	// yugsight 引擎不是吗" —— 内置引擎此前从未出现在引擎列表里, 用户无法看到它。
+	// 计入引擎总数(5 个就绪)与外部引擎同列展示, 让"兜底引擎"可见。
+	EngineBuiltin = "yugsight"
 )
 
 // EngineStatus 单个本地引擎检测结果
@@ -43,6 +48,14 @@ type EngineStatus struct {
 	Error   string `json:"error,omitempty"`
 	// Fallback: 引擎缺失或不可用 -> 自动降级为内置引擎
 	Fallback bool `json:"fallback"`
+	// Builtin: 编译进二进制的内置引擎(恒就绪, 无外部文件依赖, 不参与降级统计)
+	Builtin bool `json:"builtin,omitempty"`
+}
+
+// builtinEngine 内置引擎条目: 编译进二进制, 恒 ok —— 与外部引擎同列展示,
+// 让用户在"引擎就绪 N/M"里看到兜底引擎(2026-10-01 用户要求计入总数)。
+func builtinEngine() EngineStatus {
+	return EngineStatus{Name: EngineBuiltin, Builtin: true, Found: true, State: "ok", Version: "内置"}
 }
 
 // NpcapStatus Npcap 抓包驱动检测结果(仅 Windows 适用)
@@ -53,7 +66,7 @@ type NpcapStatus struct {
 	Source string `json:"source,omitempty"`
 	// Version 注册表 Uninstall 键的 DisplayVersion(可能为空)
 	Version string `json:"version,omitempty"`
-	// Installer exe 同目录(项目根目录)找到的安装器路径: npcap-setup.exe 或 npcap-*.exe
+	// Installer 找到的 Npcap 安装器路径(exe 同目录或 bin/): npcap-setup.exe 或 npcap-*.exe
 	Installer string `json:"installer,omitempty"`
 }
 
@@ -127,8 +140,9 @@ func Get() *Status {
 		BinDir:    binDir(),
 		Detecting: true,
 		CheckedAt: time.Now().Format("2006-01-02 15:04:05"),
-		Engines:   make([]EngineStatus, 0, len(engineSpecs)),
+		Engines:   make([]EngineStatus, 0, len(engineSpecs)+1),
 	}
+	s.Engines = append(s.Engines, builtinEngine()) // 内置引擎恒就绪, 排首位(与外部引擎同列, 见 EngineBuiltin 注释)
 	for _, sp := range engineSpecs {
 		s.Engines = append(s.Engines, EngineStatus{Name: sp.Name, State: "detecting"})
 	}
@@ -199,8 +213,9 @@ func detect() *Status {
 		BinDir:    dir,
 		OS:        runtime.GOOS,
 		CheckedAt: time.Now().Format("2006-01-02 15:04:05"),
-		Engines:   make([]EngineStatus, 0, len(engineSpecs)),
+		Engines:   make([]EngineStatus, 0, len(engineSpecs)+1),
 	}
+	st.Engines = append(st.Engines, builtinEngine()) // 内置引擎恒就绪, 排首位(与外部引擎同列, 见 EngineBuiltin 注释)
 	st.Npcap = detectNpcap()
 	st.Java = detectJava()
 

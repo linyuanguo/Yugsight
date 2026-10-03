@@ -71,9 +71,11 @@ func Build(d *db.Database, now time.Time, opt Options) *Snapshot {
 	warn := func(msg string) { snap.Warnings = append(snap.Warnings, msg) }
 
 	// ===== 资产 =====
-	// Count/CountAlive 单遍计数, 不再全表 List() 拷贝 —— 资产表只贡献两个数字。
+	// CountHosts/CountAlive 单遍计数, 不再全表 List() 拷贝 —— 资产表只贡献两个数字。
+	// 用 CountHosts 而非 Count(): 资产表混有 SCA 工件(镜像名/路径, 非 IP),
+	// "资产总数(主机维度)"把它们数进去会与资产页"共 N 台主机"对不上。
 	if dao := d.Assets(); dao != nil {
-		if n, err := dao.Count(); err != nil {
+		if n, err := dao.CountHosts(); err != nil {
 			warn("资产查询失败: " + err.Error())
 		} else {
 			snap.Overview.Assets = n
@@ -367,12 +369,19 @@ func buildProbes(list []*db.Probe) []ProbeNode {
 			MemPercent   float64 `json:"memPercent"`
 			TasksRunning int     `json:"tasksRunning"`
 			CurrentTask  string  `json:"currentTask"`
+			// 2026-09-26: 磁盘 IO / 网络上下行(探针按指标周期上报; 老探针无此字段=0)
+			DiskReadBps  float64 `json:"diskReadBps"`
+			DiskWriteBps float64 `json:"diskWriteBps"`
+			NetUpBps     float64 `json:"netUpBps"`
+			NetDownBps   float64 `json:"netDownBps"`
 		}
 		if decodeAny(p.Load, &load) {
 			n.CPUPercent = floatPtr(load.CPUPercent)
 			n.MemPercent = floatPtr(load.MemPercent)
 			n.TasksRunning = load.TasksRunning
 			n.CurrentTask = load.CurrentTask
+			n.DiskReadBps, n.DiskWriteBps = load.DiskReadBps, load.DiskWriteBps
+			n.NetUpBps, n.NetDownBps = load.NetUpBps, load.NetDownBps
 		}
 		var ni struct {
 			Hostname  string `json:"hostname"`

@@ -162,38 +162,41 @@ func (t *Task) emitServiceRisks(host string, open []scanner.PortResult, progress
 	}
 }
 
-// portRisk 高危端口风险库(与 scanner/host.go 的 serviceRisks 保持同语义,
+// portRisk 端口风险库(与 scanner/host.go 的 serviceRisks 保持同语义,
 // 但只保留"无需进一步探测即可判定"的条目, 避免探针出现误报)。
+//
+// 级别口径同中心端(2026-09-25): "端口开放"是正常业务状态, 静态规则不做 high 判定;
+// 明文协议/常见攻击面 = medium, 纯"开放"观察 = low。
 func portRisk(port int) (severity, title, detail string) {
 	switch port {
 	case 23:
-		return "high", "Telnet 服务开放", "Telnet 明文传输账号口令, 建议改为 SSH"
+		return "medium", "Telnet 服务开放", "Telnet 明文传输账号口令, 建议改为 SSH"
 	case 21:
 		return "medium", "FTP 服务开放", "FTP 明文传输凭据; 确认是否允许匿名登录, 建议改用 SFTP"
 	case 445:
-		return "high", "SMB 文件共享开放", "SMB 是勒索病毒主要入口, 请确认已修补 MS17-010 且禁用 SMBv1"
+		return "medium", "SMB 文件共享开放", "SMB 是勒索病毒常见入口; 端口开放属正常, 请确认已修补 MS17-010 且禁用 SMBv1"
 	case 3389:
 		return "medium", "RDP 远程桌面开放", "存在爆破与 BlueKeep(CVE-2019-0708)风险, 建议启用 NLA 并限制来源"
 	case 6379:
-		return "high", "Redis 端口开放", "Redis 未授权访问可导致服务器被控, 请设置密码并限制来源"
+		return "low", "Redis 端口开放", "端口开放属正常业务状态; 请确认已设置密码(requirepass)并限制来源, 未授权访问风险高"
 	case 27017:
-		return "high", "MongoDB 端口开放", "请确认已启用认证, 否则全库数据可被直接读取"
+		return "low", "MongoDB 端口开放", "端口开放属正常业务状态; 请确认已启用认证, 否则全库数据可被直接读取"
 	case 9200:
-		return "high", "Elasticsearch 端口开放", "请确认已开启安全认证, 否则索引数据可被直接读取"
+		return "low", "Elasticsearch 端口开放", "端口开放属正常业务状态; 请确认已开启安全认证, 否则索引数据可被直接读取"
 	case 2375:
-		return "high", "Docker 未加密 API 开放", "等同于把主机 root 权限暴露到网络, 请立即关闭或改 2376+TLS"
+		return "low", "Docker API 端口开放", "端口开放可能是容器编排正常配置; 请确认已启用 TLS(2376)并限制来源, 明文 2375 等同暴露主机 root"
 	case 3306:
-		return "high", "MySQL 数据库端口开放", "数据库不应直接对外; 请限制来源并检查 root 弱口令"
+		return "low", "MySQL 数据库端口开放", "数据库端口开放属正常业务状态; 请核对访问来源限制并检查 root 弱口令"
 	case 1433:
-		return "high", "MSSQL 数据库端口开放", "数据库不应直接对外; 请限制来源并检查 sa 弱口令"
+		return "low", "MSSQL 数据库端口开放", "数据库端口开放属正常业务状态; 请核对访问来源限制并检查 sa 弱口令"
 	case 5432:
-		return "high", "PostgreSQL 端口开放", "请确认 pg_hba.conf 未对 0.0.0.0/0 开放 trust"
+		return "low", "PostgreSQL 端口开放", "端口开放属正常业务状态; 请确认 pg_hba.conf 未对 0.0.0.0/0 开放 trust"
 	case 11211:
-		return "high", "Memcached 端口开放", "未授权访问可被用于反射放大攻击, 请限制来源并绑定内网"
+		return "low", "Memcached 端口开放", "端口开放属正常业务状态; 请限制来源并绑定内网, 未授权访问可被用于反射放大攻击"
 	case 5900:
 		return "medium", "VNC 远程桌面开放", "VNC 口令易被爆破且默认无加密, 建议改用 RDP/SSH 隧道"
 	case 7001:
-		return "high", "WebLogic 端口开放", "WebLogic 历史反序列化漏洞较多, 请确认版本已升级并限制访问"
+		return "low", "WebLogic 端口开放", "端口开放属正常业务状态; WebLogic 历史反序列化漏洞较多, 请确认版本已升级并限制访问"
 	case 139, 135:
 		return "medium", "NetBIOS/MSRPC 端口开放", "常被用于横向移动与信息收集, 建议防火墙限制来源"
 	}

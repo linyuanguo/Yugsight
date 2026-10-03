@@ -65,6 +65,17 @@
 
     <!-- 添加/编辑任务 -->
     <Modal v-if="showForm" :title="formTitle" @close="closeForm">
+      <!-- 快捷模板(2026-09-29 阶段 C, 仅新建): 选模板自动带入协议/参数,
+           保存时传 templateId → 后端继承模板默认阈值到该任务(可后改) -->
+      <div class="field" v-if="!form.id && sideTemplates.length">
+        <label class="lbl">快捷模板 <span class="muted small">(选后自动带入协议与参数; 默认阈值一并继承)</span></label>
+        <select class="input" v-model="form.templateId" @change="onTplChange">
+          <option value="">不使用模板</option>
+          <option v-for="tp in sideTemplates" :key="tp.id" :value="tp.id">
+            {{ tp.name }}（{{ protoLabel(tp.protocol) }}）
+          </option>
+        </select>
+      </div>
       <div class="field">
         <label class="lbl">协议 <span class="req">*</span></label>
         <select class="input" v-model="form.protocol" :disabled="!!form.id" @change="onProtoChange">
@@ -213,12 +224,30 @@ function emptyForm() {
     authProto: '', privProto: '',
     count: 4, path: 'if:interfaces',
     hasAuthPass: false, params: {},
+    templateId: '',   // 快捷模板(仅新建; 保存时传给后端继承参数+默认阈值)
   }
 }
 
 const sideProtocols = computed(() =>
   protocols.value.filter(p => p.side === props.side && !p.notInScheduler))
 const curProto = computed(() => protocols.value.find(p => p.name === form.value.protocol))
+// 快捷模板: 只列"协议 side 与当前页一致"的模板(snmp 模板不会出现在主机侧页)
+const sideTemplates = computed(() =>
+  (status.value.templates || []).filter(tp => {
+    const p = protocols.value.find(x => x.name === tp.protocol)
+    return p && p.side === props.side
+  }))
+// 选模板: 自动带入协议 + 参数预设(icmp count / restconf path)
+function onTplChange() {
+  const tp = sideTemplates.value.find(x => x.id === form.value.templateId)
+  if (!tp) return
+  form.value.protocol = tp.protocol
+  onProtoChange()
+  if (tp.params) {
+    if (tp.params.count) form.value.count = Number(tp.params.count) || 4
+    if (tp.params.path) form.value.path = tp.params.path
+  }
+}
 
 const needCommunity = computed(() =>
   form.value.protocol === 'snmp' && form.value.authProto !== 'md5' && form.value.authProto !== 'sha')
@@ -323,6 +352,10 @@ function onProtoChange() {
   form.value.path = 'if:interfaces'
   form.value.authProto = ''
   form.value.privProto = ''
+  // 手动换协议 = 模板不再适用, 清掉(否则后端按旧模板继承参数)
+  if (!form.value.templateId || !sideTemplates.value.some(t => t.id === form.value.templateId && t.protocol === form.value.protocol)) {
+    form.value.templateId = ''
+  }
 }
 
 async function save() {
@@ -342,6 +375,7 @@ async function save() {
       authPass: form.value.authPass || undefined,
       authProto: form.value.authProto || undefined,
       privProto: form.value.privProto || undefined,
+      templateId: (form.value.id ? undefined : (form.value.templateId || undefined)),
     }
     if (form.value.protocol === 'icmp') body.params = { count: String(form.value.count || 4) }
     if (form.value.protocol === 'restconf' && form.value.path) body.params = { path: form.value.path }

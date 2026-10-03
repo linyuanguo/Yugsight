@@ -150,8 +150,8 @@
       </div>
       <p class="muted small" style="margin:0 0 8px">
         AI 参数/模板/知识库在
-        <router-link to="/settings/ai">系统配置 → AI 配置</router-link>
-        中管理; 分析结果存报告中心对应报告(原始报文 + AI 研判可同时查看)。
+        <router-link to="/license?tab=ai">授权与模型 → AI 配置</router-link>
+        中管理(仅管理员); 分析结果存报告中心对应报告(原始报文 + AI 研判可同时查看)。
       </p>
       <pre class="code-block cap-ai" v-if="analysisText">{{ analysisText }}</pre>
     </div>

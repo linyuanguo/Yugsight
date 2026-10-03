@@ -83,6 +83,38 @@ func (c Config) TaskTimeout(t Task) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
+// AlertsFor 指定任务生效的告警阈值(节点级覆盖 + 全局兜底)。
+//
+// 口径(借鉴 Zabbix 全局宏/主机宏覆盖): 先取全局默认(WithDefaults 回填),
+// 再叠加 PerNode[taskID] 里**非 0** 的字段 —— 只写需要覆盖的字段,
+// 0 = "没配, 跟全局走"。这样"把某节点 CPU 阈值从 90 改回默认"不需要
+// 记住全局值, 直接删掉该字段(或整条删除)即可。
+func (c Config) AlertsFor(taskID string) Alerts {
+	a := c.WithDefaults().Alerts
+	ov, ok := c.PerNode[taskID]
+	if !ok {
+		return a
+	}
+	if ov.CPUPct > 0 {
+		a.CPUPct = ov.CPUPct
+	}
+	if ov.MemPct > 0 {
+		a.MemPct = ov.MemPct
+	}
+	// RTTMs 全局默认本就是 0(=关), 无法用 0 区分"没配"与"显式关" ——
+	// 维持"非 0 才覆盖"口径: 想给某节点单独开时延告警, 填正数即可。
+	if ov.RTTMs > 0 {
+		a.RTTMs = ov.RTTMs
+	}
+	if ov.LossPct > 0 {
+		a.LossPct = ov.LossPct
+	}
+	if ov.FailStreak > 0 {
+		a.FailStreak = ov.FailStreak
+	}
+	return a
+}
+
 // EnabledProtocols 协议可用性清单(页面展示 + 建任务时的合法性校验共用)。
 //
 // 注意: agent 协议在清单里但 NotInScheduler=true —— 它由 probe 框架管理,

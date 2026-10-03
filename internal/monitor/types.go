@@ -88,7 +88,10 @@ type Sample struct {
 	SysName   string        `json:"sysName,omitempty"`
 	UptimeSec int64         `json:"uptimeSec"` // sysUpTime 百分秒 → 秒
 	IfNumber  int64         `json:"ifNumber"`
-	Ifaces    []IfaceSample `json:"ifaces,omitempty"`
+	// MAC 设备首个 up 接口的物理地址(ifPhysAddress, 2026-09-27 监控页"MAC 地址"列)。
+	// 设备无 MAC 信息 / 接口全 down 时为空(页面显示 '-'), 不是采集失败。
+	MAC     string        `json:"mac,omitempty"`
+	Ifaces  []IfaceSample `json:"ifaces,omitempty"`
 	CpuLoad   int64         `json:"cpuLoad"`  // 首条 hrProcessorLoad(%), 0 = 设备不支持
 	MemTotal  int64         `json:"memTotal"` // 首条 RAM 的 hrStorageSize*units(字节), 0 = 不支持
 	MemUsed   int64         `json:"memUsed"`

@@ -130,13 +130,12 @@ func TestAITestEndpointContract(t *testing.T) {
 	}
 }
 
-// TestAITestSavesOnlyOnSuccess "测试并保存"契约:
-//  1. 连通通过 → saved=true, settings.json 的 ai 节落盘且 enabled=true;
-//  2. 连通失败 → saved=false, 不写任何配置(保存一个连不通的配置, 用户会
-//     以为"存了"其实用不了, 比不保存更糟)。
-//
-// 这是按钮语义的核心契约: 改回"无条件保存"或"测试也保存"都会静默破坏。
-func TestAITestSavesOnlyOnSuccess(t *testing.T) {
+// TestAITestNeverSaves "测试连通只验证、永不落盘"契约(2026-09-26 口径):
+//  职责分离后 /api/ai/test 只验证连通 + 回带模型列表, **saved 恒 false、
+//  绝不写 settings.json**(落盘交给 /api/ai/config 的"保存"按钮)。
+//  回归点: 若有人改回"测试通过顺手保存", 用户在"测连通"时配置就被静默写入
+//  (且测的是临时地址, 保存下来反而是坏配置) —— 本测试挡住这种回退。
+func TestAITestNeverSaves(t *testing.T) {
 	dir := t.TempDir()
 	setSettingsTestPath(filepath.Join(dir, "settings.json"))
 	t.Cleanup(func() {
@@ -145,7 +144,7 @@ func TestAITestSavesOnlyOnSuccess(t *testing.T) {
 		initAI(false)
 	})
 
-	// 1) 可达: 保存
+	// 1) 可达: 验证通过(ok=true), 但 saved 必须 false 且不写 settings.json
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		_, _ = rw.Write([]byte(`{"data":[{"id":"m1"}]}`))
@@ -158,53 +157,41 @@ func TestAITestSavesOnlyOnSuccess(t *testing.T) {
 		t.Fatalf("应 200, 实际 %d: %s", w.Code, w.Body.String())
 	}
 	var res struct {
+		OK    bool `json:"ok"`
 		Saved bool `json:"saved"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatalf("响应解析失败: %v", err)
 	}
-	if !res.Saved {
-		t.Fatalf("连通通过应保存, 响应: %s", w.Body.String())
+	if !res.OK {
+		t.Errorf("可达应 ok=true, 响应: %s", w.Body.String())
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "settings.json"))
-	if err != nil {
-		t.Fatalf("settings.json 应落盘: %v", err)
+	if res.Saved {
+		t.Errorf("测试端点不得落盘(saved 恒 false), 响应: %s", w.Body.String())
 	}
-	var all map[string]json.RawMessage
-	if err := json.Unmarshal(data, &all); err != nil {
-		t.Fatalf("settings.json 不是合法 JSON: %v", err)
-	}
-	var aiSec struct {
-		Enabled bool   `json:"enabled"`
-		Model   string `json:"model"`
-	}
-	if err := json.Unmarshal(all["ai"], &aiSec); err != nil {
-		t.Fatalf("ai 节应存在: %v (内容: %s)", err, string(data))
-	}
-	if !aiSec.Enabled || aiSec.Model != "m1" {
-		t.Errorf("ai 节应 enabled=true 且 model=m1: %s", string(data))
+	if _, err := os.Stat(filepath.Join(dir, "settings.json")); !os.IsNotExist(err) {
+		t.Errorf("测试端点不得写 settings.json (err=%v)", err)
 	}
 
-	// 2) 不可达(服务端 500): 不保存
+	// 2) 不可达(服务端 500): ok=false, saved 同样 false
 	bad := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		http.Error(rw, "boom", http.StatusInternalServerError)
 	}))
 	defer bad.Close()
-	dir2 := t.TempDir()
-	setSettingsTestPath(filepath.Join(dir2, "settings.json"))
 	w2 := httptest.NewRecorder()
 	handleAITest(w2, httptest.NewRequest(http.MethodPost, "/api/ai/test",
 		bytes.NewReader([]byte(`{"apiBase":"`+bad.URL+`"}`))))
 	var res2 struct {
+		OK    bool `json:"ok"`
 		Saved bool `json:"saved"`
 	}
 	if err := json.Unmarshal(w2.Body.Bytes(), &res2); err != nil {
 		t.Fatalf("响应解析失败: %v", err)
 	}
-	if res2.Saved {
-		t.Errorf("连通失败不应保存, 响应: %s", w2.Body.String())
+	if res2.OK {
+		t.Errorf("不可达应 ok=false, 响应: %s", w2.Body.String())
 	}
-	if _, err := os.Stat(filepath.Join(dir2, "settings.json")); !os.IsNotExist(err) {
-		t.Errorf("连通失败时不应写 settings.json (err=%v)", err)
+	if res2.Saved {
+		t.Errorf("不可达更不得落盘, 响应: %s", w2.Body.String())
 	}
 }

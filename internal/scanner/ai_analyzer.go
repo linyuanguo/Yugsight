@@ -321,8 +321,13 @@ func NewAIAnalyzer(c AIModelConfig) *AIAnalyzer {
 	c = normalizeConfig(c)
 	applyConcurrency(c.MaxConcurrency)
 	return &AIAnalyzer{
-		cfg:    c,
-		client: &http.Client{Timeout: time.Duration(c.TimeoutSec) * time.Second},
+		cfg: c,
+		// 不设置 http.Client.Timeout: 它会覆盖"建立连接 + 读取整个响应体(含 SSE 流式全程)",
+		// 长回答的流式读取一旦超过 TimeoutSec(默认 60s)就会在中途被切断, 表现为
+		// "读取 LLM 流失败: context deadline exceeded (Client.Timeout or ...)".
+		// 改用请求 context 统一控制整体截止(见 handleAIAnalyze 的分析时长 / runOnce 的
+		// TimeoutSec ctx), 既支持长流式回答, 又能防挂死。
+		client: &http.Client{},
 	}
 }
 
