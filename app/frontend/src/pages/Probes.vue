@@ -1,53 +1,53 @@
 <template>
   <div>
-    <PageHeader title="探针管理" desc="分布式扫描节点">
-      <button class="btn sm" :disabled="loading" @click="load"><span class="spinner" v-if="loading"></span> 刷新</button>
-      <button class="btn sm" @click="openDownload">下载探针</button>
-      <button class="btn sm primary" :disabled="!assignReady" @click="showAssign = !showAssign">下发扫描任务</button>
+    <PageHeader :title="t('pb.title')" :desc="t('pb.desc')">
+      <button class="btn sm" :disabled="loading" @click="load"><span class="spinner" v-if="loading"></span> {{ t('common.refresh') }}</button>
+      <button class="btn sm" @click="openDownload">{{ t('pb.download') }}</button>
+      <button class="btn sm primary" :disabled="!assignReady" @click="showAssign = !showAssign">{{ t('pb.assignTask') }}</button>
     </PageHeader>
 
     <!-- 未启用: 一行说明 + 一键开启(写 settings.json, 重启生效) + 部署指引 -->
     <div class="alert info" v-if="status && !status.centerEnabled && !status.clientEnabled">
-      分布式探针未启用(默认关闭, 不影响单机扫描)。
+      {{ t('pb.disIntro') }}
       <button class="btn sm primary" style="margin-left:10px" :disabled="enabling" @click="enableProbe">
-        {{ enabling ? '开启中...' : '一键开启' }}
+        {{ enabling ? t('pb.enabling') : t('pb.enable') }}
       </button>
-      <a class="small" href="/api/v2/probe/agent/install" target="_blank">部署指引</a>
+      <a class="small" href="/api/v2/probe/agent/install" target="_blank">{{ t('pb.guide') }}</a>
       <span class="muted small" v-if="enableMsg" style="margin-left:8px">{{ enableMsg }}</span>
       <details style="margin-top:8px">
-        <summary class="muted small" style="cursor:pointer">高级: 手动配置 / 命令行参数</summary>
+        <summary class="muted small" style="cursor:pointer">{{ t('pb.advCfg') }}</summary>
         <div class="muted small" style="margin-top:6px">
-          在 exe 同目录 <span class="mono">settings.json</span> 加 <span class="mono">probe</span> 节,
-          或命令行 <span class="mono">-probe=center</span>(中心端) / <span class="mono">-probe=both</span>(同机联调)。
-          被扫描机器部署独立探针 <span class="mono">yugsight-agent</span>(点右上角<b>下载探针</b>)。
+          {{ t('pb.advIn') }} <span class="mono">settings.json</span> {{ t('pb.advAdd') }} <span class="mono">probe</span> {{ t('pb.advSec') }},
+          {{ t('pb.advOr') }} <span class="mono">-probe=center</span>{{ t('pb.advCenter') }} / <span class="mono">-probe=both</span>{{ t('pb.advBoth') }}。
+          {{ t('pb.advDeploy') }} <span class="mono">yugsight-agent</span>({{ t('pb.advDl') }}<b>{{ t('pb.download') }}</b>{{ t('pb.advDlEnd') }})。
         </div>
       </details>
     </div>
     <div class="alert info" v-else-if="status && status.clientEnabled && !status.clientOnline" style="margin-bottom:14px">
-      探针端已启用但尚未连上中心端({{ status.centerAddr || '-' }}), 正在自动重连...
+      {{ t('pb.clientOffline', { addr: status.centerAddr || '-' }) }}
     </div>
 
     <!-- 状态卡 -->
     <div class="grid cols-4">
       <div class="card">
-        <div class="stat-label">中心端</div>
+        <div class="stat-label">{{ t('pb.centerCard') }}</div>
         <div class="stat-value" style="font-size:20px">{{ centerText }}</div>
-        <div class="stat-sub">TCP 长连接监听</div>
+        <div class="stat-sub">{{ t('pb.centerSub') }}</div>
       </div>
       <div class="card">
-        <div class="stat-label">在线探针</div>
+        <div class="stat-label">{{ t('pb.probeCard') }}</div>
         <div class="stat-value" style="font-size:20px">{{ online.filter(p => p.online).length }} / {{ total }}</div>
-        <div class="stat-sub">已登记 {{ total }} 个节点</div>
+        <div class="stat-sub">{{ t('pb.regNodes', { n: total }) }}</div>
       </div>
       <div class="card">
-        <div class="stat-label">本机角色</div>
+        <div class="stat-label">{{ t('pb.roleCard') }}</div>
         <div class="stat-value" style="font-size:20px">{{ roleText }}</div>
         <div class="stat-sub mono">{{ status && status.clientId ? status.clientId : '-' }}</div>
       </div>
       <div class="card">
-        <div class="stat-label">协议版本</div>
+        <div class="stat-label">{{ t('pb.protoVer') }}</div>
         <div class="stat-value" style="font-size:20px">{{ status ? status.protocol : '-' }}</div>
-        <div class="stat-sub">中心/探针需一致</div>
+        <div class="stat-sub">{{ t('pb.protoSame') }}</div>
       </div>
     </div>
 
@@ -56,25 +56,25 @@
          保存后各探针在下次注册(重连/重启)时生效。 -->
     <div class="card" v-if="status && status.centerEnabled">
       <div class="card-title">
-        探针上报参数
-        <span class="sub">中心端统一下发 · 保存后各探针下次注册(重连/重启)时生效</span>
+        {{ t('pb.reportCfg') }}
+        <span class="sub">{{ t('pb.reportCfgSub') }}</span>
       </div>
       <div class="form-row">
         <div class="field" style="max-width:150px">
-          <label class="label">心跳间隔 (秒)</label>
+          <label class="label">{{ t('pb.heartbeat') }}</label>
           <input class="input mono" type="number" v-model.number="cfgForm.heartbeatSec" min="3" max="600">
         </div>
         <div class="field" style="max-width:170px">
-          <label class="label">指标上报周期 (秒)</label>
+          <label class="label">{{ t('pb.metrics') }}</label>
           <input class="input mono" type="number" v-model.number="cfgForm.metricsSec" min="5" max="3600"
-            title="CPU/内存/磁盘IO/网络上下行 累积 N 秒上报一次(心跳保活不受影响)">
+            :title="t('pb.metricsTip')">
         </div>
         <div class="field" style="max-width:180px">
-          <label class="label">离线判定 (秒, 0=3倍心跳)</label>
+          <label class="label">{{ t('pb.offlineSec') }}</label>
           <input class="input mono" type="number" v-model.number="cfgForm.offlineSec" min="0">
         </div>
         <div class="field" style="max-width:150px; align-self:flex-end">
-          <button class="btn primary" :disabled="savingCfg" @click="saveCfg">{{ savingCfg ? '保存中...' : '保存并下发' }}</button>
+          <button class="btn primary" :disabled="savingCfg" @click="saveCfg">{{ savingCfg ? t('pb.saving') : t('pb.saveCfg') }}</button>
         </div>
         <span class="muted small" style="align-self:flex-end">{{ cfgNote }}</span>
       </div>
@@ -84,28 +84,28 @@
          这里是调度器视角的"此刻能不能接活" —— 槽位占用/负载/能力/拒绝原因。 -->
     <div class="card">
       <div class="card-title">
-        执行节点负载
-        <span class="sub">调度器视角 · 槽位 / 负载 / 能力 / 接纳判定</span>
+        {{ t('pb.schedTitle') }}
+        <span class="sub">{{ t('pb.schedSub') }}</span>
         <div class="spacer"></div>
-        <span class="chip" :class="schedOn ? 'on' : 'off'">{{ schedOn ? '调度已启用' : '调度未启用' }}</span>
-        <span class="muted small" v-if="schedNodes.length">全局并发上限 {{ schedCapacity || '-' }}</span>
+        <span class="chip" :class="schedOn ? 'on' : 'off'">{{ schedOn ? t('pb.schedOn') : t('pb.schedOff') }}</span>
+        <span class="muted small" v-if="schedNodes.length">{{ t('pb.schedCap', { n: schedCapacity || '-' }) }}</span>
       </div>
       <div v-if="!schedNodes.length" class="empty" style="min-height:80px">
-        暂无执行节点(启用调度并接入探针后此处显示各节点槽位与负载)
+        {{ t('pb.noSchedNode') }}
       </div>
       <div class="table-wrap" v-else>
         <table class="table">
           <thead>
-            <tr><th>节点</th><th>类型</th><th>在线</th><th>槽位</th><th>CPU</th><th>内存</th><th>执行中</th><th>能力</th><th>接纳判定</th></tr>
+            <tr><th>{{ t('pb.sNode') }}</th><th>{{ t('pb.cType') }}</th><th>{{ t('pb.sOnline') }}</th><th>{{ t('pb.sSlots') }}</th><th>CPU</th><th>{{ t('pb.sMem') }}</th><th>{{ t('pb.sRunning') }}</th><th>{{ t('pb.cCaps') }}</th><th>{{ t('pb.sAccept') }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="n in schedNodes" :key="n.id">
               <td>
-                <div class="small">{{ n.name || (n.kind === 'local' ? '中心本地' : n.id) }}</div>
+                <div class="small">{{ n.name || (n.kind === 'local' ? t('pb.kLocal') : n.id) }}</div>
                 <div class="muted small mono">{{ n.id }}</div>
               </td>
-              <td class="small">{{ NODE_KIND[n.kind] || n.kind || '-' }}</td>
-              <td><span class="badge" :class="n.online ? 'st-success' : 'st-failed'">{{ n.online ? '在线' : '离线' }}</span></td>
+              <td class="small">{{ t(NODE_KIND[n.kind] || n.kind || '-') }}</td>
+              <td><span class="badge" :class="n.online ? 'st-success' : 'st-failed'">{{ n.online ? t('pb.online') : t('pb.offline') }}</span></td>
               <!-- 槽位是调度器真正关心的量: 探针自报的 tasksRunning 只作交叉校验 -->
               <td class="mono small">{{ n.running || 0 }} / {{ n.max || '-' }}</td>
               <td class="mono small">{{ pct(n.cpuPercent) }}</td>
@@ -116,7 +116,7 @@
                 <span class="muted small" v-if="!capListOf(n.capabilities).length">-</span>
               </td>
               <td>
-                <span class="badge st-success" v-if="!n.reject">可接纳</span>
+                <span class="badge st-success" v-if="!n.reject">{{ t('pb.acceptable') }}</span>
                 <span class="badge st-failed" v-else :title="n.reject.msg">{{ n.reject.msg }}</span>
               </td>
             </tr>
@@ -127,26 +127,26 @@
 
     <!-- 下发任务 -->
     <div class="card" v-if="showAssign">
-      <div class="card-title">下发扫描任务到探针 <span class="sub">任务经中心端转发, 执行由探针完成, 结果回传落库</span></div>
+      <div class="card-title">{{ t('pb.assignTitle') }} <span class="sub">{{ t('pb.assignSub') }}</span></div>
       <div class="form-row">
         <div class="field" style="max-width:240px">
-          <label class="label">目标探针 *</label>
+          <label class="label">{{ t('pb.targetProbe') }} *</label>
           <select class="select" v-model="assign.probeId">
-            <option value="">请选择在线探针</option>
+            <option value="">{{ t('pb.pickOnline') }}</option>
             <option v-for="p in onlineProbes" :key="p.id" :value="p.id">{{ p.name || p.id }} ({{ p.addr || '-' }})</option>
           </select>
         </div>
         <div class="field" style="max-width:150px">
-          <label class="label">类型</label>
+          <label class="label">{{ t('pb.cType') }}</label>
           <select class="select" v-model="assign.type">
-            <option value="port">端口扫描</option>
-            <option value="ip">IP 存活</option>
-            <option value="web">Web 漏洞</option>
-            <option value="host">主机扫描</option>
+            <option value="port">{{ t('pb.kPort') }}</option>
+            <option value="ip">{{ t('pb.kIp') }}</option>
+            <option value="web">{{ t('pb.kWeb') }}</option>
+            <option value="host">{{ t('pb.kHost') }}</option>
             <!-- 2026-09-26: 镜像/容器远程扫描(探针端 trivy 执行, 探针装 trivy+Docker 即可) -->
-            <option value="image">镜像/容器 (trivy)</option>
+            <option value="image">{{ t('pb.kImage') }}</option>
             <!-- 2026-09-27: ARP 异常监测(环路/IP 冲突/MAC 漂移), 目标是探针本机网卡 -->
-            <option value="arp">ARP 异常监测</option>
+            <option value="arp">{{ t('pb.kArp') }}</option>
           </select>
         </div>
         <div class="field">
@@ -154,37 +154,36 @@
           <input class="input mono" v-model.trim="assign.target" :placeholder="assignTargetPh" @keyup.enter="doAssign">
         </div>
         <div class="field" style="max-width:180px" v-if="assign.type === 'port'">
-          <label class="label">端口 (可选)</label>
-          <input class="input mono" v-model.trim="assign.ports" placeholder="空 = 常用端口">
+          <label class="label">{{ t('pb.portsOpt') }}</label>
+          <input class="input mono" v-model.trim="assign.ports" :placeholder="t('pb.portsPh')">
         </div>
         <!-- 2026-09-26: 探针继承中心端漏扫 —— 主机/Web 可带 nuclei 参数(SCA 可带 trivy 参数) -->
         <div class="field" style="max-width:160px" v-if="assign.type === 'host' || assign.type === 'web'">
-          <label class="label">漏扫引擎</label>
+          <label class="label">{{ t('pb.scanEngine') }}</label>
           <div style="display:flex; gap:10px; padding-top:2px">
             <label class="checkbox"><input type="checkbox" v-model="assign.enableNuclei"> nuclei</label>
-            <input class="input mono" v-model.trim="assign.nucleiTags" placeholder="标签(可选) cve,c..." style="width:120px">
+            <input class="input mono" v-model.trim="assign.nucleiTags" :placeholder="t('pb.tagsPh')" style="width:120px">
           </div>
         </div>
         <div class="field" style="max-width:200px" v-if="assign.type === 'image'">
-          <label class="label">trivy 参数 (可选)</label>
-          <input class="input mono" v-model.trim="assign.trivyArgs" placeholder="如 --scanners misconfig,secret">
+          <label class="label">{{ t('pb.trivyArgs') }}</label>
+          <input class="input mono" v-model.trim="assign.trivyArgs" placeholder="--scanners misconfig,secret">
         </div>
         <!-- 2026-09-27: ARP 异常监测 —— 目标=网卡名(local=自动选), 另选监测时长 -->
         <div class="field" style="max-width:150px" v-if="assign.type === 'arp'">
-          <label class="label">监测时长 (秒)</label>
+          <label class="label">{{ t('pb.arpDuration') }}</label>
           <input class="input mono" type="number" v-model.number="assign.arpDuration" min="10" max="600">
         </div>
         <div class="field" style="max-width:120px; align-self:flex-end">
           <button class="btn primary" style="width:100%" :disabled="assigning" @click="doAssign">
-            {{ assigning ? '下发中...' : '下发' }}
+            {{ assigning ? t('pb.assigning') : t('pb.assign') }}
           </button>
         </div>
       </div>
       <div class="login-err" style="text-align:left">{{ assignErr }}</div>
       <!-- 2026-09-27: ARP 监测说明(能力依赖 + 结果去向, 用户口径"要做说明") -->
       <div class="muted small" v-if="assign.type === 'arp'" style="margin-top:8px">
-        探针在本机网卡上抓 ARP 帧监测 N 秒, 检测三类异常: IP 冲突(同一 IP 多个 MAC 同时声称, 高危) / MAC 漂移(IP 对应 MAC 切换, 中危) / 环路(同一 ARP 请求短窗口内反复出现, 高危)。
-        需探针具备抓包能力(Windows 装 Npcap / Linux 需 root 权限, 能力列带 arpwatch 标记的探针可用); 结果自动进漏洞表、扫描历史与原始报告。
+        {{ t('pb.arpNote') }}
       </div>
       <div class="muted small" v-if="assignMsg" style="margin-top:8px">{{ assignMsg }}</div>
     </div>
@@ -192,84 +191,84 @@
     <!-- 探针列表 -->
     <div class="card">
       <div class="toolbar">
-        <span class="muted small">探针节点列表</span>
-        <button class="btn sm" @click="load"><span class="spinner" v-if="loading"></span> 刷新</button>
+        <span class="muted small">{{ t('pb.listTitle') }}</span>
+        <button class="btn sm" @click="load"><span class="spinner" v-if="loading"></span> {{ t('common.refresh') }}</button>
         <div class="spacer"></div>
-        <label class="checkbox"><input type="checkbox" v-model="onlyOnline"> 仅在线</label>
+        <label class="checkbox"><input type="checkbox" v-model="onlyOnline"> {{ t('pb.onlyOnline') }}</label>
       </div>
 
       <div class="table-wrap" v-if="displayList.length">
         <table class="table">
           <thead>
             <tr>
-              <th>状态</th><th>探针 ID</th><th>名称</th>
+              <th>{{ t('pb.cStatus') }}</th><th>{{ t('pb.cId') }}</th><th>{{ t('pb.cName') }}</th>
               <!-- 2026-09-27: IP/MAC 字段补充(注册时上报的 nodeInfo.netIfaces, 取首个带地址的网卡) -->
-              <th>IP 地址</th><th>MAC 地址</th>
-              <th>系统</th><th>版本</th><th>地址</th>
-              <th>能力</th><th>最近心跳</th><th>操作</th>
+              <th>IP</th><th>MAC</th>
+              <th>{{ t('pb.cOs') }}</th><th>{{ t('pb.cVer') }}</th><th>{{ t('pb.cAddr') }}</th>
+              <th>{{ t('pb.cCaps') }}</th><th>{{ t('pb.cHeart') }}</th><th>{{ t('pb.cOp') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in displayList" :key="p.id">
+            <tr v-for="pg in displayList" :key="pg.id">
               <td>
-                <span class="badge" :class="p.online ? 'st-success' : 'st-failed'">{{ p.online ? '在线' : '离线' }}</span>
+                <span class="badge" :class="pg.online ? 'st-success' : 'st-failed'">{{ pg.online ? t('pb.online') : t('pb.offline') }}</span>
               </td>
-              <td class="mono small">{{ p.id }}</td>
-              <td class="small">{{ p.name || '-' }}</td>
-              <td class="mono small" :title="'网卡: ' + nicText(p)">{{ probeIP(p) || '-' }}</td>
-              <td class="mono small">{{ probeMac(p) || '-' }}</td>
-              <td class="small mono">{{ osText(p) }}</td>
+              <td class="mono small">{{ pg.id }}</td>
+              <td class="small">{{ pg.name || '-' }}</td>
+              <td class="mono small" :title="t('pb.nicWord') + ' ' + nicText(pg)">{{ probeIP(pg) || '-' }}</td>
+              <td class="mono small">{{ probeMac(pg) || '-' }}</td>
+              <td class="small mono">{{ osText(pg) }}</td>
               <td class="mono small">
                 <!-- 版本不一致时标红并给提示: 探针会在下次注册时自动更新(中心端已在
                      注册应答里下发更新指令), 用户看到红色只需知道"它会自己修好"，
                      不必手工去替换文件。 -->
-                <span v-if="verState(p) === 'diff'" class="badge st-failed"
-                      :title="'版本偏旧, 下次注册时自动更新至 ' + centerAgentVer">
-                  {{ p.version || '未知' }} ↑{{ centerAgentVer }}
+                <span v-if="verState(pg) === 'diff'" class="badge st-failed"
+                      :title="t('pb.verOld') + ' ' + centerAgentVer">
+                  {{ pg.version || t('pb.unknown') }} ↑{{ centerAgentVer }}
                 </span>
-                <span v-else-if="verState(p) === 'same'">{{ p.version }}</span>
-                <span v-else class="muted">{{ p.version || '-' }}</span>
+                <span v-else-if="verState(pg) === 'same'">{{ pg.version }}</span>
+                <span v-else class="muted">{{ pg.version || '-' }}</span>
               </td>
               <td>
-                <span class="badge" v-for="c in capList(p)" :key="c" style="margin-right:4px">{{ c }}</span>
-                <span class="muted small" v-if="!capList(p).length">-</span>
+                <span class="badge" v-for="c in capList(pg)" :key="c" style="margin-right:4px">{{ c }}</span>
+                <span class="muted small" v-if="!capList(pg).length">-</span>
               </td>
-              <td class="muted small mono">{{ fmtDT(p.lastSeenAt) }}</td>
+              <td class="muted small mono">{{ fmtDT(pg.lastSeenAt) }}</td>
               <td>
                 <div class="row-actions">
-                  <button class="btn xs" @click="openDetail(p)">详情</button>
-                  <button class="btn xs" :disabled="!p.online" @click="quickAssign(p)">下发</button>
-                  <button class="btn xs danger" :disabled="p.online" :title="p.online ? '在线探针需先停止探针进程' : ''" @click="del(p)">移除</button>
+                  <button class="btn xs" @click="openDetail(pg)">{{ t('pb.detail') }}</button>
+                  <button class="btn xs" :disabled="!pg.online" @click="quickAssign(pg)">{{ t('pb.assign') }}</button>
+                  <button class="btn xs danger" :disabled="pg.online" :title="pg.online ? t('pb.remOnlineTip') : ''" @click="del(pg)">{{ t('pb.remove') }}</button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <Empty v-else text="暂无探针节点(请在被控机放置 probe.json 并启动程序)" />
+      <Empty v-else :text="t('pb.noProbes')" />
     </div>
 
     <!-- 本机探针端状态 -->
     <div class="grid cols-2" v-if="status && status.clientEnabled">
       <div class="card">
-        <div class="card-title">本机探针端 <span class="sub">作为探针连接中心端</span></div>
+        <div class="card-title">{{ t('pb.localTitle') }} <span class="sub">{{ t('pb.localSub') }}</span></div>
         <div class="kv">
-          <div class="k">节点 ID</div><div class="v mono">{{ status.clientId || '-' }}</div>
-          <div class="k">中心端地址</div><div class="v mono">{{ status.centerAddr || '-' }}</div>
-          <div class="k">连接状态</div>
+          <div class="k">{{ t('pb.nodeId') }}</div><div class="v mono">{{ status.clientId || '-' }}</div>
+          <div class="k">{{ t('pb.centerAddr') }}</div><div class="v mono">{{ status.centerAddr || '-' }}</div>
+          <div class="k">{{ t('pb.connStatus') }}</div>
           <div class="v">
-            <span class="badge" :class="status.clientOnline ? 'st-success' : 'st-failed'">{{ status.clientOnline ? '已连接' : '重连中' }}</span>
+            <span class="badge" :class="status.clientOnline ? 'st-success' : 'st-failed'">{{ status.clientOnline ? t('pb.connected') : t('pb.reconnecting') }}</span>
           </div>
         </div>
       </div>
       <div class="card">
-        <div class="card-title">节点信息上报 <span class="sub">注册时自动采集</span></div>
+        <div class="card-title">{{ t('pb.infoTitle') }} <span class="sub">{{ t('pb.infoSub') }}</span></div>
         <div class="kv">
-          <div class="k">操作系统</div><div class="v mono">{{ myInfo.os }} {{ myInfo.arch }}</div>
-          <div class="k">内核版本</div><div class="v mono small">{{ myInfo.osVersion || '-' }}</div>
-          <div class="k">CPU / 内存</div><div class="v small">{{ myInfo.cpuCores || 0 }} 核 / {{ mb(myInfo.memTotal) }} MB</div>
+          <div class="k">{{ t('pb.cOs') }}</div><div class="v mono">{{ myInfo.os }} {{ myInfo.arch }}</div>
+          <div class="k">{{ t('pb.kernelVer') }}</div><div class="v mono small">{{ myInfo.osVersion || '-' }}</div>
+          <div class="k">{{ t('pb.cpuMem') }}</div><div class="v small">{{ myInfo.cpuCores || 0 }} {{ t('pb.cores') }} / {{ mb(myInfo.memTotal) }} MB</div>
           <div class="k">Npcap</div>
-          <div class="v"><span class="badge" :class="myInfo.npcapInstalled ? 'st-success' : 'st-failed'">{{ myInfo.npcapInstalled ? '已安装' : '未安装' }}</span></div>
+          <div class="v"><span class="badge" :class="myInfo.npcapInstalled ? 'st-success' : 'st-failed'">{{ myInfo.npcapInstalled ? t('pb.installed') : t('pb.notInstalled') }}</span></div>
         </div>
       </div>
     </div>
@@ -280,84 +279,84 @@
         <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 探针/状态选项由
              后端按全量任务聚合回带(不再用探针注册表全量; 已删探针的历史任务按 ID 仍可筛) -->
         <select class="select" v-model="taskProbeId" @change="loadTasks">
-          <option value="">全部探针任务</option>
+          <option value="">{{ t('pb.allTasks') }}</option>
           <option v-for="p in taskProbeOpts" :key="p.id" :value="p.id">{{ probeLabel(p.id) }} ({{ p.count }})</option>
         </select>
         <select class="select" v-model="taskStatus" @change="loadTasks">
-          <option value="">全部状态</option>
-          <option v-for="s in taskStatusOpts" :key="s.id" :value="s.id">{{ TASK_STATUS[s.id] || s.id }} ({{ s.count }})</option>
+          <option value="">{{ t('pb.allStatus') }}</option>
+          <option v-for="s in taskStatusOpts" :key="s.id" :value="s.id">{{ t(TASK_STATUS[s.id] || s.id) }} ({{ s.count }})</option>
         </select>
-        <button class="btn sm" @click="loadTasks"><span class="spinner" v-if="taskLoading"></span> 刷新</button>
+        <button class="btn sm" @click="loadTasks"><span class="spinner" v-if="taskLoading"></span> {{ t('common.refresh') }}</button>
         <div class="spacer"></div>
-        <span class="muted small">共 {{ taskTotal }} 条探针任务</span>
+        <span class="muted small">{{ t('pb.taskTotal', { n: taskTotal }) }}</span>
       </div>
       <div class="table-wrap" v-if="tasks.length">
         <table class="table">
           <thead>
-            <tr><th>任务 ID</th><th>探针</th><th>类型</th><th>目标</th><th>状态</th><th>进度</th><th>发现</th><th>耗时</th><th>操作</th></tr>
+            <tr><th>{{ t('pb.tId') }}</th><th>{{ t('pb.tProbe') }}</th><th>{{ t('pb.cType') }}</th><th>{{ t('pb.tTarget') }}</th><th>{{ t('pb.cStatus') }}</th><th>{{ t('pb.tProgress') }}</th><th>{{ t('pb.tFinding') }}</th><th>{{ t('pb.tDuration') }}</th><th>{{ t('pb.cOp') }}</th></tr>
           </thead>
           <tbody>
-            <tr v-for="t in tasks" :key="t.id">
-              <td class="mono small">{{ t.id }}</td>
-              <td class="small">{{ t.probeNode || '-' }}</td>
-              <td class="small">{{ TASK_KIND[t.kind] || t.kind }}</td>
-              <td class="mono small" :title="t.target">{{ t.target }}</td>
-              <td><span class="badge" :class="taskClass(t.status)">{{ TASK_STATUS[t.status] || t.status }}</span></td>
-              <td class="small muted" :title="t.progress">{{ t.progress || '-' }}</td>
-              <td class="small">{{ t.findingNum || 0 }}</td>
-              <td class="small mono">{{ t.durationMs ? (t.durationMs / 1000).toFixed(1) + 's' : '-' }}</td>
+            <tr v-for="tk in tasks" :key="tk.id">
+              <td class="mono small">{{ tk.id }}</td>
+              <td class="small">{{ tk.probeNode || '-' }}</td>
+              <td class="small">{{ t(TASK_KIND[tk.kind] || tk.kind) }}</td>
+              <td class="mono small" :title="tk.target">{{ tk.target }}</td>
+              <td><span class="badge" :class="taskClass(tk.status)">{{ t(TASK_STATUS[tk.status] || tk.status) }}</span></td>
+              <td class="small muted" :title="tk.progress">{{ tk.progress || '-' }}</td>
+              <td class="small">{{ tk.findingNum || 0 }}</td>
+              <td class="small mono">{{ tk.durationMs ? (tk.durationMs / 1000).toFixed(1) + 's' : '-' }}</td>
               <td>
                 <div class="row-actions">
-                  <button class="btn xs" v-if="t.status === 'success' || t.status === 'failed'" @click="openResult(t)">结果</button>
-                  <button class="btn xs danger" v-if="t.status === 'sent' || t.status === 'running'" @click="cancelTask(t)">取消</button>
+                  <button class="btn xs" v-if="tk.status === 'success' || tk.status === 'failed'" @click="openResult(tk)">{{ t('pb.result') }}</button>
+                  <button class="btn xs danger" v-if="tk.status === 'sent' || tk.status === 'running'" @click="cancelTask(tk)">{{ t('common.cancel') }}</button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <Empty v-else text="暂无探针任务" />
+      <Empty v-else :text="t('pb.noTasks')" />
     </div>
 
     <!-- 探针详情弹窗 -->
     <div class="modal-mask" v-if="detail" @click.self="detail = null">
       <div class="modal">
         <div class="modal-head">
-          <span>探针详情 · {{ detail.name || detail.id }}</span>
-          <button class="btn xs" @click="detail = null">关闭</button>
+          <span>{{ t('pb.detailTitle') }} · {{ detail.name || detail.id }}</span>
+          <button class="btn xs" @click="detail = null">{{ t('common.close') }}</button>
         </div>
         <div class="kv">
-          <div class="k">探针 ID</div><div class="v mono">{{ detail.id }}</div>
-          <div class="k">状态</div>
-          <div class="v"><span class="badge" :class="detail.online ? 'st-success' : 'st-failed'">{{ detail.online ? '在线' : '离线' }}</span></div>
-          <div class="k">操作系统</div><div class="v mono">{{ osText(detail) }}</div>
-          <div class="k">内核版本</div><div class="v mono small">{{ nodeOf(detail).kernel || '-' }}</div>
-          <div class="k">CPU</div><div class="v small">{{ nodeOf(detail).cpuModel || '-' }} ({{ nodeOf(detail).cpuCores || 0 }} 核)</div>
-          <div class="k">内存 / 磁盘</div>
+          <div class="k">{{ t('pb.cId') }}</div><div class="v mono">{{ detail.id }}</div>
+          <div class="k">{{ t('pb.cStatus') }}</div>
+          <div class="v"><span class="badge" :class="detail.online ? 'st-success' : 'st-failed'">{{ detail.online ? t('pb.online') : t('pb.offline') }}</span></div>
+          <div class="k">{{ t('pb.cOs') }}</div><div class="v mono">{{ osText(detail) }}</div>
+          <div class="k">{{ t('pb.kernelVer') }}</div><div class="v mono small">{{ nodeOf(detail).kernel || '-' }}</div>
+          <div class="k">CPU</div><div class="v small">{{ nodeOf(detail).cpuModel || '-' }} ({{ nodeOf(detail).cpuCores || 0 }} {{ t('pb.cores') }})</div>
+          <div class="k">{{ t('pb.memDisk') }}</div>
           <div class="v small">
-            {{ mb(nodeOf(detail).memTotal) }} MB<span v-if="nodeOf(detail).memUsed"> (已用 {{ mb(nodeOf(detail).memUsed) }} MB)</span>
-            / {{ gb(nodeOf(detail).diskTotal) }} GB<span v-if="nodeOf(detail).diskUsed"> (已用 {{ gb(nodeOf(detail).diskUsed) }} GB)</span>
+            {{ mb(nodeOf(detail).memTotal) }} MB<span v-if="nodeOf(detail).memUsed"> ({{ t('pb.used') }} {{ mb(nodeOf(detail).memUsed) }} MB)</span>
+            / {{ gb(nodeOf(detail).diskTotal) }} GB<span v-if="nodeOf(detail).diskUsed"> ({{ t('pb.used') }} {{ gb(nodeOf(detail).diskUsed) }} GB)</span>
           </div>
-          <div class="k">网关 / DNS</div>
+          <div class="k">{{ t('pb.gwDns') }}</div>
           <div class="v mono small">{{ nodeOf(detail).gateway || '-' }} / {{ (nodeOf(detail).dns || []).join(', ') || '-' }}</div>
-          <div class="k">OS 版本</div><div class="v mono small">{{ nodeOf(detail).osVersion || '-' }}</div>
+          <div class="k">{{ t('pb.osVer') }}</div><div class="v mono small">{{ nodeOf(detail).osVersion || '-' }}</div>
           <div class="k">Npcap</div>
-          <div class="v small">{{ nodeOf(detail).npcapInstalled ? '已安装(抓包/ SYN 扫描可用)' : '未安装(抓包不可用)' }}</div>
-          <div class="k">本地引擎</div>
+          <div class="v small">{{ nodeOf(detail).npcapInstalled ? t('pb.npcapOn') : t('pb.npcapOff') }}</div>
+          <div class="k">{{ t('pb.engines') }}</div>
           <div class="v small">
             <span v-for="e in (nodeOf(detail).engines || [])" :key="e.name" class="badge" style="margin-right:4px">
-              {{ e.name }}{{ e.found ? ' ' + (e.version || 'ok') : ' (缺失)' }}
+              {{ e.name }}{{ e.found ? ' ' + (e.version || 'ok') : ' ' + t('pb.missing') }}
             </span>
-            <span class="muted" v-if="!(nodeOf(detail).engines || []).length">无外部引擎, 内置引擎</span>
+            <span class="muted" v-if="!(nodeOf(detail).engines || []).length">{{ t('pb.noEngines') }}</span>
           </div>
-          <div class="k">探针版本</div><div class="v mono small">{{ nodeOf(detail).version || '-' }} · 启动 {{ nodeOf(detail).startedAt || '-' }}</div>
-          <div class="k">网卡</div>
+          <div class="k">{{ t('pb.probeVer') }}</div><div class="v mono small">{{ nodeOf(detail).version || '-' }} · {{ t('pb.started') }} {{ nodeOf(detail).startedAt || '-' }}</div>
+          <div class="k">{{ t('pb.nic') }}</div>
           <div class="v small mono">{{ nicText(detail) }}</div>
-          <div class="k">负载</div>
+          <div class="k">{{ t('pb.cLoad') }}</div>
           <div class="v small">{{ loadText(detail) }}</div>
-          <div class="k">最近心跳</div><div class="v mono small">{{ fmtDT(detail.lastSeenAt) }}</div>
-          <div class="k">任务统计</div>
-          <div class="v small">共 {{ detail.taskTotal || 0 }} 条 / 成功 {{ detail.taskSuccess || 0 }} / 失败 {{ detail.taskFailed || 0 }}</div>
+          <div class="k">{{ t('pb.cHeart') }}</div><div class="v mono small">{{ fmtDT(detail.lastSeenAt) }}</div>
+          <div class="k">{{ t('pb.taskStats') }}</div>
+          <div class="v small">{{ t('pb.taskStatsTxt', { total: detail.taskTotal || 0, ok: detail.taskSuccess || 0, fail: detail.taskFailed || 0 }) }}</div>
         </div>
       </div>
     </div>
@@ -366,43 +365,42 @@
     <div class="modal-mask" v-if="result" @click.self="result = null">
       <div class="modal" style="max-width:820px">
         <div class="modal-head">
-          <span>任务结果 · {{ result.id }}</span>
-          <button class="btn xs" @click="result = null">关闭</button>
+          <span>{{ t('pb.resultTitle') }} · {{ result.id }}</span>
+          <button class="btn xs" @click="result = null">{{ t('common.close') }}</button>
         </div>
         <div class="kv">
-          <div class="k">状态</div>
-          <div class="v"><span class="badge" :class="taskClass(result.status)">{{ TASK_STATUS[result.status] || result.status }}</span></div>
-          <div class="k">摘要</div><div class="v small">{{ result.summary || '-' }}</div>
-          <div class="k">错误</div><div class="v small" style="color:var(--red)">{{ result.error || '-' }}</div>
-          <div class="k">发现数</div><div class="v small">{{ result.findingNum || 0 }}</div>
-          <div class="k">耗时</div><div class="v small mono">{{ result.durationMs ? (result.durationMs / 1000).toFixed(1) + 's' : '-' }}</div>
+          <div class="k">{{ t('pb.cStatus') }}</div>
+          <div class="v"><span class="badge" :class="taskClass(result.status)">{{ t(TASK_STATUS[result.status] || result.status) }}</span></div>
+          <div class="k">{{ t('pb.summary') }}</div><div class="v small">{{ result.summary || '-' }}</div>
+          <div class="k">{{ t('pb.error') }}</div><div class="v small" style="color:var(--red)">{{ result.error || '-' }}</div>
+          <div class="k">{{ t('pb.findings') }}</div><div class="v small">{{ result.findingNum || 0 }}</div>
+          <div class="k">{{ t('pb.tDuration') }}</div><div class="v small mono">{{ result.durationMs ? (result.durationMs / 1000).toFixed(1) + 's' : '-' }}</div>
         </div>
-        <div class="card-title" style="margin-top:12px">结果明细</div>
-        <pre class="code-block" style="max-height:420px; overflow:auto">{{ result.result || '(无明细)' }}</pre>
+        <div class="card-title" style="margin-top:12px">{{ t('pb.resultDetail') }}</div>
+        <pre class="code-block" style="max-height:420px; overflow:auto">{{ result.result || t('pb.noDetail') }}</pre>
       </div>
     </div>
 
     <!-- 探针下载弹窗 -->
-    <Modal v-if="showDownload" title="下载探针 (yugsight-agent)" width="760px" @close="showDownload = false">
+    <Modal v-if="showDownload" :title="t('pb.dlTitle')" width="760px" @close="showDownload = false">
       <div class="alert info">
-        探针是被扫描机器上的独立程序: <b>零入站端口</b>(只向中心端发起一条出站 TCP)、
-        无 Web 界面、不需管理员权限, 节点会在数秒内自动上线。
+        {{ t('pb.dlIntro1') }}<b>{{ t('pb.dlIntroZero') }}</b>{{ t('pb.dlIntro2') }}
       </div>
 
       <div class="kv" style="margin-bottom:14px">
-        <div class="k">中心端地址</div>
-        <div class="v mono">{{ dlCenterAddr || '(未启用中心端监听, 启用后此处显示实际地址)' }}</div>
-        <div class="k">节点密钥</div>
-        <div class="v mono">{{ dlToken || '(未设置, 内网测试模式不校验密钥)' }}</div>
-        <div class="k">协议版本</div>
-        <div class="v mono">v{{ dlProtocol }} <span class="muted small">(需与中心端一致)</span></div>
-        <div class="k">安装包目录</div>
+        <div class="k">{{ t('pb.centerAddr') }}</div>
+        <div class="v mono">{{ dlCenterAddr || t('pb.dlAddrNone') }}</div>
+        <div class="k">{{ t('pb.nodeKey') }}</div>
+        <div class="v mono">{{ dlToken || t('pb.dlTokenNone') }}</div>
+        <div class="k">{{ t('pb.protoVer') }}</div>
+        <div class="v mono">v{{ dlProtocol }} <span class="muted small">{{ t('pb.dlProtoSame') }}</span></div>
+        <div class="k">{{ t('pb.dlDir') }}</div>
         <div class="v mono small">{{ dlDir || '-' }}</div>
       </div>
 
       <div class="table-wrap" v-if="dlList.length">
         <table class="table">
-          <thead><tr><th>平台</th><th>架构</th><th>文件</th><th>大小</th><th>操作</th></tr></thead>
+          <thead><tr><th>{{ t('pb.cPlat') }}</th><th>{{ t('pb.cArch') }}</th><th>{{ t('pb.cFile') }}</th><th>{{ t('pb.cSize') }}</th><th>{{ t('pb.cOp') }}</th></tr></thead>
           <tbody>
             <tr v-for="p in dlList" :key="p.os + '/' + p.arch + '/' + p.file">
               <td class="small">{{ p.label }}</td>
@@ -410,41 +408,38 @@
               <td class="mono small" :title="p.file">{{ p.file }}</td>
               <td class="small muted">{{ fmtSize(p.size) }}</td>
               <td>
-                <button class="btn xs" v-if="p.os" @click="downloadAgent(p)">下载</button>
-                <span class="muted small" v-else title="未识别的文件名: 用探针启动命令参数直接指定即可">仅列出</span>
+                <button class="btn xs" v-if="p.os" @click="downloadAgent(p)">{{ t('pb.dlBtn') }}</button>
+                <span class="muted small" v-else :title="t('pb.listOnlyTip')">{{ t('pb.listOnly') }}</span>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="empty-hint" v-else>
-        <b>尚未分发探针安装包</b>
-        <p class="muted small">先把各平台 agent 放入上方的「安装包目录」, 再重新打开本弹窗。</p>
+        <b>{{ t('pb.dlNone') }}</b>
+        <p class="muted small">{{ t('pb.dlNoneHint') }}</p>
       </div>
 
-      <div class="card-title" style="margin-top:14px">使用方式 <span class="sub">Windows 双击即装即用 · Linux/macOS 命令行启动</span></div>
+      <div class="card-title" style="margin-top:14px">{{ t('pb.dlUsage') }} <span class="sub">{{ t('pb.dlUsageSub') }}</span></div>
       <div class="alert info" style="margin:0 0 10px">
-        <b>Windows</b>: 下载后<b>双击运行</b> —— 自动安装到 <span class="mono">C:\YugsightAgent</span> 并注册开机自启,
-        按弹窗提示填写中心端地址即可上线(连不上中心端时也会自动弹窗让你改地址)。
-        卸载: 运行该目录下的<b>卸载探针.exe</b>。
+        <b>Windows</b>{{ t('pb.dlWin1') }}<b>{{ t('pb.dlWinDouble') }}</b>{{ t('pb.dlWin2') }}<span class="mono">C:\YugsightAgent</span>{{ t('pb.dlWin3') }}
+        {{ t('pb.dlWin4') }}<b>{{ t('pb.dlWinUninst') }}</b>{{ t('pb.dlWin5') }}
       </div>
       <pre class="code-block" v-for="p in cmdList" :key="'cmd-' + p.os + p.arch">{{ cmdFor(p) }}</pre>
       <div class="toolbar" style="margin-top:10px" v-if="cmdList.length">
-        <button class="btn sm" @click="copy(cmdsText())">复制启动命令</button>
-        <button class="btn sm" @click="openGuide">部署指引</button>
-        <button class="btn sm primary" @click="openInstall">可视化安装页</button>
+        <button class="btn sm" @click="copy(cmdsText())">{{ t('pb.copyCmd') }}</button>
+        <button class="btn sm" @click="openGuide">{{ t('pb.guide') }}</button>
+        <button class="btn sm primary" @click="openInstall">{{ t('pb.install') }}</button>
       </div>
 
       <div class="alert info" style="margin-top:10px">
-        <b>中心端地址变了(换网/VPN 导致 IP 变化)</b>: 探针不会自动切换,
-        <b>重新跑一次一键安装命令即可</b>(地址自动更新为当前 IP, 旧服务地址被覆盖, 开机自启保留, 无需手改文件)。
-        <span class="muted small">
-          手动部署的(无 systemd 环境)用新地址重跑启动命令。
-        </span>
+        <b>{{ t('pb.dlAddrChgTitle') }}</b>: {{ t('pb.dlAddrChg1') }}
+        <b>{{ t('pb.dlAddrChgRerun') }}</b>{{ t('pb.dlAddrChg2') }}
+        <span class="muted small">{{ t('pb.dlAddrChg3') }}</span>
       </div>
 
       <template #footer>
-        <button class="btn sm" @click="showDownload = false">关闭</button>
+        <button class="btn sm" @click="showDownload = false">{{ t('common.close') }}</button>
       </template>
     </Modal>
   </div>
@@ -458,8 +453,10 @@ import Modal from '../components/Modal.vue'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
 import { setPageData } from '../assistant/context'
+import { t } from '../i18n'
 
-const TASK_KIND = { port: '端口扫描', ip: 'IP 存活', web: 'Web 漏洞', host: '主机扫描' }
+// 任务类型/状态值存 i18n 词条键, 模板渲染处 t() 解析(2026-10-04 i18n 批次 8)
+const TASK_KIND = { port: 'pb.kPort', ip: 'pb.kIp', web: 'pb.kWeb', host: 'pb.kHost', image: 'pb.kImage', arp: 'pb.kArp' }
 // 小 Y 助手(2026-09-27): 节点监控"探针管理"Tab 的关键数据(在线状态/版本/告警)
 setPageData('nodemonitor:probe', () => ({
   total: total.value,
@@ -471,10 +468,10 @@ setPageData('nodemonitor:probe', () => ({
     lastSeen: p.lastSeen || ''
   }))
 }))
-const TASK_STATUS = { pending: '待下发', sent: '已下发', running: '执行中', success: '成功', failed: '失败' }
+const TASK_STATUS = { pending: 'pb.stPending', sent: 'pb.stSent', running: 'pb.stRunning', success: 'pb.stSuccess', failed: 'pb.stFailed' }
 const OS_NAME = { windows: 'Windows', linux: 'Linux', darwin: 'macOS' }
 // 调度节点类型(scheduler.Node.Kind): 中心本地节点 ID 为空串, 展示名单独兜底
-const NODE_KIND = { local: '中心本地', probe: '探针' }
+const NODE_KIND = { local: 'pb.kLocal', probe: 'pb.kProbe' }
 
 const status = ref(null)
 const online = ref([])
@@ -523,24 +520,24 @@ let timer = null
 
 const centerText = computed(() => {
   if (!status.value) return '-'
-  if (!status.value.centerEnabled) return '未启用'
-  return status.value.center ? '运行中' : '启动失败'
+  if (!status.value.centerEnabled) return t('pb.stNotEnabled')
+  return status.value.center ? t('pb.stRunning') : t('pb.stStartFail')
 })
 const roleText = computed(() => {
   if (!status.value) return '-'
   const c = status.value.centerEnabled, p = status.value.clientEnabled
-  if (c && p) return '中心+探针'
-  if (c) return '中心端'
-  if (p) return '探针端'
-  return '单机'
+  if (c && p) return t('pb.roleCenterProbe')
+  if (c) return t('pb.roleCenter')
+  if (p) return t('pb.roleProbe')
+  return t('pb.roleSolo')
 })
 const displayList = computed(() => (onlyOnline.value ? online.value.filter(p => p.online) : online.value))
 const onlineProbes = computed(() => online.value.filter(p => p.online))
 const assignReady = computed(() => !!(status.value && status.value.center && onlineProbes.value.length))
 const myInfo = computed(() => (status.value && status.value.clientInfo) || {})
 // 2026-09-27: arp 目标=本机网卡名(local=自动选), 与其它"远端目标"语义不同
-const assignTargetLabel = computed(() => ({ ip: '网段 CIDR', port: '目标 IP', web: '目标 URL', host: '目标 IP', image: '镜像/容器名', arp: '网卡 (可选)' }[assign.type] || '目标'))
-const assignTargetPh = computed(() => ({ ip: '如 192.168.1.0/24', port: '如 192.168.1.10', web: '如 192.168.1.10', host: '如 192.168.1.10', image: '如 nginx:1.25', arp: 'local = 自动选非回环网卡' }[assign.type] || ''))
+const assignTargetLabel = computed(() => t({ ip: 'pb.tlCidr', port: 'pb.tlIp', web: 'pb.tlUrl', host: 'pb.tlIp', image: 'pb.tlImage', arp: 'pb.tlArp' }[assign.type] || 'pb.tlDefault'))
+const assignTargetPh = computed(() => t({ ip: 'pb.phCidr', port: 'pb.phIp', web: 'pb.phIp', host: 'pb.phIp', image: 'pb.phImage', arp: 'pb.phArp' }[assign.type] || 'pb.phDefault'))
 
 function capList(p) {
   return (p.capabilities || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -572,9 +569,9 @@ function probeMac(p) {
 }
 function loadText(p) {
   const ld = p && p.load
-  if (!ld) return '未上报'
-  return 'CPU ' + Number(ld.cpuPercent || 0).toFixed(1) + '% · 内存 ' + Number(ld.memPercent || 0).toFixed(1) +
-    '% · 执行中任务 ' + (ld.tasksRunning || 0) + (ld.currentTask ? ' (' + ld.currentTask + ')' : '')
+  if (!ld) return t('pb.loadNone')
+  return t('pb.loadTxt', { cpu: Number(ld.cpuPercent || 0).toFixed(1), mem: Number(ld.memPercent || 0).toFixed(1), n: ld.tasksRunning || 0 }) +
+    (ld.currentTask ? ' (' + ld.currentTask + ')' : '')
 }
 // mb 字节 -> MB(节点信息里内存/磁盘均为字节)
 function mb(v) { return Math.round(Number(v || 0) / 1048576) }
@@ -590,16 +587,16 @@ async function enableProbe() {
   enableMsg.value = ''
   try {
     const d = await v2('/probe/enable', { method: 'POST' })
-    enableMsg.value = (d && d.msg) || '已写入配置'
+    enableMsg.value = (d && d.msg) || t('pb.cfgWritten')
     if (d && d.restartRequired) {
-      if (confirm('探针配置已写入 settings.json。\n\n重启服务后生效: 确定现在停止服务吗?(点"否"可稍后手动重启)')) {
+      if (confirm(t('pb.restartConfirm'))) {
         try {
           await fetch('/api/quit', { method: 'POST' })
         } catch (e) { /* 服务停止瞬间连接中断属正常 */ }
       }
     }
   } catch (e) {
-    enableMsg.value = '开启失败: ' + (e.message || e)
+    enableMsg.value = t('pb.enableFail', { err: e.message || e })
   } finally {
     enabling.value = false
   }
@@ -670,10 +667,10 @@ function quickAssign(p) {
 async function doAssign() {
   assignErr.value = ''
   assignMsg.value = ''
-  if (!assign.probeId) { assignErr.value = '请选择目标探针'; return }
+  if (!assign.probeId) { assignErr.value = t('pb.pickProbe'); return }
   // 2026-09-27: arp 的目标是"本机网卡", 允许留空(后端归一为 local=自动选);
   // 其它类型仍要求非空目标。
-  if (assign.type !== 'arp' && !assign.target) { assignErr.value = '目标不能为空'; return }
+  if (assign.type !== 'arp' && !assign.target) { assignErr.value = t('pb.targetReq'); return }
   assigning.value = true
   try {
     // 2026-09-26: 漏扫参数随类型透传(host/web → nuclei; image → trivyArgs)
@@ -686,7 +683,7 @@ async function doAssign() {
     if (assign.type === 'image' && assign.trivyArgs) body.trivyArgs = assign.trivyArgs
     if (assign.type === 'arp') body.arpDuration = assign.arpDuration || 60
     const d = await v2('/probe/assign', { method: 'POST', body })
-    assignMsg.value = '已下发任务 ' + d.taskId + ' 到 ' + d.probeId + (assign.type === 'arp' ? '(ARP 监测 ' + (assign.arpDuration || 60) + 's, 结果自动进漏洞表/扫描历史)' : '')
+    assignMsg.value = t('pb.assigned', { id: d.taskId, probe: d.probeId }) + (assign.type === 'arp' ? t('pb.assignedArp', { n: assign.arpDuration || 60 }) : '')
     assign.target = ''
     await loadTasks()
   } catch (e) { assignErr.value = e.message } finally { assigning.value = false }
@@ -702,23 +699,23 @@ async function saveCfg() {
       method: 'PUT',
       body: { heartbeatSec: cfgForm.heartbeatSec, metricsSec: cfgForm.metricsSec, offlineSec: cfgForm.offlineSec },
     })
-    cfgNote.value = d.note || '已保存'
+    cfgNote.value = d.note || t('pb.saved')
   } catch (e) {
     cfgNote.value = e.message
   } finally { savingCfg.value = false }
 }
 
-async function cancelTask(t) {
-  if (!confirm('确认取消任务 ' + t.id + ' ?')) return
+async function cancelTask(task) {
+  if (!confirm(t('pb.cancelConfirm', { id: task.id }))) return
   try {
-    await v2('/probe/cancel', { method: 'POST', body: { probeId: t.probeNode, taskId: t.id } })
+    await v2('/probe/cancel', { method: 'POST', body: { probeId: task.probeNode, taskId: task.id } })
     await loadTasks()
   } catch (e) { alert(e.message) }
 }
 
-async function del(p) {
-  if (!confirm('确认移除探针登记 ' + p.id + ' ?(不影响探针进程)')) return
-  try { await v2('/probe/' + encodeURIComponent(p.id), { method: 'DELETE' }); await load() }
+async function del(pg) {
+  if (!confirm(t('pb.removeConfirm', { id: pg.id }))) return
+  try { await v2('/probe/' + encodeURIComponent(pg.id), { method: 'DELETE' }); await load() }
   catch (e) { alert(e.message) }
 }
 
@@ -752,8 +749,8 @@ async function openDownload() {
 // 可连的局域网 IP), 缺失时保留占位符, 让用户明确知道要替换什么, 而不是给出一条
 // 跑不通的命令。Windows 走双击自安装, 不需要命令。
 function cmdFor(p) {
-  const addr = dlCenterAddr.value || '<中心端IP>:8600'
-  const token = dlToken.value || '<节点密钥>'
+  const addr = dlCenterAddr.value || t('pb.cmdAddrPh')
+  const token = dlToken.value || t('pb.cmdTokenPh')
   return './' + (p.file || 'yugsight-agent').replace(/\.exe$/, '') + ' -center ' + addr + ' -token ' + token
 }
 
@@ -781,8 +778,8 @@ function openInstall() {
 async function copy(s) {
   try {
     await navigator.clipboard.writeText(s)
-    alert('已复制到剪贴板')
-  } catch (e) { alert('复制失败, 请手动选择文本复制') }
+    alert(t('pb.copied'))
+  } catch (e) { alert(t('pb.copyFail')) }
 }
 
 function fmtSize(v) {
