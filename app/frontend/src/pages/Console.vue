@@ -5,10 +5,10 @@
          立即 → /api/scan SSE 实时流(原控制台行为); 排队 → 同一端点 queue=true,
          调度器按并发/限速/节点派发(原任务管理行为)。后端契约零改, 纯前端合并。
          tab 状态放在 URL query 上(先例 /env?tab=rules): 刷新/书签/手工输 URL 都停在同一 tab。 -->
-    <PageHeader title="扫描作业" desc="命名扫描: 任务名 + IP/子网 快速发现 → 勾选扫出的主机 → 主机漏扫 / web 漏扫 / 弱口令 / 渗透(同一任务名); 报告中心按任务名生成报告"></PageHeader>
+    <PageHeader :title="t('console.title')" :desc="t('console.desc')"></PageHeader>
     <div class="tabs">
-      <div class="tab" :class="{ active: tab === 'scan' }" @click="setTab('scan')">立即扫描</div>
-      <div class="tab" :class="{ active: tab === 'queue' }" @click="setTab('queue')">任务队列</div>
+      <div class="tab" :class="{ active: tab === 'scan' }" @click="setTab('scan')">{{ t('console.tabScan') }}</div>
+      <div class="tab" :class="{ active: tab === 'queue' }" @click="setTab('queue')">{{ t('console.tabQueue') }}</div>
     </div>
 
     <!-- v-show 而非 v-if: 扫描进行中用户切到任务队列, unmount 会中止进行中的
@@ -20,17 +20,17 @@
       <div class="card">
         <div class="form-row">
           <div class="field" style="max-width:170px">
-            <label class="label">扫描类型</label>
+            <label class="label">{{ t('console.scanType') }}</label>
             <select class="select" v-model="form.type" :disabled="busy">
-              <option v-for="t in SCAN_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+              <option v-for="st in SCAN_TYPES" :key="st.value" :value="st.value">{{ t('console.scanTypes.' + st.value) }}</option>
             </select>
           </div>
           <!-- 2026-09-25 用户口径: 命名扫描 —— 立即扫描必须先输入任务名。
                任务名是结果聚合键: 漏洞/资产/原始报告都按它打标, 报告中心按任务名
                生成报告/分类原始报告; 同一任务名可分多步扫(快速发现→漏扫→弱口令→渗透)。 -->
           <div class="field" style="max-width:230px">
-            <label class="label">扫描任务名 *</label>
-            <input class="input" v-model.trim="form.jobName" placeholder="报告按此名生成, 如: 办公网 9 月巡检" :disabled="busy" maxlength="64" @keyup.enter="start">
+            <label class="label">{{ t('console.jobName') }}</label>
+            <input class="input" v-model.trim="form.jobName" :placeholder="t('console.jobNamePh')" :disabled="busy" maxlength="64" @keyup.enter="start">
           </div>
           <div class="field">
             <label class="label">{{ targetLabel }}{{ targetRequired ? ' *' : '' }}</label>
@@ -42,32 +42,32 @@
                写入 target=any(后端 ip/alive 分支识别并展开)并自动勾"仅存活检查"。 -->
           <div class="field" v-if="form.type === 'quick'" style="align-self:flex-end">
             <button class="btn sm" :disabled="busy" @click="fullScan"
-                    title="无需填网段: 自动探测执行节点(中心端/探针)本机所有网段并扫描存活主机">全扫</button>
+                    :title="t('console.fullScanTip')">{{ t('console.fullScan') }}</button>
           </div>
           <div class="field" v-if="form.type === 'host'">
-            <label class="label">端口(逗号分隔)</label>
-            <input class="input mono" v-model.trim="form.ports" placeholder="留空用默认端口集" :disabled="busy">
+            <label class="label">{{ t('console.ports') }}</label>
+            <input class="input mono" v-model.trim="form.ports" :placeholder="t('console.portsDefault')" :disabled="busy">
           </div>
           <div class="field" v-if="form.type === 'quick'">
-            <label class="label">端口集(留空用默认)</label>
-            <input class="input mono" v-model.trim="form.ports" placeholder="如 80,443,3389; 留空用常用端口" :disabled="busy">
+            <label class="label">{{ t('console.portSet') }}</label>
+            <input class="input mono" v-model.trim="form.ports" :placeholder="t('console.portSetPh')" :disabled="busy">
           </div>
           <!-- 存活判定仅立即模式传: 调度入队链路(enqueueScanRequest)不带 aliveMode,
                排队时选了会被静默丢弃 —— 不如隐藏, 避免用户以为生效了。 -->
           <div class="field" style="max-width:230px" v-if="form.type === 'quick' && !form.aliveOnly && form.mode === 'now'">
-            <label class="label">存活判定</label>
+            <label class="label">{{ t('console.aliveMode') }}</label>
             <select class="select" v-model="form.aliveMode" :disabled="busy">
-              <option value="loose">宽松: ICMP/ARP 或端口开放</option>
-              <option value="strict">严格: 仅 ICMP/ARP 应答</option>
-              <option value="none">跳过存活: 纯端口扫描</option>
+              <option value="loose">{{ t('console.aliveLoose') }}</option>
+              <option value="strict">{{ t('console.aliveStrict') }}</option>
+              <option value="none">{{ t('console.aliveNone') }}</option>
             </select>
           </div>
           <div class="field" style="max-width:130px">
-            <label class="label">超时(ms)</label>
+            <label class="label">{{ t('console.timeout') }}</label>
             <input class="input mono" type="number" v-model.number="form.timeoutMs" :disabled="busy">
           </div>
           <div class="field" style="max-width:130px">
-            <label class="label">并发</label>
+            <label class="label">{{ t('console.concurrency') }}</label>
             <input class="input mono" type="number" v-model.number="form.concurrency" :disabled="busy">
           </div>
         </div>
@@ -78,38 +78,38 @@
              提示改用"仅存活检查"(ip)或主机漏扫。 -->
         <div class="form-row" style="align-items:flex-end">
           <div class="field" style="max-width:180px">
-            <label class="label">执行位置</label>
+            <label class="label">{{ t('console.execAt') }}</label>
             <select class="select" v-model="form.execAt" :disabled="busy || !probeAllowed">
-              <option value="local">本地中心端</option>
-              <option value="probe" :disabled="!probeOnline.length">下发到探针</option>
+              <option value="local">{{ t('console.execLocal') }}</option>
+              <option value="probe" :disabled="!probeOnline.length">{{ t('console.execProbe') }}</option>
             </select>
           </div>
           <div class="field" style="max-width:200px" v-if="form.execAt === 'probe'">
-            <label class="label">目标探针</label>
+            <label class="label">{{ t('console.targetProbe') }}</label>
             <select class="select" v-model="form.execProbeNode" :disabled="busy || !probeOnline.length">
-              <option value="">选择探针…</option>
+              <option value="">{{ t('console.selectProbe') }}</option>
               <option v-for="n in probeOnline" :key="n.id" :value="n.id">{{ n.name || n.id }}</option>
             </select>
           </div>
           <div class="field" v-if="form.execAt === 'probe' && probeOnline.length">
-            <span class="muted small">由探针主机执行: 内置引擎 + Nuclei + 该主机 bin/ 目录的外部引擎(nmap/zap/trivy), 结果回传中心端。</span>
+            <span class="muted small">{{ t('console.probeHint') }}</span>
           </div>
           <div class="field" v-if="form.execAt === 'probe' && !probeOnline.length">
-            <span class="muted small" style="color:var(--warn)">无在线探针(需中心端启用探针中心且探针已上线, 见探针管理页)</span>
+            <span class="muted small" style="color:var(--warn)">{{ t('console.noProbe') }}</span>
           </div>
           <div class="field" v-if="!probeAllowed">
-            <span class="muted small" title="探针端没有 unified 统一引擎(只有 ip/alive/port/web/host/sca 任务类型)">快速发现完整模式不支持探针执行 —— 勾"仅存活检查"或改用主机漏扫</span>
+            <span class="muted small" :title="t('console.probeNotAllowed')">{{ t('console.probeNotAllowed') }}</span>
           </div>
         </div>
         <!-- 提交方式: 立即执行(默认, 原控制台行为) / 排队执行(调度器派发, 原任务管理行为)。
              调度参数(策略/节点/优先级/重试)只在排队时有意义, 仅排队时出现。 -->
         <div class="form-row" style="align-items:flex-end">
           <div class="field">
-            <label class="label">提交方式</label>
+            <label class="label">{{ t('console.submitMode') }}</label>
             <div style="display:flex; align-items:center; gap:16px; padding-top:2px">
-              <label class="checkbox"><input type="radio" v-model="form.mode" value="now" :disabled="busy"> 立即执行(实时看结果)</label>
-              <label class="checkbox"><input type="radio" v-model="form.mode" value="queue" :disabled="busy"> 排队执行(调度派发)</label>
-              <span class="chip" v-if="form.mode === 'queue'" :class="schedOn ? 'on' : 'off'">{{ schedOn ? '调度已启用' : '调度未启用' }}</span>
+              <label class="checkbox"><input type="radio" v-model="form.mode" value="now" :disabled="busy"> {{ t('console.modeNow') }}</label>
+              <label class="checkbox"><input type="radio" v-model="form.mode" value="queue" :disabled="busy"> {{ t('console.modeQueue') }}</label>
+              <span class="chip" v-if="form.mode === 'queue'" :class="schedOn ? 'on' : 'off'">{{ schedOn ? t('console.schedOn') : t('console.schedOff') }}</span>
             </div>
           </div>
         </div>
@@ -117,101 +117,101 @@
         <div class="form-row" v-if="form.type === 'quick'">
           <div class="field" style="max-width:200px">
             <label class="checkbox"><input type="checkbox" v-model="form.aliveOnly" :disabled="busy">
-              仅存活检查(不枚举端口)</label>
+              {{ t('console.aliveOnly') }}</label>
           </div>
           <!-- 2026-09-27: 全扫入口说明(执行节点=本地中心端或所选调度探针) -->
-          <span class="muted small">点「全扫」= 自动探测执行节点所在网络环境的全部网段做存活检查, 无需指定网段</span>
+          <span class="muted small">{{ t('console.fullScanNote') }}</span>
         </div>
         <div class="form-row" v-if="form.type === 'host'">
           <!-- 2026-09-26: 探测引擎多选(内置 + nmap 可同时勾选, 各引擎跑完整流程,
                结果自动合并去重; 单勾时走老单引擎语义含降级)。与"漏洞引擎"(nuclei)正交 -->
           <div class="field" style="max-width:300px">
-            <label class="label">探测引擎(端口/服务)</label>
+            <label class="label">{{ t('console.hostEngines') }}</label>
             <div style="display:flex; gap:14px; padding-top:2px">
-              <label class="checkbox"><input type="checkbox" v-model="form.engHostBuiltin" :disabled="busy" @change="guardEngine('host')"> 内置(快)</label>
-              <label class="checkbox"><input type="checkbox" v-model="form.engHostNmap" :disabled="busy || !engineFound.nmap" @change="guardEngine('host')"> nmap(全){{ engineFound.nmap ? '' : '(未安装,去引擎页装)' }}</label>
+              <label class="checkbox"><input type="checkbox" v-model="form.engHostBuiltin" :disabled="busy" @change="guardEngine('host')"> {{ t('console.engBuiltin') }}</label>
+              <label class="checkbox"><input type="checkbox" v-model="form.engHostNmap" :disabled="busy || !engineFound.nmap" @change="guardEngine('host')">{{ t('console.engNmap') }}{{ engineFound.nmap ? '' : t('console.engNotInstalled') }}</label>
             </div>
-            <div class="muted small" style="margin-top:3px">内置: 快速端口/服务探测; nmap: 全探测(SYN 半开+服务版本)。同时勾选 = 双引擎各跑一遍, 结果自动合并去重。</div>
+            <div class="muted small" style="margin-top:3px">{{ t('console.engDesc') }}</div>
           </div>
           <div class="field" style="max-width:320px">
             <label class="checkbox"><input type="checkbox" v-model="form.enableNuclei" :disabled="busy">
-              漏洞引擎: Nuclei 模板扫描(与探测引擎叠加)</label>
+              {{ t('console.nuclei') }}</label>
           </div>
           <div class="field" v-if="form.enableNuclei">
-            <label class="label">tag 白名单</label>
-            <input class="input mono" v-model.trim="form.nucleiTags" placeholder="如 cisa-kev,critical(留空不限)" :disabled="busy">
+            <label class="label">{{ t('console.nucleiTags') }}</label>
+            <input class="input mono" v-model.trim="form.nucleiTags" :placeholder="t('console.nucleiTagsPh')" :disabled="busy">
           </div>
           <!-- 经典页迁移(P1-3): tag 黑名单, 命中任一标签的模板被剔除; 与白名单同走 /api/scan 的 nucleiTagsExclude 字段 -->
           <div class="field" v-if="form.enableNuclei">
-            <label class="label">tag 黑名单</label>
-            <input class="input mono" v-model.trim="form.nucleiTagsExclude" placeholder="如 tech,exposure(留空不限)" :disabled="busy">
+            <label class="label">{{ t('console.nucleiTagsExclude') }}</label>
+            <input class="input mono" v-model.trim="form.nucleiTagsExclude" :placeholder="t('console.nucleiTagsExcludePh')" :disabled="busy">
           </div>
-          <button class="btn xs" @click="ruleDrawerOpen = true">模板更新</button>
+          <button class="btn xs" @click="ruleDrawerOpen = true">{{ t('console.templateUpdate') }}</button>
           <!-- 经典页迁移(P1-3): 热重载 exe 同目录 vuln/templates/ 下的外部模板, 无需重启 -->
-          <button class="btn xs" @click="reloadNuclei" title="重新加载外部模板目录(vuln/templates/), 修改模板后点此立即生效">重载模板</button>
+          <button class="btn xs" @click="reloadNuclei" :title="t('console.templateReloadTip')">{{ t('console.templateReload') }}</button>
         </div>
         <!-- Web 深度爬取(c4): 默认关。开启后跟随页面链接递归扫描子路径, 覆盖广但耗时显著变长 -->
         <div class="form-row" v-if="form.type === 'web'">
           <!-- 2026-09-26: web 扫描引擎多选(内置规则 + ZAP 可同时勾选, 各引擎跑完整流程,
                结果自动合并去重; 单勾时走老单引擎语义含降级) -->
           <div class="field" style="max-width:300px">
-            <label class="label">扫描引擎</label>
+            <label class="label">{{ t('console.webEngines') }}</label>
             <div style="display:flex; gap:14px; padding-top:2px">
-              <label class="checkbox"><input type="checkbox" v-model="form.engWebBuiltin" :disabled="busy" @change="guardEngine('web')"> 内置规则(快)</label>
-              <label class="checkbox"><input type="checkbox" v-model="form.engWebZap" :disabled="busy || !engineFound.zap" @change="guardEngine('web')"> ZAP(动态深扫){{ engineFound.zap ? '' : '(未安装,去引擎页装)' }}</label>
+              <label class="checkbox"><input type="checkbox" v-model="form.engWebBuiltin" :disabled="busy" @change="guardEngine('web')">{{ t('console.engWebBuiltin') }}</label>
+              <label class="checkbox"><input type="checkbox" v-model="form.engWebZap" :disabled="busy || !engineFound.zap" @change="guardEngine('web')">{{ t('console.engZap') }}{{ engineFound.zap ? '' : t('console.engNotInstalled') }}</label>
             </div>
-            <div class="muted small" style="margin-top:3px">内置规则: 快速规则匹配; ZAP: 动态深扫(主动爬取+注入/CSRF)。同时勾选 = 双引擎各跑一遍, 结果自动合并去重。</div>
+            <div class="muted small" style="margin-top:3px">{{ t('console.webEngDesc') }}</div>
           </div>
           <div class="field" style="max-width:340px">
             <label class="checkbox"><input type="checkbox" v-model="form.webdeep" :disabled="busy">
-              深度爬取(跟随页面链接递归扫描子路径)</label>
+              {{ t('console.webDeep') }}</label>
           </div>
         </div>
         <!-- 2026-09-26: 镜像/文件/容器扫描(trivy SCA): 目标填镜像名/路径/容器名。
              执行位置: 本地中心端(需中心端装 trivy) / 下发到探针(需探针主机装 trivy+Docker, 远程扫容器走这条) -->
         <div class="form-row" v-if="form.type === 'image'">
           <div class="field" style="max-width:180px">
-            <label class="label">扫描对象</label>
+            <label class="label">{{ t('console.scanObject') }}</label>
             <select class="select" v-model="form.trivyKind" :disabled="busy">
-              <option value="image">Docker 镜像</option>
-              <option value="fs">本地文件 / 目录</option>
-              <option value="container">运行中容器</option>
+              <option value="image">{{ t('console.trivyImage') }}</option>
+              <option value="fs">{{ t('console.trivyFs') }}</option>
+              <option value="container">{{ t('console.trivyContainer') }}</option>
             </select>
           </div>
           <!-- 2026-09-27: 执行位置(本地中心/探针)已上移到公共表单区(全部类型通用) -->
           <div class="field">
-            <span class="chip" :class="engineFound.trivy ? 'on' : 'off'">{{ engineFound.trivy ? '中心端 trivy 已安装(本地执行可用)' : '中心端 trivy 未安装(本地执行需去引擎页装, 或选"下发到探针")' }}</span>
+            <span class="chip" :class="engineFound.trivy ? 'on' : 'off'">{{ engineFound.trivy ? t('console.trivyInstalled') : t('console.trivyNotInstalled') }}</span>
           </div>
         </div>
         <!-- 2026-09-26: 引擎使用说明(用户要求"简单明了"): trivy 是唯一引擎, 说明执行位置与远程容器口径 -->
         <div class="muted small" v-if="form.type === 'image'" style="margin:2px 0 6px">
-          trivy: 检测镜像/文件/容器的依赖漏洞与配置、密钥。目标可留空 = 自动识别: 本地执行扫中心主机全部 Docker 镜像/运行中容器, 下发探针扫探针主机(该主机装 Docker)的全部; 本地文件/目录需指定路径。
+          {{ t('console.trivyDesc') }}
         </div>
         <!-- 调度参数: 仅排队时显示(策略模板 / 执行节点 / 优先级 / 失败重试) -->
         <div class="form-row" v-if="form.mode === 'queue'">
           <div class="field" style="max-width:190px">
-            <label class="label">策略模板</label>
+            <label class="label">{{ t('console.strategy') }}</label>
             <select class="select" v-model="form.strategy" :disabled="busy">
-              <option value="">按服务端默认策略</option>
+              <option value="">{{ t('console.strategyDefault') }}</option>
               <option v-for="s in strategies" :key="s.id" :value="s.id">{{ s.name }} ({{ s.id }})</option>
-              <option value="custom">custom(不套模板)</option>
+              <option value="custom">{{ t('console.strategyCustom') }}</option>
             </select>
           </div>
           <!-- 执行节点下拉只列探针(kind=probe): 中心本地已由空值表达, 列出来会出现两个"本地" -->
           <div class="field" style="max-width:200px">
-            <label class="label">执行节点</label>
+            <label class="label">{{ t('console.queueNode') }}</label>
             <select class="select" v-model="form.queueNode" :disabled="busy">
-              <option value="">中心本地</option>
-              <option value="auto">auto(自动挑最空闲探针)</option>
+              <option value="">{{ t('console.queueNodeLocal') }}</option>
+              <option value="auto">{{ t('console.queueNodeAuto') }}</option>
               <option v-for="n in probeNodes" :key="n.id" :value="n.id">{{ n.name || n.id }}</option>
             </select>
           </div>
           <div class="field" style="max-width:130px">
-            <label class="label">优先级(小=先)</label>
+            <label class="label">{{ t('console.priority') }}</label>
             <input class="input mono" type="number" v-model.number="form.priority" placeholder="0" :disabled="busy">
           </div>
           <div class="field" style="max-width:150px; align-self:flex-end">
-            <label class="checkbox"><input type="checkbox" v-model="form.autoRetry" :disabled="busy"> 失败自动重分配</label>
+            <label class="checkbox"><input type="checkbox" v-model="form.autoRetry" :disabled="busy"> {{ t('console.autoRetry') }}</label>
           </div>
         </div>
         <div class="form-row" style="margin-top:4px">
@@ -219,10 +219,10 @@
           <button class="btn primary" v-if="!busy"
             :disabled="(targetRequired && !form.target) || (form.mode === 'queue' && schedOff)"
             @click="start">
-            {{ form.mode === 'queue' ? '排队提交' : '启动扫描' }}
+            {{ form.mode === 'queue' ? t('console.startQueue') : t('console.start') }}
           </button>
-          <button class="btn danger" v-else-if="running" @click="stop">停止扫描</button>
-          <button class="btn primary" v-else disabled>提交中...</button>
+          <button class="btn danger" v-else-if="running" @click="stop">{{ t('console.stop') }}</button>
+          <button class="btn primary" v-else disabled>{{ t('console.submitting') }}</button>
         </div>
         <!-- 排队提交的反馈: 入队是瞬时的(后端 emit 完 done 就关闭流), 结果在这里展示 -->
         <div class="login-err" v-if="form.mode === 'queue' && qErr" style="text-align:left">{{ qErr }}</div>
@@ -237,39 +237,39 @@
            解决 8746 条全渲染卡死主线程的问题。数据全量在 webRules, 提交/计数不受影响。 -->
       <div class="card" v-if="form.type === 'web' && form.mode === 'now'">
         <div class="card-title">
-          漏洞规则
-          <span class="sub">Web 范围 · 基线探测不受勾选影响</span>
+          {{ t('console.ruleTitle') }}
+          <span class="sub">{{ t('console.ruleSub') }}</span>
           <div class="spacer"></div>
           <span class="chip" :class="allWebEnabled ? 'on' : 'warn'" v-if="webRules.length">
             {{ selectedWebRuleIds.length }}/{{ webRules.length }}
           </span>
-          <button class="btn xs" v-if="webRules.length" :disabled="busy || allWebEnabled" @click="setAllWebRules(true)">全选</button>
-          <button class="btn xs" v-if="webRules.length" :disabled="busy || selectedWebRuleIds.length === 0" @click="setAllWebRules(false)">全不选</button>
+          <button class="btn xs" v-if="webRules.length" :disabled="busy || allWebEnabled" @click="setAllWebRules(true)">{{ t('console.ruleAll') }}</button>
+          <button class="btn xs" v-if="webRules.length" :disabled="busy || selectedWebRuleIds.length === 0" @click="setAllWebRules(false)">{{ t('console.ruleNone') }}</button>
           <button class="btn xs" :disabled="webRulesLoading || busy" @click="loadWebRules(true)">
-            <span class="spinner" v-if="webRulesLoading" style="width:11px;height:11px;border-width:1.5px"></span> 刷新
+            <span class="spinner" v-if="webRulesLoading" style="width:11px;height:11px;border-width:1.5px"></span> {{ t('common.refresh') }}
           </button>
-          <button class="btn xs" @click="ruleDrawerOpen = true">规则库</button>
+          <button class="btn xs" @click="ruleDrawerOpen = true">{{ t('console.ruleLib') }}</button>
           <button class="btn xs" v-if="webRules.length" @click="ruleCardOpen = !ruleCardOpen">
-            {{ ruleCardOpen ? '收起' : '展开' }}
+            {{ ruleCardOpen ? t('console.ruleCollapse') : t('console.ruleExpand') }}
           </button>
         </div>
         <div class="muted small err-line" v-if="webRulesErr">{{ webRulesErr }}</div>
         <!-- 折叠态提示: 不渲染列表 DOM, 用户知道"已全勾"即可 -->
         <div class="muted small" v-if="!ruleCardOpen && webRules.length" style="margin-top:4px">
-          已全量勾选(默认全跑), 点「展开」可按关键字筛选或单条取消。
+          {{ t('console.ruleCollapsedHint') }}
         </div>
         <!-- 展开态: 搜索 + 分页, 每页只渲染 100 条 DOM -->
         <div v-if="ruleCardOpen && webRules.length">
           <div class="form-row" style="margin:6px 0 4px">
             <div class="field" style="max-width:280px">
-              <input class="input" v-model.trim="ruleQ" placeholder="按 ID / 名称 / 类型 / 模式 过滤">
+              <input class="input" v-model.trim="ruleQ" :placeholder="t('console.ruleFilterPh')">
             </div>
-            <span class="muted small" v-if="ruleQ && ruleFiltered.length">{{ ruleFiltered.length }} 条命中</span>
+            <span class="muted small" v-if="ruleQ && ruleFiltered.length">{{ t('console.ruleHits', { n: ruleFiltered.length }) }}</span>
             <div class="spacer"></div>
             <span class="muted small" v-if="ruleTotalPages > 1">
-              第 {{ rulePage }}/{{ ruleTotalPages }} 页 · 共 {{ ruleFiltered.length }} 条
-              <button class="btn xs" :disabled="rulePage <= 1" @click="rulePage--">上一页</button>
-              <button class="btn xs" :disabled="rulePage >= ruleTotalPages" @click="rulePage++">下一页</button>
+              {{ t('console.rulePage', { cur: rulePage, total: ruleTotalPages, n: ruleFiltered.length }) }}
+              <button class="btn xs" :disabled="rulePage <= 1" @click="rulePage--">{{ t('console.rulePrev') }}</button>
+              <button class="btn xs" :disabled="rulePage >= ruleTotalPages" @click="rulePage++">{{ t('console.ruleNext') }}</button>
             </span>
           </div>
           <div class="rule-list" v-if="rulePageRows.length">
@@ -282,7 +282,7 @@
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
                   <b class="small">{{ r.name }}</b>
                   <span class="badge">{{ r.type }}</span>
-                  <span class="mono small muted" :title="'匹配模式: ' + r.pattern">{{ r.pattern }}</span>
+                  <span class="mono small muted" :title="t('console.ruleMatchPattern') + r.pattern">{{ r.pattern }}</span>
                 </div>
                 <div class="muted small" style="margin-top:2px" v-if="r.detail" :title="r.detail">{{ r.detail }}</div>
               </div>
@@ -290,14 +290,14 @@
           </div>
           <div class="empty" v-else style="min-height:56px">
             <span class="spinner" v-if="webRulesLoading" style="vertical-align:middle"></span>
-            {{ webRulesLoading ? '正在加载 Web 范围规则…' : (ruleQ ? '无匹配规则' : '暂无 Web 范围规则') }}
+            {{ webRulesLoading ? t('console.ruleLoading') : (ruleQ ? t('console.ruleNoMatch') : t('console.ruleEmpty')) }}
           </div>
         </div>
         <div class="empty" v-if="!ruleCardOpen && !webRules.length && !webRulesLoading" style="min-height:56px">
-          暂无 Web 范围规则
+          {{ t('console.ruleEmpty') }}
         </div>
         <div class="empty" v-if="!ruleCardOpen && webRulesLoading" style="min-height:56px">
-          <span class="spinner" style="vertical-align:middle"></span> 正在加载 Web 范围规则…
+          <span class="spinner" style="vertical-align:middle"></span> {{ t('console.ruleLoading') }}
         </div>
       </div>
 
@@ -307,16 +307,16 @@
              全局广播是同一批事件的回声, 期间不再重复渲染。 -->
         <div class="card" style="grid-column: span 2">
           <div class="card-title">
-            事件日志
+            {{ t('console.eventLog') }}
             <span class="chip" :class="running ? 'warn' : ''" style="font-size:11px">
               <span class="spinner" v-if="running" style="width:9px;height:9px;border-width:1.5px"></span>
-              {{ running ? '扫描中' : '空闲(显示全局事件)' }}
+              {{ running ? t('console.eventScanning') : t('console.eventIdle') }}
             </span>
             <div class="spacer"></div>
-            <button class="btn xs" @click="logs = []">清空</button>
+            <button class="btn xs" @click="logs = []">{{ t('console.eventClear') }}</button>
           </div>
           <div class="log-box" ref="logBox">
-            <div v-if="!logs.length" class="lg-muted">尚无事件, 配置参数后点击"启动扫描"</div>
+            <div v-if="!logs.length" class="lg-muted">{{ t('console.eventEmpty') }}</div>
             <div v-for="(l, i) in logs" :key="i" class="log-line" :class="l.cls">
               <span class="log-time">{{ l.time }}</span>{{ l.text }}
             </div>
@@ -327,15 +327,15 @@
              "任务队列" tab 的任务表里看, 这里显示空值会让人误读"无发现"。 -->
         <div class="card" v-if="form.mode === 'now'">
           <div class="card-title">
-            漏洞结果 <span class="sub">{{ findings.length }} 条</span>
+            {{ t('console.findings') }} <span class="sub">{{ t('console.findingsCount', { n: findings.length }) }}</span>
             <div class="spacer"></div>
             <!-- 经典页迁移(P1-3): 导出"本次会话"HTML 报告(POST /api/report, 与报告中心的 DB 报告是两套口径) -->
-            <button class="btn xs" v-if="!running && (findings.length || openPorts.length)" @click="reportOpen = true">导出报告</button>
+            <button class="btn xs" v-if="!running && (findings.length || openPorts.length)" @click="reportOpen = true">{{ t('console.findingsExport') }}</button>
             <!-- 阶段 3: AI 研判 —— 分析最近一次扫描的原始报告(扫描结束后自动存档,
                  后端按 module=scan 取 10 分钟内最新一份; 未启用/模块关闭自动置灰) -->
-            <AiAnalyzeButton v-if="!running && (findings.length || openPorts.length)" module="scan" label="AI 研判" />
+            <AiAnalyzeButton v-if="!running && (findings.length || openPorts.length)" module="scan" :label="t('console.findingsAI')" />
           </div>
-          <div v-if="!findings.length" class="empty" style="min-height:120px">扫描命中后实时显示</div>
+          <div v-if="!findings.length" class="empty" style="min-height:120px">{{ t('console.findingsEmpty') }}</div>
           <div v-else style="max-height:430px; overflow-y:auto">
             <div v-for="(f, i) in findingsView" :key="i" style="border-bottom:1px solid var(--border); padding:9px 2px">
               <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
@@ -343,18 +343,18 @@
                 <b style="font-size:12.5px" :title="f.title">{{ f.title }}</b>
                 <!-- 2026-09-26: 多引擎模式下标注漏洞来源(engine=外部引擎 / nuclei / 内置无标记) -->
                 <span class="badge" v-if="f.source" style="font-size:10px">{{ f.source }}</span>
-                <span class="badge" v-if="f.falsePositive" style="color:var(--muted); border-style:dashed" :title="f.fpNote || '人工标记误报'">误报</span>
+                <span class="badge" v-if="f.falsePositive" style="color:var(--muted); border-style:dashed" :title="f.fpNote || t('console.falsePositiveTitle')">{{ t('console.falsePositive') }}</span>
               </div>
               <div class="muted small mono" style="margin-top:3px" v-if="f.cve || f.host">{{ [f.cve, f.host && (f.host + (f.port ? ':' + f.port : ''))].filter(Boolean).join(' ') }}</div>
               <div class="small muted" style="margin-top:3px; word-break:break-all" v-if="f.detail">{{ f.detail }}</div>
-              <div class="small" style="margin-top:4px; color:var(--green)" v-if="f.fix">修复: {{ f.fix }}</div>
+              <div class="small" style="margin-top:4px; color:var(--green)" v-if="f.fix">{{ t('console.fix') }}{{ f.fix }}</div>
               <div style="margin-top:6px">
-                <button class="btn xs" v-if="!f.falsePositive" @click="markFP(f)">标记误报</button>
-                <span class="muted small" v-else>已标记</span>
+                <button class="btn xs" v-if="!f.falsePositive" @click="markFP(f)">{{ t('console.markFP') }}</button>
+                <span class="muted small" v-else>{{ t('console.marked') }}</span>
               </div>
             </div>
             <div class="muted small" v-if="findings.length > 500" style="padding:6px 2px">
-              仅显示最近 500 条(共 {{ findings.length }} 条)
+              {{ t('console.findingsLimit', { n: findings.length }) }}
             </div>
           </div>
         </div>
@@ -368,32 +368,32 @@
            端口) —— 不支持的端口给了点了也只会得到"协议不支持", 不如没有。 -->
       <div class="card" v-if="resultRows.length && form.mode === 'now'">
         <div class="card-title">
-          扫描结果
-          <span class="sub">{{ openPorts.length }} 个开放端口 · 存活 {{ aliveHostCount }} 台 · 已选 {{ selectedHosts.size || '全部' }}</span>
+          {{ t('console.results') }}
+          <span class="sub">{{ t('console.resultsSub', { ports: openPorts.length, alive: aliveHostCount, selected: selectedHosts.size || t('console.all') }) }}</span>
           <div class="spacer"></div>
-          <button class="btn xs" @click="stepHostScan" :disabled="busy">主机漏扫</button>
-          <button class="btn xs" @click="stepWebScan" :disabled="busy">Web 漏扫</button>
-          <button class="btn xs" @click="stepWeakpass">弱口令测试</button>
-          <button class="btn xs" v-if="isAdmin()" @click="stepPenta">渗透测试</button>
-          <button class="btn xs" @click="clearResults">清空</button>
+          <button class="btn xs" @click="stepHostScan" :disabled="busy">{{ t('console.hostScan') }}</button>
+          <button class="btn xs" @click="stepWebScan" :disabled="busy">{{ t('console.webScan') }}</button>
+          <button class="btn xs" @click="stepWeakpass">{{ t('console.weakpassTest') }}</button>
+          <button class="btn xs" v-if="isAdmin()" @click="stepPenta">{{ t('console.pentaTest') }}</button>
+          <button class="btn xs" @click="clearResults">{{ t('console.clear') }}</button>
         </div>
         <div class="muted small" style="margin-bottom:6px">
-          勾选要继续的主机(不勾 = 全部存活主机): 主机漏扫 / Web 漏扫在本页直接执行(沿用任务名「{{ form.jobName || '未命名' }}」); 弱口令 / 渗透跳对应页面并自动带上目标与任务名。
+          {{ t('console.resultsHint', { job: form.jobName || t('console.unnamed') }) }}
         </div>
         <div class="table-wrap" style="max-height:300px; overflow-y:auto">
           <table class="table">
             <thead>
               <tr>
-                <th style="width:30px"><input type="checkbox" :checked="allHostsSelected" @change="toggleAllHosts" title="全选/取消(按主机)"></th>
-                <th>地址</th>
-                <th>服务</th>
-                <th>横幅</th>
-                <th style="width:160px">操作</th>
+                <th style="width:30px"><input type="checkbox" :checked="allHostsSelected" @change="toggleAllHosts" :title="t('console.colSelect')"></th>
+                <th>{{ t('console.colAddress') }}</th>
+                <th>{{ t('console.colService') }}</th>
+                <th>{{ t('console.colBanner') }}</th>
+                <th style="width:160px">{{ t('console.colAction') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="r in resultRowsView" :key="r.key">
-                <td><input type="checkbox" :checked="selectedHosts.has(r.ip)" @change="toggleHost(r.ip)" :title="'选中主机 ' + r.ip + ' 的所有端口'"></td>
+                <td><input type="checkbox" :checked="selectedHosts.has(r.ip)" @change="toggleHost(r.ip)" :title="r.ip"></td>
                 <!-- 存活但无开放端口的主机只有 IP(没有端口可拼), 与端口行区分开 -->
                 <td class="mono">{{ r.port ? r.ip + ':' + r.port : r.ip }}</td>
                 <td>
@@ -402,8 +402,8 @@
                 </td>
                 <td class="small muted mono" :title="r.banner">{{ r.banner || '-' }}</td>
                 <td>
-                  <button class="btn xs" v-if="r.weakSvc" @click="goWeakpass(r)">弱口令</button>
-                  <button class="btn xs" v-if="isWebPort(r)" @click="goWebScan(r)">Web 漏扫</button>
+                  <button class="btn xs" v-if="r.weakSvc" @click="goWeakpass(r)">{{ t('console.weakpass') }}</button>
+                  <button class="btn xs" v-if="isWebPort(r)" @click="goWebScan(r)">{{ t('console.webScan') }}</button>
                   <span class="muted small" v-if="!r.weakSvc && !isWebPort(r)">-</span>
                 </td>
               </tr>
@@ -411,30 +411,29 @@
           </table>
         </div>
         <div class="muted small" v-if="resultRows.length > 2000" style="margin-top:4px">
-          仅显示前 2000 行(共 {{ resultRows.length }} 行)
+          {{ t('console.resultsLimit', { n: resultRows.length }) }}
         </div>
       </div>
 
       <!-- 报告导出弹窗(经典页迁移 P1-3): 标题/操作员 + 生成本次会话 HTML 报告 -->
-      <Modal v-if="reportOpen" title="导出本次扫描报告" width="460px" @close="reportOpen = false">
+      <Modal v-if="reportOpen" :title="t('console.reportModalTitle')" width="460px" @close="reportOpen = false">
         <div class="form-row">
           <div class="field">
-            <label class="label">报告标题</label>
-            <input class="input" v-model.trim="reportTitle" placeholder="Yugsight 漏洞扫描报告">
+            <label class="label">{{ t('console.reportTitle') }}</label>
+            <input class="input" v-model.trim="reportTitle" :placeholder="t('console.reportTitlePh')">
           </div>
           <div class="field" style="max-width:180px">
-            <label class="label">操作员(可选)</label>
+            <label class="label">{{ t('console.reportOperator') }}</label>
             <input class="input" v-model.trim="reportOperator">
           </div>
         </div>
         <div class="muted small" style="margin-top:8px">
-          导出内容: 本次会话的 {{ findings.length }} 条发现(已排除标记的误报) + {{ openPorts.length }} 条开放端口。
-          默认内置模板, 可放 exe 同目录 report_template.html 自定义。
+          {{ t('console.reportContent', { f: findings.length, p: openPorts.length }) }}
         </div>
         <template #footer>
-          <button class="btn sm" @click="reportOpen = false">取消</button>
+          <button class="btn sm" @click="reportOpen = false">{{ t('console.cancel') }}</button>
           <button class="btn sm primary" :disabled="reportBusy" @click="exportReport">
-            <span class="spinner" v-if="reportBusy"></span> 生成并下载
+            <span class="spinner" v-if="reportBusy"></span> {{ t('console.generateDownload') }}
           </button>
         </template>
       </Modal>
@@ -447,42 +446,42 @@
       <!-- 调度被显式关闭的提示: 调度默认启用, 正常看不到这条; 只有手动关掉后
            才出现, 告诉用户"怎么改回来"即可 -->
       <div class="alert warn" v-if="sched && !sched.enabled">
-        调度已关闭(默认启用), 设 "enabled": true 后重启恢复。
-        <button class="btn xs" style="margin-left:8px" @click="copySchedOn">{{ schedCopied ? '已复制' : '一键复制' }}</button>
+        {{ t('console.schedDisabled') }}
+        <button class="btn xs" style="margin-left:8px" @click="copySchedOn">{{ schedCopied ? t('console.copied') : t('console.copy') }}</button>
       </div>
 
       <!-- 调度任务列表 -->
       <div class="card">
         <div class="toolbar">
-          <span class="muted small">调度任务</span>
+          <span class="muted small">{{ t('console.schedTasks') }}</span>
           <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 状态选项由后端
                按全量任务聚合回带(statuses), 没有任务的状态不出现, 有了再出现 -->
           <select class="select" v-model="taskFilter" @change="taskPage=1; loadTasks()">
-            <option value="">全部状态</option>
-            <option v-for="s in taskStatusOpts" :key="s.id" :value="s.id">{{ TASK_STATUS_CN[s.id] || s.id }} ({{ s.count }})</option>
+            <option value="">{{ t('console.allStatus') }}</option>
+            <option v-for="s in taskStatusOpts" :key="s.id" :value="s.id">{{ schedStatusName(s.id) }} ({{ s.count }})</option>
           </select>
-          <button class="btn sm" :disabled="taskLoading" @click="loadTasks"><span class="spinner" v-if="taskLoading"></span> 刷新</button>
-          <label class="checkbox"><input type="checkbox" v-model="taskAuto"> 自动刷新(4s)</label>
+          <button class="btn sm" :disabled="taskLoading" @click="loadTasks"><span class="spinner" v-if="taskLoading"></span> {{ t('common.refresh') }}</button>
+          <label class="checkbox"><input type="checkbox" v-model="taskAuto"> {{ t('console.autoRefresh') }}</label>
           <div class="spacer"></div>
-          <span class="muted small">共 {{ taskTotal }} 个 · 队列 {{ (taskData.queue || []).length }} · 槽位 {{ stats.slots || 0 }}/{{ stats.maxSlots || 0 }}</span>
+          <span class="muted small">{{ t('console.totalTasks', { n: taskTotal, q: (taskData.queue || []).length, s: stats.slots || 0, max: stats.maxSlots || 0 }) }}</span>
         </div>
 
         <div class="table-wrap" v-if="tasks.length">
           <table class="table">
             <thead>
               <tr>
-                <th>ID</th><th>类型</th><th>目标</th><th>策略</th><th>节点</th><th>状态</th>
-                <th>优先级</th><th>进度 / 结果</th><th>耗时</th><th>操作</th>
+                <th>{{ t('console.thID') }}</th><th>{{ t('console.colType') }}</th><th>{{ t('console.colTarget') }}</th><th>{{ t('console.colStrategy') }}</th><th>{{ t('console.colNode') }}</th><th>{{ t('console.colStatus') }}</th>
+                <th>{{ t('console.colPriority') }}</th><th>{{ t('console.colProgress') }}</th><th>{{ t('console.colCost') }}</th><th>{{ t('console.colAction') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="t in tasks" :key="t.id">
                 <td class="mono small">{{ t.id }}</td>
-                <td class="small">{{ KIND_NAME[t.kind] || t.kind }}</td>
+                <td class="small">{{ kindName(t.kind) }}</td>
                 <td class="mono small" :title="t.target">{{ t.target }}</td>
                 <td class="small">{{ t.strategy || '-' }}</td>
-                <td class="small">{{ t.node || '中心本地' }}</td>
-                <td><span class="badge" :class="schedClass(t.status)">{{ SCHED_STATUS[t.status] || t.status }}</span></td>
+                <td class="small">{{ t.node || t('console.queueNodeLocal') }}</td>
+                <td><span class="badge" :class="schedClass(t.status)">{{ schedStatusName(t.status) }}</span></td>
                 <td class="small mono">{{ t.priority || 0 }}</td>
                 <td class="small" :title="t.result || t.err || t.progress || ''">
                   {{ short(t.progress || t.result || t.err || '-') }}
@@ -490,11 +489,11 @@
                 <td class="muted small mono">{{ costText(t) }}</td>
                 <td>
                   <div class="row-actions">
-                    <button class="btn xs" v-if="t.status === 'queued' || t.status === 'running'" @click="act('pause', t)">暂停</button>
-                    <button class="btn xs green" v-if="t.status === 'paused'" @click="act('resume', t)">恢复</button>
-                    <button class="btn xs danger" v-if="t.status === 'queued' || t.status === 'running' || t.status === 'paused'" @click="act('cancel', t)">取消</button>
-                    <button class="btn xs" v-if="t.status === 'failed' || t.status === 'cancelled'" @click="act('retry', t)">重试</button>
-                    <button class="btn xs danger" @click="delTask(t)">删除</button>
+                    <button class="btn xs" v-if="t.status === 'queued' || t.status === 'running'" @click="act('pause', t)">{{ t('console.actionPause') }}</button>
+                    <button class="btn xs green" v-if="t.status === 'paused'" @click="act('resume', t)">{{ t('console.actionResume') }}</button>
+                    <button class="btn xs danger" v-if="t.status === 'queued' || t.status === 'running' || t.status === 'paused'" @click="act('cancel', t)">{{ t('console.actionCancel') }}</button>
+                    <button class="btn xs" v-if="t.status === 'failed' || t.status === 'cancelled'" @click="act('retry', t)">{{ t('console.actionRetry') }}</button>
+                    <button class="btn xs danger" @click="delTask(t)">{{ t('console.actionDelete') }}</button>
                   </div>
                 </td>
               </tr>
@@ -502,17 +501,17 @@
           </table>
         </div>
         <div v-else class="empty" style="min-height:120px">
-          暂无调度任务
+          {{ t('console.noTasks') }}
           <div style="margin-top:8px">
-            <button class="btn xs" @click="goQueueForm">去"立即扫描"排队提交</button>
+            <button class="btn xs" @click="goQueueForm">{{ t('console.goQueueForm') }}</button>
           </div>
         </div>
 
         <div class="pager" v-if="taskTotal > taskPage * taskSize">
-          <span>第 {{ taskPage }} 页</span>
+          <span>{{ t('console.pageOf', { n: taskPage }) }}</span>
           <div class="spacer"></div>
-          <button class="btn xs" :disabled="taskPage <= 1" @click="taskPage--; loadTasks()">上一页</button>
-          <button class="btn xs" :disabled="taskPage * taskSize >= taskTotal" @click="taskPage++; loadTasks()">下一页</button>
+          <button class="btn xs" :disabled="taskPage <= 1" @click="taskPage--; loadTasks()">{{ t('console.rulePrev') }}</button>
+          <button class="btn xs" :disabled="taskPage * taskSize >= taskTotal" @click="taskPage++; loadTasks()">{{ t('console.ruleNext') }}</button>
         </div>
       </div>
 
@@ -522,34 +521,34 @@
            一个管"之前扫过什么"。 -->
       <div class="card">
         <div class="toolbar">
-          <span class="muted small">扫描历史(立即扫描/排队/探针下发)</span>
+          <span class="muted small">{{ t('console.history') }}</span>
           <!-- 2026-10-02 用户口径: 状态选项由后端按全量扫描任务聚合回带, 无数据的状态不出现 -->
           <select class="select" v-model="histFilter" @change="histPage=1; loadHist()">
-            <option value="">全部状态</option>
-            <option v-for="s in histStatusOpts" :key="s.id" :value="s.id">{{ HIST_STATUS_CN[s.id] || s.id }} ({{ s.count }})</option>
+            <option value="">{{ t('console.allStatus') }}</option>
+            <option v-for="s in histStatusOpts" :key="s.id" :value="s.id">{{ schedStatusName(s.id) }} ({{ s.count }})</option>
           </select>
-          <button class="btn sm" :disabled="histLoading" @click="loadHist"><span class="spinner" v-if="histLoading"></span> 刷新</button>
+          <button class="btn sm" :disabled="histLoading" @click="loadHist"><span class="spinner" v-if="histLoading"></span> {{ t('common.refresh') }}</button>
           <button class="btn sm danger" :disabled="!histSel.length || histLoading" @click="batchDelHist">
-            删除选中{{ histSel.length ? ' (' + histSel.length + ')' : '' }}
+            {{ t('console.delSelected', { count: histSel.length ? ' (' + histSel.length + ')' : '' }) }}
           </button>
           <div class="spacer"></div>
-          <span class="muted small">共 {{ histTotal }} 条</span>
+          <span class="muted small">{{ t('console.histTotal', { n: histTotal }) }}</span>
         </div>
 
         <div class="table-wrap" v-if="histList.length">
           <table class="table">
             <thead>
               <tr>
-                <th style="width:30px"><input type="checkbox" :checked="allHistSel" @change="toggleAllHist" :disabled="!histList.length" title="全选/取消本页"></th>
-                <th>时间</th>
+                <th style="width:30px"><input type="checkbox" :checked="allHistSel" @change="toggleAllHist" :disabled="!histList.length" :title="t('console.colSelect')"></th>
+                <th>{{ t('console.colTime') }}</th>
                 <!-- 2026-09-27: 任务名单列(用户口径: 历史页要直接看到任务名 —— 它是报告聚合键,
                      此前埋在 params JSON 里, 探针下发路径甚至没存) -->
-                <th>任务名</th>
-                <th>类型</th><th>目标</th><th>状态</th>
+                <th>{{ t('console.colJobName') }}</th>
+                <th>{{ t('console.colType') }}</th><th>{{ t('console.colTarget') }}</th><th>{{ t('console.colStatus') }}</th>
                 <!-- 进度列: 探针任务的实时进度(后端从 probe_tasks 附带到列表项);
                      本地扫描的进度在"立即扫描"页事件日志里, 这里只标"运行中" -->
-                <th>进度</th>
-                <th>发起</th><th>节点</th><th>操作</th>
+                <th>{{ t('console.dProgress') }}</th>
+                <th>{{ t('console.colCreatedBy') }}</th><th>{{ t('console.colNode') }}</th><th>{{ t('console.colAction') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -557,69 +556,69 @@
                 <td><input type="checkbox" :checked="histSel.includes(t.id)" @change="toggleHistSel(t.id)"></td>
                 <td class="muted small mono">{{ fmtHistT(t.createdAt) }}</td>
                 <td class="small" :title="t.jobName">{{ t.jobName || '-' }}</td>
-                <td class="small">{{ KIND_NAME[t.type] || t.type }}</td>
+                <td class="small">{{ kindName(t.type) }}</td>
                 <td class="mono small" :title="t.target + (paramsBrief(t) ? ' | ' + paramsBrief(t) : '')">{{ t.target }}</td>
-                <td><span class="badge" :class="schedClass(t.status)">{{ SCHED_STATUS[t.status] || t.status }}</span></td>
+                <td><span class="badge" :class="schedClass(t.status)">{{ schedStatusName(t.status) }}</span></td>
                 <td class="small" :title="t.probeProgress || ''">{{ histProgressText(t) }}</td>
                 <td class="small">{{ t.createdBy || '-' }}</td>
-                <td class="small">{{ t.probeNode || '本地' }}</td>
+                <td class="small">{{ t.probeNode || t('console.execLocal') }}</td>
                 <td>
                   <div class="row-actions">
                     <!-- 2026-09-27: 取消(用户口径: 任务开始了去哪里取消) —— 运行中/待执行可取消,
                          后端按任务属性路由: 本地扫描/探针任务/调度任务(POST /scans/{id}/cancel) -->
                     <button class="btn xs danger" v-if="t.status === 'running' || t.status === 'pending'"
-                      :title="'停止该任务(探针任务会通知探针停止执行)'" @click="cancelHistTask(t)">取消</button>
+                      :title="t('console.confirmCancelTitle')" @click="cancelHistTask(t)">{{ t('console.actionCancel') }}</button>
                     <!-- 2026-09-27: 详情(用户口径: 扫描历史要点进去看当时扫描的状态) -->
-                    <button class="btn xs" :title="'查看该次扫描的当时状态(参数/进度/结果)'" @click="openHistDetail(t)">详情</button>
-                    <button class="btn xs green" :disabled="t.status === 'running'" :title="'按该任务的原始参数重新扫描'" @click="rescanTask(t)">重扫</button>
-                    <button class="btn xs danger" @click="delHistTask(t)">删除</button>
+                    <button class="btn xs" :title="t('console.actionDetailTitle')" @click="openHistDetail(t)">{{ t('console.actionDetail') }}</button>
+                    <button class="btn xs green" :disabled="t.status === 'running'" :title="t('console.actionRescanTitle')" @click="rescanTask(t)">{{ t('console.actionRescan') }}</button>
+                    <button class="btn xs danger" @click="delHistTask(t)">{{ t('console.actionDelete') }}</button>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div v-else class="empty" style="min-height:80px">暂无扫描历史(立即扫描/排队/下发探针的扫描都会记录在这里)</div>
+        <div v-else class="empty" style="min-height:80px">{{ t('console.noHistory') }}</div>
 
         <div class="pager" v-if="histTotal > histPage * histSize">
-          <span>第 {{ histPage }} 页</span>
+          <span>{{ t('console.pageOf', { n: histPage }) }}</span>
           <div class="spacer"></div>
-          <button class="btn xs" :disabled="histPage <= 1" @click="histPage--; loadHist()">上一页</button>
-          <button class="btn xs" :disabled="histPage * histSize >= histTotal" @click="histPage++; loadHist()">下一页</button>
+          <button class="btn xs" :disabled="histPage <= 1" @click="histPage--; loadHist()">{{ t('console.rulePrev') }}</button>
+          <button class="btn xs" :disabled="histPage * histSize >= histTotal" @click="histPage++; loadHist()">{{ t('console.ruleNext') }}</button>
         </div>
       </div>
 
       <!-- 2026-09-27: 扫描历史详情(用户口径: 要点进去看当时扫描的状态)。
            统一任务记录(参数/状态/结果) + 探针执行明细(进度/回传结果, 探针执行的任务才有) -->
-      <Modal v-if="histDetail" title="扫描详情" width="680px" @close="histDetail = null">
+      <Modal v-if="histDetail" :title="t('console.histDetailTitle')" width="680px" @close="histDetail = null">
         <div v-if="histDetail.loading" class="muted small" style="padding:8px 0">
-          <span class="spinner" style="vertical-align:middle"></span> 加载中…
+          <span class="spinner" style="vertical-align:middle"></span> {{ t('console.loading') }}
         </div>
         <template v-else>
           <table class="table hist-detail" v-if="histDetail.task">
-            <tr><td class="muted">状态</td><td><span class="badge" :class="schedClass(histDetail.task.status)">{{ SCHED_STATUS[histDetail.task.status] || histDetail.task.status }}</span></td></tr>
-            <tr v-if="histDetail.task.jobName"><td class="muted">任务名</td><td class="small">{{ histDetail.task.jobName }}</td></tr>
-            <tr><td class="muted">类型 / 目标</td><td class="mono small">{{ KIND_NAME[histDetail.task.type] || histDetail.task.type }} · {{ histDetail.task.target }}</td></tr>
-            <tr><td class="muted">执行节点</td><td class="small">{{ histDetail.task.probeNode || '本地中心端' }}</td></tr>
-            <tr><td class="muted">发起人 / 时间</td><td class="small">{{ histDetail.task.createdBy || '-' }} · {{ fmtHistT(histDetail.task.createdAt) }}</td></tr>
-            <tr v-if="histDetail.task.finishedAt"><td class="muted">完成时间</td><td class="small">{{ fmtHistT(histDetail.task.finishedAt) }}</td></tr>
-            <tr v-if="histDetail.task.result"><td class="muted">结果</td><td class="small">{{ histDetail.task.result }}</td></tr>
+            <tr><td class="muted">{{ t('console.dStatus') }}</td><td><span class="badge" :class="schedClass(histDetail.task.status)">{{ schedStatusName(histDetail.task.status) }}</span></td></tr>
+            <tr v-if="histDetail.task.jobName"><td class="muted">{{ t('console.dJobName') }}</td><td class="small">{{ histDetail.task.jobName }}</td></tr>
+            <tr><td class="muted">{{ t('console.dTypeTarget') }}</td><td class="mono small">{{ kindName(histDetail.task.type) }} · {{ histDetail.task.target }}</td></tr>
+            <tr><td class="muted">{{ t('console.dNode') }}</td><td class="small">{{ histDetail.task.probeNode || t('console.execLocal') }}</td></tr>
+            <tr><td class="muted">{{ t('console.dCreatorTime') }}</td><td class="small">{{ histDetail.task.createdBy || '-' }} · {{ fmtHistT(histDetail.task.createdAt) }}</td></tr>
+            <tr v-if="histDetail.task.finishedAt"><td class="muted">{{ t('console.dFinished') }}</td><td class="small">{{ fmtHistT(histDetail.task.finishedAt) }}</td></tr>
+            <tr v-if="histDetail.task.result"><td class="muted">{{ t('console.dResult') }}</td><td class="small">{{ histDetail.task.result }}</td></tr>
           </table>
-          <div class="label" style="margin-top:10px">当时参数</div>
-          <pre class="detail-pre">{{ fmtParams(histDetail.task && histDetail.task.params) || '(无)' }}</pre>
+          <div class="label" style="margin-top:10px">{{ t('console.dParams') }}</div>
+          <pre class="detail-pre">{{ fmtParams(histDetail.task && histDetail.task.params) || '(—)' }}</pre>
           <template v-if="histDetail.probeTask">
-            <div class="label" style="margin-top:10px">探针执行明细 ({{ histDetail.probeTask.probeNode || histDetail.task.probeNode }})</div>
+            <div class="label" style="margin-top:10px">{{ t('console.dProbeDetail', { node: histDetail.probeTask.probeNode || histDetail.task.probeNode }) }}</div>
             <table class="table hist-detail">
-              <tr v-if="histDetail.probeTask.progress"><td class="muted">进度</td><td class="small">{{ histDetail.probeTask.progress }}</td></tr>
-              <tr v-if="histDetail.probeTask.summary"><td class="muted">摘要</td><td class="small">{{ histDetail.probeTask.summary }}</td></tr>
-              <tr v-if="histDetail.probeTask.error"><td class="muted">错误</td><td class="small" style="color:var(--red)">{{ histDetail.probeTask.error }}</td></tr>
-              <tr v-if="histDetail.probeTask.result"><td class="muted">回传结果</td><td><pre class="detail-pre">{{ truncateDetail(histDetail.probeTask.result) }}</pre></td></tr>
+              <tr v-if="histDetail.probeTask.progress"><td class="muted">{{ t('console.dProgress') }}</td><td class="small">{{ histDetail.probeTask.progress }}</td></tr>
+              <tr v-if="histDetail.probeTask.summary"><td class="muted">{{ t('console.dSummary') }}</td><td class="small">{{ histDetail.probeTask.summary }}</td></tr>
+              <tr v-if="histDetail.probeTask.error"><td class="muted">{{ t('console.dError') }}</td><td class="small" style="color:var(--red)">{{ histDetail.probeTask.error }}</td></tr>
+              <tr v-if="histDetail.probeTask.result"><td class="muted">{{ t('console.dResultBack') }}</td><td><pre class="detail-pre">{{ truncateDetail(histDetail.probeTask.result) }}</pre></td></tr>
             </table>
           </template>
         </template>
         <template #footer>
-          <button class="btn sm" @click="histDetail = null">关闭</button>
-          <button class="btn sm primary" v-if="histDetail.task" :disabled="running" @click="rescanTask(histDetail.task)">重扫</button>
+          <button class="btn sm" @click="histDetail = null">{{ t('console.close') }}</button>
+          <button class="btn sm primary" v-if="histDetail.task" :disabled="running" @click="rescanTask(histDetail.task)">{{ t('console.actionRescan') }}</button>
         </template>
       </Modal>
 
@@ -627,54 +626,54 @@
       <div class="grid cols-2">
         <div class="card">
           <div class="card-title">
-            策略模板 <span class="sub">GET /api/v2/scheduler/strategies</span>
+            {{ t('console.strategies') }} <span class="sub">GET /api/v2/scheduler/strategies</span>
             <div class="spacer"></div>
-            <button class="btn xs" @click="loadStrategies">刷新</button>
+            <button class="btn xs" @click="loadStrategies">{{ t('common.refresh') }}</button>
           </div>
-          <div v-if="!strategies.length" class="empty" style="min-height:80px">暂无策略模板</div>
+          <div v-if="!strategies.length" class="empty" style="min-height:80px">{{ t('console.noStrategies') }}</div>
           <div v-for="s in strategies" :key="s.id" style="border-bottom:1px solid var(--border); padding:9px 2px">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
               <b class="small">{{ s.name }}</b>
               <span class="badge mono">{{ s.id }}</span>
-              <span class="badge">{{ KIND_NAME[s.kind] || s.kind }}</span>
-              <span class="chip" v-if="s.priority">优先级 {{ s.priority }}</span>
+              <span class="badge">{{ kindName(s.kind) }}</span>
+              <span class="chip" v-if="s.priority">{{ t('console.priority2') }} {{ s.priority }}</span>
             </div>
             <div class="muted small" style="margin-top:3px">{{ s.description }}</div>
             <div class="muted small mono" style="margin-top:3px">
-              端口 {{ short(s.defaults && s.defaults.ports || '-', 40) }} ·
-              超时 {{ (s.defaults && s.defaults.timeoutMs) || '-' }}ms ·
-              并发 {{ (s.defaults && s.defaults.concurrency) || '-' }} ·
-              限速 {{ (s.defaults && s.defaults.rate) || 0 }}pps
+              {{ t('console.portSet2') }} {{ short(s.defaults && s.defaults.ports || '-', 40) }} ·
+              {{ t('console.timeout2') }} {{ (s.defaults && s.defaults.timeoutMs) || '-' }}ms ·
+              {{ t('console.conc') }} {{ (s.defaults && s.defaults.concurrency) || '-' }} ·
+              {{ t('console.rate') }} {{ (s.defaults && s.defaults.rate) || 0 }}pps
             </div>
           </div>
           <div class="muted small" style="margin-top:10px">
-            端口集: 存活 <span class="mono">{{ short(strategyPorts.alive, 40) }}</span> ·
-            常用 <span class="mono">{{ short(strategyPorts.common, 40) }}</span> ·
-            Web <span class="mono">{{ short(strategyPorts.web, 40) }}</span>
+            {{ t('console.portSet2') }}: {{ t('console.portsAlive') }} <span class="mono">{{ short(strategyPorts.alive, 40) }}</span> ·
+            {{ t('console.portsCommon') }} <span class="mono">{{ short(strategyPorts.common, 40) }}</span> ·
+            {{ t('console.portsWeb') }} <span class="mono">{{ short(strategyPorts.web, 40) }}</span>
           </div>
         </div>
 
         <div class="card">
           <div class="card-title">
-            限速统计 <span class="sub">GET /api/v2/scheduler/rate</span>
+            {{ t('console.rateStats') }} <span class="sub">GET /api/v2/scheduler/rate</span>
             <div class="spacer"></div>
-            <span class="chip blue">默认 {{ rateDefault || 0 }} pps</span>
-            <button class="btn xs" @click="loadRate">刷新</button>
+            <span class="chip blue">{{ t('console.rateDefault', { n: rateDefault || 0 }) }}</span>
+            <button class="btn xs" @click="loadRate">{{ t('common.refresh') }}</button>
           </div>
-          <div v-if="!rateRows.length" class="empty" style="min-height:80px">暂无活动网段(任务跑起来后按源网段分桶)</div>
+          <div v-if="!rateRows.length" class="empty" style="min-height:80px">{{ t('console.noRate') }}</div>
           <div v-for="r in rateRows" :key="r.net" class="bar-row">
             <span class="bar-label mono">{{ r.net }}</span>
             <span class="bar-track">
               <span class="bar-fill" :style="{ width: barWidth(r) + '%', background: 'var(--accent)' }"></span>
             </span>
             <span class="bar-val">{{ r.rate || 0 }}pps</span>
-            <span class="badge">{{ r.source === 'rule' ? '网段规则' : '全局默认' }}</span>
-            <span class="muted small mono">令牌 {{ (r.tokens || 0).toFixed(0) }}</span>
+            <span class="badge">{{ r.source === 'rule' ? t('console.netRule') : t('console.globalDefault') }}</span>
+            <span class="muted small mono">{{ t('console.tokens') }} {{ (r.tokens || 0).toFixed(0) }}</span>
           </div>
-          <div class="card-title" style="margin-top:12px">网段规则 <span class="sub">{{ rateRules.length }} 条</span></div>
-          <div v-if="!rateRules.length" class="muted small">未配置专属网段速率, 全部走默认</div>
+          <div class="card-title" style="margin-top:12px">{{ t('console.rateRules', { n: rateRules.length }) }}</div>
+          <div v-if="!rateRules.length" class="muted small">{{ t('console.noRateRules') }}</div>
           <div v-for="(r, i) in rateRules" :key="i" class="mono small" style="padding:3px 0">
-            {{ r.cidr }} → {{ r.rate > 0 ? r.rate + ' pps' : '不限速' }}
+            {{ r.cidr }} → {{ r.rate > 0 ? r.rate + ' pps' : t('console.unlimited') }}
           </div>
         </div>
       </div>
@@ -699,8 +698,9 @@ import Modal from '../components/Modal.vue'
 import AiAnalyzeButton from '../components/AiAnalyzeButton.vue'
 import { api, v2 } from '../api/http'
 import { isAdmin } from '../auth'
+import { t } from '../i18n'
 import { SEV_NAME, copyText } from '../utils'
-import { SCAN_TYPES, typeToKind, TARGET_LABEL, TARGET_PH, KIND_NAME } from '../utils/scanTypes'
+import { SCAN_TYPES, typeToKind } from '../utils/scanTypes'
 import { setPageData } from '../assistant/context'
 
 const route = useRoute()
@@ -827,8 +827,8 @@ const WEB_STEP_PORTS = [80, 443, 8080, 8443]
 // 任务名沿用当前值(同一任务的分步扫描, 结果聚到同一任务名下)。
 function stepHostScan() {
   const list = selectedHostList()
-  if (!list.length) { alert('还没有存活的主机(未存活的目标不做下一步)'); return }
-  if (!form.jobName.trim()) { alert('请先填写扫描任务名(下一步结果按它关联)'); return }
+  if (!list.length) { alert(t('console.alertNoAlive')); return }
+  if (!form.jobName.trim()) { alert(t('console.alertNeedJob')); return }
   form.type = 'host'
   form.target = list.map(h => h.ip).join(',')
   start()
@@ -837,8 +837,8 @@ function stepHostScan() {
 // web 漏扫下一步: 勾选主机里带 web 端口的按端口拼 URL, 没有的退回 http://<ip>。
 function stepWebScan() {
   const list = selectedHostList()
-  if (!list.length) { alert('还没有存活的主机(未存活的目标不做下一步)'); return }
-  if (!form.jobName.trim()) { alert('请先填写扫描任务名(下一步结果按它关联)'); return }
+  if (!list.length) { alert(t('console.alertNoAlive')); return }
+  if (!form.jobName.trim()) { alert(t('console.alertNeedJob')); return }
   const urls = list.map(h => {
     const wp = h.ports.find(p => WEB_STEP_PORTS.includes(p.port))
     if (!wp) return 'http://' + h.ip
@@ -861,7 +861,7 @@ function stepWeakpass() {
     }
   }
   if (!targets.length) {
-    alert('勾选的主机没有弱口令支持的开放端口(redis/mysql/postgresql/telnet/ftp/ssh/smb/vnc/rdp/oracle)')
+    alert(t('console.alertNoWeakPort'))
     return
   }
   router.push({ path: '/weakpass', query: { targets: targets.join(','), job: form.jobName.trim() } })
@@ -881,11 +881,11 @@ async function stepPenta() {
     }
   }
   if (!items.length) {
-    alert('勾选的主机没有 redis(6379) 或 web(80/443/8080/8443) 开放端口, 无法建渗透任务')
+    alert(t('console.alertNoPentaPort'))
     return
   }
-  if (!form.jobName.trim()) { alert('请先填写扫描任务名(渗透结果按它关联)'); return }
-  if (!confirm('为勾选的 ' + items.length + ' 台主机创建渗透任务(任务名「' + form.jobName.trim() + '」)? 创建后到渗透工作台逐条执行(需授权确认)。')) return
+  if (!form.jobName.trim()) { alert(t('console.alertNeedJobPenta')); return }
+  if (!confirm(t('console.confirmPenta', { n: items.length, job: form.jobName.trim() }))) return
   let ok = 0
   let failMsg = ''
   for (const it of items) {
@@ -905,10 +905,10 @@ async function stepPenta() {
     } catch (e) { failMsg = e.message }
   }
   if (ok) {
-    addLog('已创建 ' + ok + '/' + items.length + ' 个渗透任务' + (failMsg ? '(' + failMsg + ')' : ''), 'lg-purple')
+    addLog(t('console.pentaCreated', { ok, n: items.length }) + (failMsg ? '(' + failMsg + ')' : ''), 'lg-purple')
     router.push({ path: '/penta' })
   } else {
-    alert('创建渗透任务失败: ' + failMsg)
+    alert(t('console.pentaFail') + failMsg)
   }
 }
 
@@ -950,7 +950,7 @@ function isWebPort(p) {
 // 与顶部「Web 漏扫」(作用于勾选主机)的区别: 这里是精确到一个端口, 不会把同主机
 // 其它端口也带进去。
 function goWebScan(p) {
-  if (!form.jobName.trim()) { alert('请先填写扫描任务名(下一步结果按它关联)'); return }
+  if (!form.jobName.trim()) { alert(t('console.alertNeedJob')); return }
   const port = Number(p.port)
   const scheme = (port === 443 || port === 8443) ? 'https://' : 'http://'
   form.type = 'web'
@@ -1009,7 +1009,7 @@ async function exportReport() {
     if (!r.ok) {
       let msg = 'HTTP ' + r.status
       try { msg = (await r.json()).error || msg } catch (e) { /* 保留 HTTP 状态 */ }
-      alert('报告生成失败: ' + msg)
+      alert(t('console.reportFail') + msg)
       return
     }
     const blob = await r.blob()
@@ -1022,9 +1022,9 @@ async function exportReport() {
     a.click()
     URL.revokeObjectURL(a.href)
     reportOpen.value = false
-    addLog('报告已导出: ' + name, 'lg-green')
+    addLog(t('console.reportExported') + name, 'lg-green')
   } catch (e) {
-    alert('报告生成失败: ' + e.message)
+    alert(t('console.reportFail') + e.message)
   } finally { reportBusy.value = false }
 }
 
@@ -1134,18 +1134,18 @@ const ruleTotalPages = computed(() => Math.max(1, Math.ceil(ruleFiltered.value.l
 const findingsView = computed(() => findings.value.slice(0, 500))
 const resultRowsView = computed(() => resultRows.value.slice(0, 2000))
 
-const targetLabel = computed(() => TARGET_LABEL[form.type] || '目标')
+const targetLabel = computed(() => t('console.scanTypes.tl_' + form.type) || t('console.colTarget'))
 // 2026-09-27 SCA 自动识别: Docker 镜像/运行中容器允许留空目标 = 自动枚举本机全部
 // 镜像/容器逐个扫(用户不用知道本机有哪些镜像); 本地文件/目录(fs)没有"全部"概念,
 // 仍必填。非 image 类型目标恒必填(行为不变)。
 const targetRequired = computed(() => (form.type === 'image' ? form.trivyKind === 'fs' : true))
 const targetPh = computed(() => {
   if (form.type === 'image') {
-    if (form.trivyKind === 'image') return '留空 = 自动扫描全部本地 Docker 镜像; 或指定镜像名(如 nginx:1.25)'
-    if (form.trivyKind === 'container') return '留空 = 自动扫描全部运行中容器; 或指定容器名(如 web-1)'
-    return '本地文件/目录路径(必填, 如 ./myapp、/opt/repo)'
+    if (form.trivyKind === 'image') return t('console.scanTypes.ph_imageAuto')
+    if (form.trivyKind === 'container') return t('console.scanTypes.ph_containerAuto')
+    return t('console.scanTypes.ph_fs')
   }
-  return TARGET_PH[form.type] || ''
+  return t('console.scanTypes.ph_' + form.type) || ''
 })
 
 // ===== c8: Web 漏洞库规则选择 =====
@@ -1357,7 +1357,7 @@ function fullScan() {
   form.aliveOnly = true
   form.target = 'any'
   if (form.mode === 'now' && !form.jobName.trim()) {
-    alert('请先输入扫描任务名(全扫结果也按任务名聚合)')
+    alert(t('console.alertNeedJobFull'))
     return
   }
   start()
@@ -1367,18 +1367,18 @@ async function start() {
   if (targetRequired.value && !form.target) return
   // 2026-09-27: 下发探针执行(全部类型)必须选目标探针(否则 payload 不带 probeNode 会误走本地执行)
   if (form.execAt === 'probe' && !form.execProbeNode) {
-    alert('下发到探针执行需先选择目标探针')
+    alert(t('console.alertNeedProbe'))
     return
   }
   // 双保险: 快速发现完整模式不支持探针(选项已禁用, 防旧状态/手改 form 绕过)
   if (form.execAt === 'probe' && form.type === 'quick' && !form.aliveOnly) {
-    alert('快速发现完整模式不支持探针执行(探针端无统一引擎), 请勾"仅存活检查"或改用主机漏扫')
+    alert(t('console.alertQuickNoProbe'))
     return
   }
   // 2026-09-25 用户口径: 立即扫描必须先有任务名 —— 结果(漏洞/资产/原始报告)按
   // 任务名打标, 报告中心按任务名生成报告; 没名字的结果是"孤儿", 没法按任务聚合。
   if (form.mode === 'now' && !form.jobName.trim()) {
-    alert('请先输入扫描任务名(报告按任务名生成, 原始报告按任务名分类)')
+    alert(t('console.alertNeedJobReport'))
     return
   }
   if (form.mode === 'queue') { submitQueued(); return }
@@ -1392,7 +1392,7 @@ async function start() {
   aiBuf = ''
   scanStartAt = Date.now() // 报告里的开始时间/耗时口径
   const p = payload()
-  addLog('启动扫描: 任务「' + (p.jobName || '未命名') + '」 ' + p.type + ' -> ' + form.target, 'lg-blue')
+  addLog(t('console.startScan', { job: p.jobName || t('console.unnamed'), type: p.type, target: form.target }), 'lg-blue')
 
   controller = new AbortController()
   const t0 = Date.now()
@@ -1404,7 +1404,7 @@ async function start() {
       signal: controller.signal
     })
     if (!resp.ok) {
-      addLog('服务器错误: HTTP ' + resp.status, 'lg-red')
+      addLog(t('console.serverErr') + resp.status, 'lg-red')
       finish()
       return
     }
@@ -1426,17 +1426,17 @@ async function start() {
         }
         if (data) {
           try { renderEvent(ev, JSON.parse(data)) }
-          catch (e) { addLog('解析失败: ' + data, 'lg-red') }
+          catch (e) { addLog(t('console.parseFail') + data, 'lg-red') }
         }
       }
     }
-    addLog('用时 ' + ((Date.now() - t0) / 1000).toFixed(1) + 's', 'lg-muted')
+    addLog(t('console.elapsed') + ((Date.now() - t0) / 1000).toFixed(1) + 's', 'lg-muted')
     finish()
   } catch (e) {
     if (e.name === 'AbortError') {
-      addLog('已手动停止, 用时 ' + ((Date.now() - t0) / 1000).toFixed(1) + 's', 'lg-orange')
+      addLog(t('console.stopped') + ((Date.now() - t0) / 1000).toFixed(1) + 's', 'lg-orange')
     } else {
-      addLog('请求失败: ' + e.message, 'lg-red')
+      addLog(t('console.reqFail') + e.message, 'lg-red')
     }
     finish()
   }
@@ -1453,7 +1453,7 @@ function stop() {
 }
 
 async function markFP(f) {
-  const note = prompt('误报备注(可选):', '')
+  const note = prompt(t('console.fpNotePrompt'), '')
   if (note === null) return
   try {
     await api('/api/vuln/fps/mark', {
@@ -1462,7 +1462,7 @@ async function markFP(f) {
     })
     f.falsePositive = true
     f.fpNote = note
-    addLog('已标记误报: ' + f.title, 'lg-orange')
+    addLog(t('console.fpMarked') + f.title, 'lg-orange')
   } catch (e) { alert(e.message) }
 }
 
@@ -1562,6 +1562,15 @@ function schedClass(s) {
     success: 'st-success', failed: 'st-failed', cancelled: 'st-cancelled'
   }[s] || ''
 }
+// i18n: 任意 kind 的显示名(回落到原值, 旧数据/未知 kind 不显示成空)
+function kindName(k) {
+  return t('console.scanTypes.k_' + k) || (k || '-')
+}
+// i18n: 调度/扫描状态显示名(queued/running/paused/success/failed/cancelled/pending)
+function schedStatusName(s) {
+  if (!s) return '-'
+  return t('console.st' + s.charAt(0).toUpperCase() + s.slice(1)) || s
+}
 function short(s, n = 46) {
   const v = String(s || '-')
   return v.length > n ? v.slice(0, n) + '…' : v
@@ -1634,7 +1643,7 @@ async function loadNodes() {
 async function submitQueued() {
   qErr.value = ''
   qMsg.value = ''
-  if (targetRequired.value && !form.target) { qErr.value = '目标不能为空'; return }
+  if (targetRequired.value && !form.target) { qErr.value = t('console.alertNeedTarget'); return }
   qBusy.value = true
   const body = {
     type: typeToKind(form.type, form.aliveOnly),
@@ -1708,7 +1717,7 @@ async function act(kind, t) {
 }
 
 async function delTask(t) {
-  if (!confirm('确认删除调度任务 ' + t.id + ' ?')) return
+  if (!confirm(t('console.confirmDelTask', { id: t.id }))) return
   try { await v2('/scheduler/tasks/' + encodeURIComponent(t.id), { method: 'DELETE' }); await loadTasks() }
   catch (e) { alert(e.message) }
 }
@@ -1797,7 +1806,7 @@ async function openHistDetail(t) {
       } catch (e) { /* 探针明细是次要展示, 失败忽略 */ }
     }
   } catch (e) {
-    alert('详情加载失败: ' + e.message)
+    alert(t('console.detailLoadFail') + e.message)
   } finally {
     histDetail.value.loading = false
   }
@@ -1815,9 +1824,9 @@ function truncateDetail(s) {
 // 重扫: 按该任务的原始参数(后端存了完整 scanReq JSON)回填"立即扫描"表单,
 // 切回扫描页并自动启动 —— 结果流在扫描页实时可见(不另开隐藏 SSE 流)。
 async function rescanTask(t) {
-  if (running.value) { alert('当前有扫描进行中, 请等完成后再重扫'); return }
-  const label = (KIND_NAME[t.type] || t.type || '-') + ' ' + (t.target || '')
-  if (!confirm('重新扫描: ' + label + '\n\n将按该任务的原始参数在"立即扫描"页重新启动, 继续?')) return
+  if (running.value) { alert(t('console.confirmRescanBusy')); return }
+  const label = (kindName(t.type) + ' ' + (t.target || ''))
+  if (!confirm(t('console.confirmRescan', { label }))) return
   try {
     const d = await v2('/scans/' + encodeURIComponent(t.id))
     let p = d.params
@@ -1835,7 +1844,7 @@ async function rescanTask(t) {
 // 后端 Params 是 scanReq 的 JSON(字段名与 payload() 基本一致)。
 function applyTaskToForm(p, t) {
   const target = p.ip || p.cidr || p.url || p.trivyTarget || t.target || ''
-  if (!target) { alert('该任务缺少目标, 无法重扫'); return false }
+  if (!target) { alert(t('console.alertNoTarget')); return false }
   const ty = String(p.type || '').toLowerCase()
   let ft = 'quick'
   if (ty === 'host') ft = 'host'
@@ -1878,7 +1887,7 @@ function applyTaskToForm(p, t) {
 }
 
 async function delHistTask(t) {
-  if (!confirm('确认删除扫描历史「' + (t.type || '-') + ' ' + (t.target || '') + '」?\n(只删任务记录, 该次扫描已落库的资产/漏洞/报告不受影响)')) return
+  if (!confirm(t('console.confirmDelHist', { label: (t.type || '-') + ' ' + (t.target || '') }))) return
   try {
     await v2('/scans/' + encodeURIComponent(t.id), { method: 'DELETE' })
     histSel.value = histSel.value.filter(id => id !== t.id)
@@ -1890,11 +1899,11 @@ async function delHistTask(t) {
 async function batchDelHist() {
   const n = histSel.value.length
   if (!n) return
-  if (n > 500) { alert('单次最多删除 500 条'); return }
-  if (!confirm('确认删除选中的 ' + n + ' 条扫描历史?\n(只删任务记录, 已落库的资产/漏洞/报告不受影响)')) return
+  if (n > 500) { alert(t('console.alertMaxBatch')); return }
+  if (!confirm(t('console.confirmBatchDel', { n }))) return
   try {
     const r = await v2('/scans/batch-delete', { method: 'POST', body: { ids: [...histSel.value] } })
-    alert('已删除 ' + (r.deleted || 0) + ' 条')
+    alert(t('console.deletedN', { n: r.deleted || 0 }))
     histSel.value = []
     await loadHist()
   } catch (e) { alert(e.message) }
@@ -1913,16 +1922,16 @@ function histProgressText(t) {
 // 统一入口 POST /scans/{id}/cancel, 后端按任务属性路由:
 // 本地立即扫描(ctx 取消, 立即停) / 探针任务(通知探针停, trivy 等子进程一并杀) / 调度任务。
 async function cancelHistTask(t) {
-  const label = t.jobName || (KIND_NAME[t.type] || t.type) + ' ' + t.target
-  if (!confirm('取消任务「' + label + '」?\n\n探针任务会通知探针停止执行; 本地扫描立即停止。已产出的结果(资产/漏洞)保留。')) return
+  const label = t.jobName || (kindName(t.type) + ' ' + t.target)
+  if (!confirm(t('console.confirmCancel', { label }))) return
   try {
     const r = await v2('/scans/' + encodeURIComponent(t.id) + '/cancel', { method: 'POST' })
-    const via = r.via === 'probe' ? '已通知探针停止'
-      : r.via === 'scheduler' ? '调度任务已取消'
-      : '本地扫描已停止'
-    addLog('取消扫描: ' + label + ' (' + via + ')', 'lg-orange')
+    const via = r.via === 'probe' ? t('console.viaProbe')
+      : r.via === 'scheduler' ? t('console.viaSched')
+      : t('console.viaLocal')
+    addLog(t('console.cancelScan') + label + ' (' + via + ')', 'lg-orange')
     await loadHist()
-  } catch (e) { alert('取消失败: ' + e.message) }
+  } catch (e) { alert(t('console.cancelFail') + e.message) }
 }
 
 let timer = null
