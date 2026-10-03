@@ -34,6 +34,7 @@ An offline, single-executable intranet security operations platform with an embe
 | Pentest workbench (admin only) | Verification pentesting on known vulnerabilities only (scan discovers, pentest verifies); EXP template library + weak-password verification; independent non-deletable pentest audit trail |
 | Roles & permissions | admin / operator / auditor roles; login = account + password + 6-digit dynamic code (refreshed every 90s, shown in large text on the login page) |
 | Factory reset | Wipe all data and caches, recreate the admin account, fully audited |
+| Bilingual UI | One-click Chinese / English switch on the login page and top bar, preference remembered per browser, default Chinese |
 
 The UI is Vue3 (default home `/app/`); the classic single-file UI remains at `/classic/`.
 
