@@ -8,11 +8,15 @@
 // "1天内记住密码": 勾选时把账号+密码存本机 localStorage, 24h 过期自动清除,
 // 下次打开登录页自动回填 —— 只省敲键盘, 动态码每次都必须输入(安全边界不松)。
 // 本工具为单管理员离线内网部署, 凭据只存本机浏览器, 不出网。
+//
+// 2026-10-03: 文案接入 i18n(中英切换, 右上角小按钮; 登录页无 Layout 外壳,
+// 切换器独立放页面角落, 与 Layout 顶栏同一套 i18n 模块/持久化)。
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/http.js'
 import { setUser } from '../auth'
 import { totpRemainSec } from '../utils/otp.js'
+import { t, locale, toggleLocale } from '../i18n'
 
 const router = useRouter()
 const user = ref('')
@@ -155,8 +159,8 @@ function startFATimer() {
 async function doLogin() {
   if (loading.value) return
   err.value = ''; msg.value = ''
-  if (!user.value || !pass.value) { err.value = '请输入账号和密码'; return }
-  if (fa.value.enabled && code.value.length !== 6) { err.value = '请输入 6 位动态验证码'; return }
+  if (!user.value || !pass.value) { err.value = t('login.errNeedCred'); return }
+  if (fa.value.enabled && code.value.length !== 6) { err.value = t('login.errNeedCode'); return }
   loading.value = true
   try {
     // 一屏一次提交: 口令 + 验证码(未启用 2FA 时 code 为空串)。
@@ -176,9 +180,10 @@ async function doLogin() {
       faSlice = Math.floor(Date.now() / 1000 / 90)
       fetchCode()
       code.value = ''
-      err.value = '验证码已过期, 请输入页面上最新的动态码'
+      err.value = t('login.errCodeExpired')
     } else {
-      err.value = (e && e.message) || '登录失败'
+      // 后端错误消息(如"账号或密码错误")暂为中文, 未纳入 i18n
+      err.value = (e && e.message) || t('login.errLoginFail')
       if (fa.value.enabled) code.value = ''
     }
   } finally {
@@ -201,16 +206,16 @@ watch(user, () => {
 // 未登录时顶栏不可用, 登录页提供停止服务入口(/api/quit 免登录):
 // 用户关了控制台黑窗口后服务留在后台, 这是找到停止按钮的唯二位置之一。
 async function quitService() {
-  if (!confirm('确定停止 Yugsight 服务？停止后本页面将不可访问，重新双击 exe 可再启动。')) return
+  if (!confirm(t('login.quitConfirm'))) return
   try { await api('/api/quit', { method: 'POST' }) } catch (e) { /* 服务停止瞬间连接中断属正常 */ }
   document.body.innerHTML = '<p style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#7d8db0;font-size:14px">'
-    + 'Yugsight 服务已停止。如需继续使用，重新运行 yugsight_windows_amd64.exe。</p>'
+    + t('login.quitDone') + '</p>'
 }
 
 onMounted(async () => {
   try {
     const st = await api('/api/auth/status')
-    if (st && st.disabled) { msg.value = '测试模式(免登录), 正在进入控制台...'; router.push('/dashboard'); return }
+    if (st && st.disabled) { msg.value = t('login.testMode'); router.push('/dashboard'); return }
     if (st && st.registered === false) { router.push('/register'); return }
     // 自签部署 + 证书真实信任态均由后端给出(浏览器不向 JS 暴露受信状态, 只有
     // 中心端进程能读证书存储): selfSigned 决定"是否该引导", certTrusted 决定
@@ -227,6 +232,8 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
 
 <template>
   <div class="page-login">
+    <!-- 语言切换(2026-10-03): 登录页无 Layout 外壳, 切换器放页面右上角 -->
+    <button class="lang-toggle" @click="toggleLocale" :title="locale === 'zh' ? t('lang.toEn') : t('lang.toZh')">{{ locale === 'zh' ? 'English' : '中文' }}</button>
     <form class="login-card" @submit.prevent="doLogin">
       <!-- 证书安装引导条: 自签部署(selfSigned)且根证书未装入信任存储(certTrusted=false,
            后端读系统证书存储判定)时显示; 装好证书刷新页面即自动消失, 卸载后自动回显。
@@ -241,33 +248,33 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
               <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
               <path d="M12 8v4"/><path d="M12 16h.01"/>
             </svg>
-            <p class="cert-warn-text">当前连接证书未受系统信任，请安装证书</p>
+            <p class="cert-warn-text">{{ t('login.certWarn') }}</p>
           </div>
           <div class="cert-warn-actions">
             <button type="button" class="cert-install" :disabled="certDownloading" @click="downloadCertTool">
-              {{ certDownloading ? '正在下载...' : '安装证书' }}
+              {{ certDownloading ? t('login.certDownloading') : t('login.certInstall') }}
             </button>
-            <button type="button" class="cert-later" @click="ackCert">不再提示</button>
-            <button type="button" class="cert-later" @click="laterCert">稍后再说</button>
+            <button type="button" class="cert-later" @click="ackCert">{{ t('login.certAck') }}</button>
+            <button type="button" class="cert-later" @click="laterCert">{{ t('login.certLater') }}</button>
           </div>
         </div>
       </div>
 
       <div class="brand">
         <h1>御视 <span class="en">Yugsight</span></h1>
-        <p class="sub">网络安全扫描探测与运维大屏</p>
+        <p class="sub">{{ t('login.sub') }}</p>
       </div>
 
       <label class="fld">
-        <span>账号</span>
-        <input v-model.trim="user" autocomplete="username" placeholder="管理员账号" />
+        <span>{{ t('login.account') }}</span>
+        <input v-model.trim="user" autocomplete="username" :placeholder="t('login.accountPh')" />
       </label>
       <label class="fld">
-        <span>密码</span>
+        <span>{{ t('login.password') }}</span>
         <div class="pw-wrap">
-          <input v-model="pass" :type="showPass ? 'text' : 'password'" autocomplete="current-password" placeholder="密码" />
+          <input v-model="pass" :type="showPass ? 'text' : 'password'" autocomplete="current-password" :placeholder="t('login.passwordPh')" />
           <button type="button" class="pw-toggle" :class="{ on: showPass }" @click="showPass = !showPass"
-                  :title="showPass ? '隐藏密码' : '显示密码'">
+                  :title="showPass ? t('login.hidePass') : t('login.showPass')">
             <svg v-if="!showPass" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                  aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -281,23 +288,23 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
       <!-- 动态验证码: 常驻展示; 点击数字一键填入, 90 秒一换 -->
       <div v-if="fa.enabled" class="fa-box">
         <div class="fa-head">
-          <span>动态验证码</span>
-          <span class="fa-remain">每 90 秒刷新 · 剩余 {{ fa.remain }}s</span>
+          <span>{{ t('login.faTitle') }}</span>
+          <span class="fa-remain">{{ t('login.faRemain', { sec: fa.remain }) }}</span>
         </div>
-        <div class="fa-show" @click="fillCode" title="点击一键填入">{{ fa.code || '······' }}</div>
-        <div class="fa-hint">点击上方数字一键填入</div>
+        <div class="fa-show" @click="fillCode" :title="t('login.faHint')">{{ fa.code || '······' }}</div>
+        <div class="fa-hint">{{ t('login.faHint') }}</div>
         <input v-model="code" class="code-input" inputmode="numeric" maxlength="6"
-               autocomplete="one-time-code" placeholder="照上方 6 位数字输入" />
+               autocomplete="one-time-code" :placeholder="t('login.faPh')" />
       </div>
 
       <div class="opts">
-        <label class="opt"><input v-model="remember" type="checkbox" /> 1天内记住密码(仅存本机)</label>
+        <label class="opt"><input v-model="remember" type="checkbox" /> {{ t('login.remember') }}</label>
       </div>
 
       <p v-if="err" class="err">{{ err }}</p>
       <p v-if="msg" class="ok">{{ msg }}</p>
       <button class="btn" type="submit" :disabled="loading">
-        {{ loading ? '登录中...' : '登 录' }}
+        {{ loading ? t('login.logging') : t('login.loginBtn') }}
       </button>
 
       <!-- 2026-09-27: 探针安装包下载入口(醒目位置, 用户明确要求)。
@@ -305,11 +312,11 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
            该接口已移除登录校验, 未登录的操作者也能直接打开页面下载安装包。
            2026-09-29: 原写死 http://192.168.1.143:8420, 切 HTTPS 后失效, 改同源相对路径。 -->
       <a class="agent-dl" href="/api/v2/probe/agent/install" target="_blank" rel="noreferrer">
-        探针安装包下载(免登录, 新机器部署用)
+        {{ t('login.agentDl') }}
       </a>
     </form>
-    <p class="foot">Yugsight · 离线本地部署 · 登录校验全程本地完成
-      · <a class="quit-link" href="javascript:void(0)" @click="quitService">停止服务</a>
+    <p class="foot">{{ t('login.foot') }}
+      · <a class="quit-link" href="javascript:void(0)" @click="quitService">{{ t('login.quit') }}</a>
     </p>
   </div>
 </template>
@@ -330,6 +337,10 @@ onBeforeUnmount(() => { if (faTimer) clearInterval(faTimer) })
 .cert-install:disabled { opacity: .7; cursor: default; }
 .cert-later { background: none; border: 0; color: var(--dim, #7d8db0); font-size: 12px; cursor: pointer; padding: 2px 4px; }
 .cert-later:hover { color: var(--fg, #e8ecf5); text-decoration: underline; }
+
+/* 语言切换(2026-10-03): 页面右上角轻量按钮, 显示"目标语言" */
+.lang-toggle { position: fixed; top: 14px; right: 18px; background: none; border: 1px solid var(--line, #232c45); border-radius: 6px; color: var(--dim, #7d8db0); font-size: 12px; padding: 3px 10px; cursor: pointer; z-index: 10; }
+.lang-toggle:hover { color: var(--fg, #e8ecf5); border-color: var(--accent, #4c8dff); }
 
 .brand h1 { margin: 0; font-size: 22px; color: var(--fg, #e8ecf5); }
 .brand .en { font-size: 15px; color: var(--dim, #7d8db0); font-weight: 400; }

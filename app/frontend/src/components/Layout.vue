@@ -3,11 +3,11 @@
     <aside class="sidebar">
       <!-- 品牌区(2026-09-25 二轮): logo+名称整体居中, 名称后跟版本号,
            点击整块跳到版权信息页(用户: "点击这个位置会跳转到版权 licence 页面") -->
-      <div class="brand-wrap" @click="goCopyright" :title="collapsed ? '版权信息' : '点击查看版权信息'">
+      <div class="brand-wrap" @click="goCopyright" :title="collapsed ? t('brand.copyTitle') : t('brand.copyHint')">
         <div class="logo">YS</div>
         <!-- 品牌自定义(2026-09-28): 系统名称 = settings.json brand 节,
              缺省 = 原始项目名; 与浏览器标签页标题同源(/api/info.brandName) -->
-        <div class="brand">{{ brandName }}<span class="brand-ver" v-if="ver">v{{ ver }}</span><span class="brand-sub">安服管理平台</span></div>
+        <div class="brand">{{ brandName }}<span class="brand-ver" v-if="ver">v{{ ver }}</span><span class="brand-sub">{{ t('brand.sub') }}</span></div>
       </div>
       <nav>
         <!-- 菜单(2026-09-23 阶段 4; 2026-09-27 分组分隔线化 + 调序): 5 组 11 项。
@@ -23,12 +23,13 @@
              「探针管理」+「网络监控 (SNMP)」合并为「节点监控」(/nodemonitor 内两 Tab);
              系统配置组: 引擎与规则 + AI 配置 + 授权与模型(admin)。
              阶段 4: 独立「安全大屏」菜单项移除 —— 大屏并入「首页仪表盘」内建 Tab2
-             (2026-09-28: 仪表盘内嵌 Tab2 与旧 /bigscreen 已删除, 入口统一为本站 /bigscreen-pro)。 -->
+             (2026-09-28: 仪表盘内嵌 Tab2 与旧 /bigscreen 已删除, 入口统一为本站 /bigscreen-pro)。
+             2026-10-03: 全部文案走 i18n(t('menu.*')), 中英切换即时生效。 -->
         <!-- 运维总览组(第一组, 无分隔线)
              首页仪表盘内置两个 Tab: 概览仪表盘 + 安全大屏(原独立大屏页能力全量迁入)
              安全大屏 Pro(2026-09-27): 独立全屏页(meta.full 不套外壳), 一级菜单与仪表盘同级、在其下 -->
-        <router-link class="nav-item" to="/" :title="collapsed ? '首页仪表盘' : ''"><span class="nav-dot"></span><span class="nav-ico">首</span><span class="nav-label">首页仪表盘</span></router-link>
-        <router-link class="nav-item" to="/bigscreen-pro" :title="collapsed ? '安全大屏' : ''"><span class="nav-dot"></span><span class="nav-ico">屏</span><span class="nav-label">安全大屏</span></router-link>
+        <router-link class="nav-item" to="/" :title="collapsed ? t('menu.dashboard') : ''"><span class="nav-dot"></span><span class="nav-ico">首</span><span class="nav-label">{{ t('menu.dashboard') }}</span></router-link>
+        <router-link class="nav-item" to="/bigscreen-pro" :title="collapsed ? t('menu.bigscreen') : ''"><span class="nav-dot"></span><span class="nav-ico">屏</span><span class="nav-label">{{ t('menu.bigscreen') }}</span></router-link>
         <!-- 2026-09-29 用户要求: 一级菜单不再单列「网络拓扑」—— 入口收敛为安全大屏里的
              网络拓扑卡(卡内「⤢ 全屏」进 /topology/3d 独立页, 路由保留) -->
 
@@ -36,33 +37,33 @@
         <!-- 2026-09-25 四轮换口径: 独立"扫描作业"页去掉 —— 命名扫描任务就在
              扫描控制台的立即扫描里(任务名 + IP/子网 → 快速发现 → 勾选主机做
              主机漏扫/web漏扫/弱口令/渗透), 报告中心按任务名生成报告。 -->
-        <router-link class="nav-item" to="/console" :title="collapsed ? '扫描控制台' : ''"><span class="nav-dot"></span><span class="nav-ico">扫</span><span class="nav-label">扫描控制台</span></router-link>
-        <router-link class="nav-item" to="/reports" :title="collapsed ? '报告中心' : ''"><span class="nav-dot"></span><span class="nav-ico">报</span><span class="nav-label">报告中心</span></router-link>
+        <router-link class="nav-item" to="/console" :title="collapsed ? t('menu.console') : ''"><span class="nav-dot"></span><span class="nav-ico">扫</span><span class="nav-label">{{ t('menu.console') }}</span></router-link>
+        <router-link class="nav-item" to="/reports" :title="collapsed ? t('menu.reports') : ''"><span class="nav-dot"></span><span class="nav-ico">报</span><span class="nav-label">{{ t('menu.reports') }}</span></router-link>
 
         <!-- 阶段 5: 渗透测试组(与扫描作业平级对称, 物理隔离入口)。
              2026-09-27 调序: 弱口令检测自扫描作业移入(排渗透工作台下);
              该条目本身不限 admin(operator/auditor 也可见);
              渗透工作台仅 admin —— 渗透是攻击性能力, 与 router.js 的 meta.admin 守卫双保险。 -->
         <div class="nav-sep"></div><!-- 组: 渗透测试 -->
-        <router-link class="nav-item" v-if="admin" to="/penta" :title="collapsed ? '渗透工作台' : ''"><span class="nav-dot"></span><span class="nav-ico">渗</span><span class="nav-label">渗透工作台</span></router-link>
-        <router-link class="nav-item" to="/weakpass" :title="collapsed ? '弱口令检测' : ''"><span class="nav-dot"></span><span class="nav-ico">弱</span><span class="nav-label">弱口令检测</span></router-link>
+        <router-link class="nav-item" v-if="admin" to="/penta" :title="collapsed ? t('menu.penta') : ''"><span class="nav-dot"></span><span class="nav-ico">渗</span><span class="nav-label">{{ t('menu.penta') }}</span></router-link>
+        <router-link class="nav-item" to="/weakpass" :title="collapsed ? t('menu.weakpass') : ''"><span class="nav-dot"></span><span class="nav-ico">弱</span><span class="nav-label">{{ t('menu.weakpass') }}</span></router-link>
 
         <div class="nav-sep"></div><!-- 组: 资产与风险 -->
-        <router-link class="nav-item" to="/assets" :title="collapsed ? '资产管理' : ''"><span class="nav-dot"></span><span class="nav-ico">资</span><span class="nav-label">资产管理</span></router-link>
+        <router-link class="nav-item" to="/assets" :title="collapsed ? t('menu.assets') : ''"><span class="nav-dot"></span><span class="nav-ico">资</span><span class="nav-label">{{ t('menu.assets') }}</span></router-link>
         <!-- 2026-09-26: 漏扫管控并入漏洞管理(/vulns?tab=control), 菜单不再单列 -->
-        <router-link class="nav-item" to="/vulns" :title="collapsed ? '漏洞管理' : ''"><span class="nav-dot"></span><span class="nav-ico">漏</span><span class="nav-label">漏洞管理</span></router-link>
+        <router-link class="nav-item" to="/vulns" :title="collapsed ? t('menu.vulns') : ''"><span class="nav-dot"></span><span class="nav-ico">漏</span><span class="nav-label">{{ t('menu.vulns') }}</span></router-link>
 
         <div class="nav-sep"></div><!-- 组: 诊断与观测 -->
-        <router-link class="nav-item" to="/capture" :title="collapsed ? '实时抓包分析' : ''"><span class="nav-dot"></span><span class="nav-ico">抓</span><span class="nav-label">实时抓包</span></router-link>
+        <router-link class="nav-item" to="/capture" :title="collapsed ? t('menu.capture') : ''"><span class="nav-dot"></span><span class="nav-ico">抓</span><span class="nav-label">{{ t('menu.capture') }}</span></router-link>
         <!-- 节点监控(阶段 1): 原「探针管理」(系统配置) + 「网络监控 (SNMP)」合并为内两 Tab 页面,
              旧 /probes、/monitor 路由保留重定向(见 router.js) -->
-        <router-link class="nav-item" to="/nodemonitor" :title="collapsed ? '节点监控' : ''"><span class="nav-dot"></span><span class="nav-ico">监</span><span class="nav-label">节点监控</span></router-link>
+        <router-link class="nav-item" to="/nodemonitor" :title="collapsed ? t('menu.nodemonitor') : ''"><span class="nav-dot"></span><span class="nav-ico">监</span><span class="nav-label">{{ t('menu.nodemonitor') }}</span></router-link>
 
         <div class="nav-sep"></div><!-- 组: 系统配置 -->
-        <router-link class="nav-item" to="/env" :title="collapsed ? '引擎与规则' : ''"><span class="nav-dot"></span><span class="nav-ico">引</span><span class="nav-label">引擎与规则</span></router-link>
+        <router-link class="nav-item" to="/env" :title="collapsed ? t('menu.env') : ''"><span class="nav-dot"></span><span class="nav-ico">引</span><span class="nav-label">{{ t('menu.env') }}</span></router-link>
         <!-- 2026-09-26: AI 配置并入授权与模型(/license?tab=ai), 菜单不再单列 AI 配置 -->
         <!-- 授权与模型仅 admin 可见(操作员/只读进不去, 见 router.js 的 meta.admin 守卫) -->
-        <router-link class="nav-item" v-if="admin" to="/license" :title="collapsed ? '授权与模型' : ''"><span class="nav-dot"></span><span class="nav-ico">授</span><span class="nav-label">授权与模型</span></router-link>
+        <router-link class="nav-item" v-if="admin" to="/license" :title="collapsed ? t('menu.license') : ''"><span class="nav-dot"></span><span class="nav-ico">授</span><span class="nav-label">{{ t('menu.license') }}</span></router-link>
 
         <!-- 2026-09-27: 底部「关于/版权信息」菜单项删除(用户: 点顶部 logo 即有版权页链接,
              独立项多余); 版权入口保留为顶部品牌区点击(goCopyright), 版本号仍常驻品牌区 -->
@@ -71,16 +72,18 @@
 
     <div class="main-col">
       <header class="topbar">
-        <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? '展开菜单' : '收起菜单'">{{ collapsed ? '»' : '«' }}</button>
-        <div class="top-title">{{ route.meta.title || '' }}</div>
+        <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? t('common.expand') : t('common.collapse')">{{ collapsed ? '»' : '«' }}</button>
+        <div class="top-title">{{ route.meta.titleKey ? t(route.meta.titleKey) : (route.meta.title || '') }}</div>
         <!-- 2026-09-25 口径调整: 顶栏右上角展示"系统当前时间"(每秒刷新, 确认服务
              进程活着且时钟正常); 版本号移入「版权信息」页(左上方菜单)。 -->
         <div class="top-right">
-          <span class="chip blue mono" title="系统当前时间">{{ clock || '--:--:--' }}</span>
+          <span class="chip blue mono" :title="t('common.now')">{{ clock || '--:--:--' }}</span>
+          <!-- 2026-10-03: 语言切换(中英, 持久化 localStorage, 默认中文) -->
+          <button class="lang-btn" @click="toggleLocale" :title="locale === 'zh' ? t('lang.toEn') : t('lang.toZh')">{{ locale === 'zh' ? '中文' : 'EN' }}</button>
           <!-- user 为空 = whoami 未返回(加载中的瞬时态), 显示 '-';
                'local' 只可能来自免登录模式的服务端真实返回, 原样展示 -->
-          <span class="chip">用户: {{ user || '-' }}</span>
-          <button class="btn sm" @click="logout">退出登录</button>
+          <span class="chip">{{ t('common.user') }}: {{ user || '-' }}</span>
+          <button class="btn sm" @click="logout">{{ t('common.logout') }}</button>
         </div>
       </header>
       <main class="page-main"><slot /></main>
@@ -95,6 +98,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/http'
 import { currentUser, getRole, resetAuth } from '../auth'
+import { t, locale, toggleLocale } from '../i18n'
 // 小 Y 问答助手(2026-09-27): 全局悬浮入口, 总开关关闭时组件自身不渲染
 import AssistantWidget from './AssistantWidget.vue'
 
@@ -179,3 +183,20 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onViewportResize)
 })
 </script>
+
+<style scoped>
+/* 语言切换按钮: 顶栏 chip 旁的轻量文字按钮(中英互切, 显示"目标语言") */
+.lang-btn {
+  background: none;
+  border: 1px solid var(--line, #232c45);
+  border-radius: 6px;
+  color: var(--dim, #7d8db0);
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.lang-btn:hover {
+  color: var(--fg, #e8ecf5);
+  border-color: var(--accent, #4c8dff);
+}
+</style>

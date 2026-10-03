@@ -3,19 +3,20 @@
     <!-- 2026-09-28: 已移除内置 Tab2「安全大屏」—— 该能力全量迁到独立一级菜单
          /bigscreen-pro(v138 起), Tab2 与旧 /bigscreen 重定向一并删除(见 router.js)。
          页面只保留概览仪表盘, 不再有 tab 切换与 URL query 驱动。 -->
-      <PageHeader title="资产 / 风险 / 任务 / 引擎 / 中心端运行状态 一屏概览">
-        <button class="btn sm" @click="loadAll"><span class="spinner" v-if="loading"></span>刷新</button>
+    <!-- 2026-10-03: 文案接入 i18n(t('dash.*')), 中英切换即时生效 -->
+      <PageHeader :title="t('dash.header')">
+        <button class="btn sm" @click="loadAll"><span class="spinner" v-if="loading"></span>{{ t('common.refresh') }}</button>
       </PageHeader>
 
       <!-- 概览卡片 -->
       <div class="grid cols-5">
         <!-- 2026-09-27: sub 显示"存活/总计"(主机口径 host=1, 排除镜像工件),
              与资产页"只看存活"默认视图的数字对得上, 差异一眼可见 -->
-        <StatCard label="资产总数" :value="assetsTotal" :sub="'存活 ' + assetsAliveTotal + ' / 总计 ' + assetsTotal + ' (主机)'" tone="blue" />
-        <StatCard label="漏洞总数" :value="vulnsTotal" :sub="`高危 ${highCount} / 严重 ${criticalCount}`" tone="red" />
-        <StatCard label="扫描任务" :value="scansTotal" :sub="`运行中 ${runningCount} / 待执行 ${pendingCount} · 累计 ${histScansTotal}`" tone="orange" />
-        <StatCard label="扫描引擎" :value="engineOk ? '正常' : '降级'" :sub="engineSub" :tone="engineOk ? 'green' : 'orange'" />
-        <StatCard label="Npcap 驱动" :value="npcapText" sub="抓包能力" :tone="npcapOk ? 'green' : 'yellow'" />
+        <StatCard :label="t('dash.assets')" :value="assetsTotal" :sub="t('dash.assetsSub', { alive: assetsAliveTotal, total: assetsTotal })" tone="blue" />
+        <StatCard :label="t('dash.vulns')" :value="vulnsTotal" :sub="t('dash.vulnsSub', { high: highCount, critical: criticalCount })" tone="red" />
+        <StatCard :label="t('dash.scans')" :value="scansTotal" :sub="t('dash.scansSub', { running: runningCount, pending: pendingCount, hist: histScansTotal })" tone="orange" />
+        <StatCard :label="t('dash.engines')" :value="engineOk ? t('common.normal') : t('common.degraded')" :sub="engineSub" :tone="engineOk ? 'green' : 'orange'" />
+        <StatCard :label="t('dash.npcap')" :value="npcapText" :sub="t('dash.npcapCap')" :tone="npcapOk ? 'green' : 'yellow'" />
       </div>
 
       <!-- 中心端运行状态(阶段 4): 中心主机动态实时指标, 5 秒轮询。
@@ -23,92 +24,92 @@
            这里 = 动态负载/任务队列/数据链路, 解决版本与系统信息重复展示。 -->
       <div class="card" style="margin-top:14px">
         <div class="card-title">
-          中心端运行状态
-          <span class="sub">CPU / 内存 / 磁盘 · 任务队列 · 数据链路 · 5 秒自动刷新</span>
+          {{ t('dash.csTitle') }}
+          <span class="sub">{{ t('dash.csSub') }}</span>
           <span class="chip" :class="csErr ? 'off' : 'on'" style="margin-left:auto">
-            {{ csErr ? '数据获取异常' : (cs ? '实时更新中' : '加载中') }}
+            {{ csErr ? t('dash.csErr') : (cs ? t('dash.csLive') : t('dash.csLoading')) }}
           </span>
         </div>
         <div class="grid cols-3">
           <!-- 中心主机负载 -->
           <div>
-            <div class="cs-title">中心主机负载</div>
+            <div class="cs-title">{{ t('dash.csHostLoad') }}</div>
             <div class="load-cell" style="width:100%; margin-bottom:10px">
               <span class="load-label" style="width:52px">CPU</span>
               <span class="mini-track"><span class="mini-fill" :style="{ width: barW(cs && cs.cpu && cs.cpu.percent), background: loadColor(cs && cs.cpu && cs.cpu.percent) }"></span></span>
               <span class="mono small" style="width:52px; text-align:right">{{ pct(cs && cs.cpu && cs.cpu.percent) }}</span>
             </div>
             <div class="load-cell" style="width:100%; margin-bottom:10px">
-              <span class="load-label" style="width:52px">内存</span>
+              <span class="load-label" style="width:52px">{{ t('dash.mem') }}</span>
               <span class="mini-track"><span class="mini-fill" :style="{ width: barW(csMemPct), background: loadColor(csMemPct) }"></span></span>
               <span class="mono small" style="width:52px; text-align:right">{{ pct(csMemPct) }}</span>
             </div>
             <div class="load-cell" style="width:100%; margin-bottom:10px">
-              <span class="load-label" style="width:52px">磁盘</span>
+              <span class="load-label" style="width:52px">{{ t('dash.disk') }}</span>
               <span class="mini-track"><span class="mini-fill" :style="{ width: barW(csDiskPct), background: loadColor(csDiskPct) }"></span></span>
               <span class="mono small" style="width:52px; text-align:right">{{ pct(csDiskPct) }}</span>
             </div>
             <div class="kv">
-              <div class="k">CPU 核数</div><div class="v mono">{{ (cs && cs.cpu && cs.cpu.cores) || '-' }}</div>
-              <div class="k">内存占用</div><div class="v mono">{{ cs && cs.mem && cs.mem.ok ? fmtBytes(cs.mem.used) + ' / ' + fmtBytes(cs.mem.total) : '-' }}</div>
-              <div class="k">磁盘剩余</div><div class="v mono" :title="(cs && cs.disk && cs.disk.path) || ''">{{ cs && cs.disk && cs.disk.ok ? fmtBytes(cs.disk.free) + ' / ' + fmtBytes(cs.disk.total) : '-' }}</div>
-              <div class="k">服务启动于</div><div class="v mono small">{{ timeFull(cs && cs.startedAt) }}</div>
-              <div class="k">服务运行时长</div><div class="v mono">{{ fmtDuration((cs && cs.uptimeSec) || 0) }}</div>
+              <div class="k">{{ t('dash.cpuCores') }}</div><div class="v mono">{{ (cs && cs.cpu && cs.cpu.cores) || '-' }}</div>
+              <div class="k">{{ t('dash.memUsed') }}</div><div class="v mono">{{ cs && cs.mem && cs.mem.ok ? fmtBytes(cs.mem.used) + ' / ' + fmtBytes(cs.mem.total) : '-' }}</div>
+              <div class="k">{{ t('dash.diskFree') }}</div><div class="v mono" :title="(cs && cs.disk && cs.disk.path) || ''">{{ cs && cs.disk && cs.disk.ok ? fmtBytes(cs.disk.free) + ' / ' + fmtBytes(cs.disk.total) : '-' }}</div>
+              <div class="k">{{ t('dash.startedAt') }}</div><div class="v mono small">{{ timeFull(cs && cs.startedAt) }}</div>
+              <div class="k">{{ t('dash.uptime') }}</div><div class="v mono">{{ fmtDuration((cs && cs.uptimeSec) || 0) }}</div>
             </div>
           </div>
 
           <!-- 任务队列(扫描任务 + 节点采集) -->
           <div>
-            <div class="cs-title">任务队列状态</div>
+            <div class="cs-title">{{ t('dash.taskQueue') }}</div>
             <div class="kv" style="margin-bottom:10px">
-              <div class="k">等待任务数</div><div class="v mono">{{ (cs && cs.tasks && cs.tasks.queued) || 0 }}</div>
-              <div class="k">执行中任务</div><div class="v mono">{{ (cs && cs.tasks && cs.tasks.running) || 0 }} / {{ (cs && cs.tasks && cs.tasks.maxSlots) || '-' }} 槽位</div>
-              <div class="k">已暂停</div><div class="v mono">{{ (cs && cs.tasks && cs.tasks.paused) || 0 }}</div>
-              <div class="k">节点采集</div><div class="v">{{ (cs && cs.tasks && cs.tasks.collect && cs.tasks.collect.running) ? ('采集中 · ' + (cs.tasks.collect.taskCount || 0) + ' 个任务') : '未采集' }}</div>
+              <div class="k">{{ t('dash.queued') }}</div><div class="v mono">{{ (cs && cs.tasks && cs.tasks.queued) || 0 }}</div>
+              <div class="k">{{ t('dash.runningTask') }}</div><div class="v mono">{{ (cs && cs.tasks && cs.tasks.running) || 0 }} / {{ (cs && cs.tasks && cs.tasks.maxSlots) || '-' }} {{ t('dash.slots') }}</div>
+              <div class="k">{{ t('dash.paused') }}</div><div class="v mono">{{ (cs && cs.tasks && cs.tasks.paused) || 0 }}</div>
+              <div class="k">{{ t('dash.collect') }}</div><div class="v">{{ (cs && cs.tasks && cs.tasks.collect && cs.tasks.collect.running) ? t('dash.collecting', { n: cs.tasks.collect.taskCount || 0 }) : t('dash.notCollecting') }}</div>
             </div>
-            <div class="cs-sub">实时进度(运行中的扫描/采集任务)</div>
-            <div v-if="!csTasks.length" class="muted small" style="margin-top:6px">当前无运行中的任务</div>
+            <div class="cs-sub">{{ t('dash.liveProgress') }}</div>
+            <div v-if="!csTasks.length" class="muted small" style="margin-top:6px">{{ t('dash.noRunningTasks') }}</div>
             <div v-else class="scroll-list" style="max-height:170px">
               <div class="top-item" v-for="t in csTasks" :key="t.id">
                 <span class="chip on" style="min-width:52px; justify-content:center">{{ t.kind }}</span>
                 <span class="t-title mono" :title="t.target">{{ t.target }}</span>
                 <span class="mono small muted" v-if="t.node">@{{ t.node }}</span>
-                <span class="muted small" :title="t.progress || ''">{{ t.progress || '执行中' }}</span>
+                <span class="muted small" :title="t.progress || ''">{{ t.progress || t2('dash.running') }}</span>
               </div>
             </div>
           </div>
 
           <!-- 数据链路(探针连接 / 数据库 / 消息队列) -->
           <div>
-            <div class="cs-title">数据链路状态</div>
+            <div class="cs-title">{{ t('dash.linksTitle') }}</div>
             <div class="kv" style="margin-bottom:10px">
-              <div class="k">探针连接</div>
+              <div class="k">{{ t('dash.probeConn') }}</div>
               <div class="v">
                 <template v-if="cs && cs.links && cs.links.probeCenterEnabled">
-                  <span class="dot on" style="margin-right:5px"></span>{{ cs.links.probesOnline }} 在线 / {{ cs.links.probesTotal }} 登记
+                  <span class="dot on" style="margin-right:5px"></span>{{ t('dash.probesOnline', { online: cs.links.probesOnline, total: cs.links.probesTotal }) }}
                 </template>
-                <template v-else>中心端未启用</template>
+                <template v-else>{{ t('dash.centerDisabled') }}</template>
               </div>
-              <div class="k">数据库读写</div>
+              <div class="k">{{ t('dash.dbRW') }}</div>
               <div class="v">
                 <template v-if="cs && cs.links && cs.links.db && cs.links.db.ok">
                   <span class="dot on" style="margin-right:5px"></span>{{ cs.links.db.type }}
                   <span class="muted small" v-if="cs.links.db.stats">{{ dbSummary }}</span>
                 </template>
-                <template v-else><span class="dot off" style="margin-right:5px"></span>不可用</template>
+                <template v-else><span class="dot off" style="margin-right:5px"></span>{{ t('dash.dbUnavailable') }}</template>
               </div>
-              <div class="k">消息队列</div>
+              <div class="k">{{ t('dash.msgQueue') }}</div>
               <div class="v">
                 <template v-if="cs && cs.links && cs.links.sse">
                   <span class="dot on" style="margin-right:5px"></span>
-                  {{ cs.links.sse.subscribers }} 订阅者 · 补发窗口 {{ cs.links.sse.ringUsed }}/{{ cs.links.sse.ringCap }}
+                  {{ t('dash.subscribers', { n: cs.links.sse.subscribers, used: cs.links.sse.ringUsed, cap: cs.links.sse.ringCap }) }}
                 </template>
                 <template v-else>-</template>
               </div>
-              <div class="k">中心主机</div><div class="v">{{ (cs && cs.hostname) || '-' }} <span class="muted small mono" v-if="cs && cs.os">{{ cs.os }}/{{ cs.arch }}</span></div>
-              <div class="k">监听端口</div><div class="v mono">{{ info.port || '-' }}</div>
+              <div class="k">{{ t('dash.centerHost') }}</div><div class="v">{{ (cs && cs.hostname) || '-' }} <span class="muted small mono" v-if="cs && cs.os">{{ cs.os }}/{{ cs.arch }}</span></div>
+              <div class="k">{{ t('dash.listenPort') }}</div><div class="v mono">{{ info.port || '-' }}</div>
             </div>
-            <div class="muted small">探针未启用时仅中心本地执行; 数据库与消息队列异常时面板保持上一帧并提示</div>
+            <div class="muted small">{{ t('dash.linksNote') }}</div>
           </div>
         </div>
       </div>
@@ -116,19 +117,19 @@
       <!-- 任务历史清理: 累计数是历史记录(含已完成), 与上面"运行中/待执行"不是一回事,
            堆积久了会让人误以为有一堆任务卡着, 给用户一条清理入口 -->
       <div class="toolbar" style="margin-top:8px">
-        <span class="muted small">扫描任务历史累计 {{ histScansTotal }} 条(已完成的历史记录, 不影响资产与漏洞)</span>
+        <span class="muted small">{{ t('dash.histNote', { n: histScansTotal }) }}</span>
         <button class="btn xs danger" :disabled="!histScansTotal || clearing" @click="clearScans">
-          {{ clearing ? '清空中...' : '清空历史记录' }}
+          {{ clearing ? t('dash.clearing') : t('dash.clearHist') }}
         </button>
         <div class="spacer" style="flex:1"></div>
-        <router-link class="muted small" to="/console?tab=queue">扫描作业 →</router-link>
+        <router-link class="muted small" to="/console?tab=queue">{{ t('dash.toConsole') }}</router-link>
       </div>
 
       <div class="grid cols-3" style="margin-top:14px">
         <!-- 漏洞等级分布 -->
         <div class="card">
-          <div class="card-title">漏洞等级分布 <span class="sub" v-if="vulnsTotal">共 {{ vulnsTotal }} 条</span></div>
-          <div v-if="vulnsTotal === 0"><Empty text="暂无漏洞记录" /></div>
+          <div class="card-title">{{ t('dash.sevDist') }} <span class="sub" v-if="vulnsTotal">{{ t('dash.sevTotal', { n: vulnsTotal }) }}</span></div>
+          <div v-if="vulnsTotal === 0"><Empty :text="t('dash.noVulns')" /></div>
           <div v-else>
             <div class="bar-row" v-for="s in sevBars" :key="s.key">
               <div class="bar-label">{{ s.name }}</div>
@@ -140,79 +141,79 @@
 
         <!-- 引擎状态 -->
         <div class="card">
-          <div class="card-title">引擎状态 <span class="sub">本地引擎 ./bin/ + 内置引擎</span></div>
-          <div v-if="!env"><Empty text="环境检测中 / 不可用" /></div>
+          <div class="card-title">{{ t('dash.engineStatus') }} <span class="sub">{{ t('dash.engineSub') }}</span></div>
+          <div v-if="!env"><Empty :text="t('dash.envChecking')" /></div>
           <div v-else>
             <div class="top-item" v-for="e in env.engines" :key="e.name">
               <span class="chip" :class="e.state === 'ok' ? 'on' : (e.fallback ? 'warn' : 'off')" style="min-width:64px; justify-content:center; text-align:center">
-                {{ e.state === 'ok' ? '就绪' : (e.state === 'detecting' ? '检测中' : (e.fallback ? '降级' : '异常')) }}
+                {{ e.state === 'ok' ? t('dash.ready') : (e.state === 'detecting' ? t('dash.detecting') : (e.fallback ? t('common.degraded') : t('dash.abnormal'))) }}
               </span>
               <span class="t-title mono">{{ e.name }}</span>
               <span class="muted small mono">{{ e.version || '-' }}</span>
             </div>
             <div class="muted small" style="margin-top:10px">
-              降级引擎自动切换内置引擎, 扫描功能不受影响
-              <router-link to="/env">详情 →</router-link>
+              {{ t('dash.degradedNote') }}
+              <router-link to="/env">{{ t('common.detail') }}</router-link>
             </div>
           </div>
         </div>
 
         <!-- 系统信息(静态构建/配置信息; 版本号由顶栏右上角唯一展示, 阶段 4 去重) -->
         <div class="card">
-          <div class="card-title">系统信息</div>
+          <div class="card-title">{{ t('dash.sysInfo') }}</div>
           <div class="kv">
-            <div class="k">本机 IP</div><div class="v mono">{{ info.localIP || '-' }}</div>
-            <div class="k">主机名</div><div class="v">{{ info.hostname || '-' }}</div>
-            <div class="k">服务端口</div><div class="v mono">{{ info.port || '-' }}</div>
-            <div class="k">内置规则</div><div class="v">{{ info.vulnRules || 0 }} 条</div>
-            <div class="k">Nuclei 模板</div><div class="v">{{ (info.nucleiTemplatesBuilt || 0) + ' 内置 / ' + (info.nucleiTemplates || 0) + ' 外部' }}</div>
-            <div class="k">AI 后置分析</div><div class="v">{{ info.aiEnabled ? '已启用' : '未启用' }}</div>
-            <div class="k">数据层</div><div class="v mono small">{{ dbType }} {{ dbStats }}</div>
+            <div class="k">{{ t('dash.localIP') }}</div><div class="v mono">{{ info.localIP || '-' }}</div>
+            <div class="k">{{ t('dash.hostname') }}</div><div class="v">{{ info.hostname || '-' }}</div>
+            <div class="k">{{ t('dash.servicePort') }}</div><div class="v mono">{{ info.port || '-' }}</div>
+            <div class="k">{{ t('dash.builtinRules') }}</div><div class="v">{{ t('dash.rulesUnit', { n: info.vulnRules || 0 }) }}</div>
+            <div class="k">{{ t('dash.nucleiTpl') }}</div><div class="v">{{ t('dash.nucleiTplV', { b: info.nucleiTemplatesBuilt || 0, e: info.nucleiTemplates || 0 }) }}</div>
+            <div class="k">{{ t('dash.aiPost') }}</div><div class="v">{{ info.aiEnabled ? t('common.enabled') : t('common.disabled') }}</div>
+            <div class="k">{{ t('dash.dataLayer') }}</div><div class="v mono small">{{ dbType }} {{ dbStats }}</div>
           </div>
         </div>
       </div>
 
       <!-- 快捷入口 -->
       <div class="card" style="margin-top:14px">
-        <div class="card-title">快捷入口</div>
+        <div class="card-title">{{ t('dash.quick') }}</div>
         <div class="grid cols-4">
-          <router-link class="btn" to="/console">启动实时扫描</router-link>
-          <router-link class="btn" to="/console?tab=queue">管理调度任务</router-link>
-          <router-link class="btn" to="/vulns">查看漏洞列表</router-link>
-          <router-link class="btn" to="/bigscreen-pro">进入安全大屏</router-link>
+          <router-link class="btn" to="/console">{{ t('dash.quickScan') }}</router-link>
+          <router-link class="btn" to="/console?tab=queue">{{ t('dash.quickSched') }}</router-link>
+          <router-link class="btn" to="/vulns">{{ t('dash.quickVulns') }}</router-link>
+          <router-link class="btn" to="/bigscreen-pro">{{ t('dash.quickScreen') }}</router-link>
         </div>
       </div>
 
       <!-- 功能开关(默认全开, 关掉即停; 参数保存在 settings.json, 不需要手改文件) -->
       <div class="card" style="margin-top:14px">
         <div class="card-title">
-          功能开关
-          <span class="sub">默认开启 · 关闭后立即生效(无需重启)</span>
+          {{ t('dash.switches') }}
+          <span class="sub">{{ t('dash.switchesSub') }}</span>
         </div>
-        <div v-if="!switches" class="muted small">加载中...</div>
+        <div v-if="!switches" class="muted small">{{ t('common.loading') }}</div>
         <div v-else class="sw-grid">
           <label class="sw">
             <input type="checkbox" v-model="switches.geoip.enabled" @change="saveSwitches" />
-            <span>IP 地理映射</span>
-            <span class="muted small">{{ switches.geoip.loaded ? ('段表 ' + switches.geoip.v4Count + ' 条') : (switches.geoip.note || '') }}</span>
+            <span>{{ t('dash.swGeoip') }}</span>
+            <span class="muted small">{{ switches.geoip.loaded ? t('dash.swGeoipCidr', { n: switches.geoip.v4Count }) : (switches.geoip.note || '') }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="switches.dashboard.enabled" @change="saveSwitches" />
-            <span>3D 地球大屏</span>
-            <span class="muted small">流向窗口 {{ switches.dashboard.days }} 天</span>
+            <span>{{ t('dash.swGlobe') }}</span>
+            <span class="muted small">{{ t('dash.swGlobeDays', { n: switches.dashboard.days }) }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="switches.report.enabled" @change="saveReport" />
-            <span>报告引擎</span>
-            <span class="muted small">存档与下载</span>
+            <span>{{ t('dash.swReport') }}</span>
+            <span class="muted small">{{ t('dash.swReportSub') }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="switches.report.autoGenerate" @change="saveReport" />
-            <span>扫描后自动生成报告</span>
-            <span class="muted small">异步, 失败不影响扫描</span>
+            <span>{{ t('dash.swAutoReport') }}</span>
+            <span class="muted small">{{ t('dash.swAutoReportSub') }}</span>
           </label>
         </div>
-        <div class="muted small" style="margin-top:8px">开关状态写入 exe 同目录 settings.json(该文件只用于保存参数)。</div>
+        <div class="muted small" style="margin-top:8px">{{ t('dash.switchesNote') }}</div>
       </div>
   </div>
 </template>
@@ -225,6 +226,10 @@ import StatCard from '../components/StatCard.vue'
 import Empty from '../components/Empty.vue'
 import { api } from '../api/http'
 import { v2 } from '../api/http'
+import { t } from '../i18n'
+
+// 模板里任务循环的 item 也叫 t(与 i18n 的 t 撞名), 这里给 i18n 起个别名
+const t2 = t
 
 const router = useRouter()
 
@@ -250,19 +255,20 @@ const dbStats = ref('')
 const criticalCount = computed(() => vulnsList.value.filter(v => v.severity === 'critical').length)
 const highCount = computed(() => vulnsList.value.filter(v => v.severity === 'high').length)
 
+// 等级名走 i18n(sev.*): 切语言时 computed 重算, 柱状图标签同步换
 const SEV_META = [
-  { key: 'critical', name: '严重', color: '#ff6b6b' },
-  { key: 'high', name: '高危', color: '#f87171' },
-  { key: 'medium', name: '中危', color: '#fb923c' },
-  { key: 'low', name: '低危', color: '#facc15' },
-  { key: 'info', name: '信息', color: '#60a5fa' }
+  { key: 'critical', color: '#ff6b6b' },
+  { key: 'high', color: '#f87171' },
+  { key: 'medium', color: '#fb923c' },
+  { key: 'low', color: '#facc15' },
+  { key: 'info', color: '#60a5fa' }
 ]
 
 const sevBars = computed(() => {
   const max = Math.max(1, ...SEV_META.map(s => vulnsList.value.filter(v => v.severity === s.key).length))
   return SEV_META.map(s => {
     const count = vulnsList.value.filter(v => v.severity === s.key).length
-    return { ...s, count, pct: count ? Math.max(4, Math.round(count / max * 100)) : 0 }
+    return { ...s, name: t('sev.' + s.key), count, pct: count ? Math.max(4, Math.round(count / max * 100)) : 0 }
   })
 })
 
@@ -271,14 +277,14 @@ const engineOk = computed(() => {
   return !(env.value.degraded && env.value.degraded.length) && !env.value.detecting
 })
 const engineSub = computed(() => {
-  if (!env.value) return '检测中'
+  if (!env.value) return t('dash.detecting')
   const d = env.value.degraded || []
-  return d.length ? '降级: ' + d.join(', ') : (env.value.engines || []).filter(e => e.state === 'ok').length + ' 个就绪'
+  return d.length ? t('dash.engineSubDeg', { list: d.join(', ') }) : t('dash.engineSubReady', { n: (env.value.engines || []).filter(e => e.state === 'ok').length })
 })
 const npcapText = computed(() => {
   if (!env.value) return '-'
-  if (!env.value.npcap.supported) return '不适用'
-  return env.value.npcap.installed ? '已安装' : '未安装'
+  if (!env.value.npcap.supported) return t('dash.npcapNA')
+  return env.value.npcap.installed ? t('dash.npcapInstalled') : t('dash.npcapMissing')
 })
 const npcapOk = computed(() => !!env.value && (!env.value.npcap.supported || env.value.npcap.installed))
 
@@ -341,7 +347,7 @@ async function loadCenterStatus() {
     const d = await v2('/center/status')
     if (d) { cs.value = d; csErr.value = '' }
   } catch (e) {
-    csErr.value = (e && e.message) ? e.message : '数据获取失败'
+    csErr.value = (e && e.message) ? e.message : t('dash.csErr')
   }
 }
 
@@ -377,7 +383,7 @@ function fmtDuration(sec) {
   const m = Math.floor((s % 3600) / 60)
   const ss = s % 60
   const p = (n) => String(n).padStart(2, '0')
-  return (d ? d + '天 ' : '') + p(h) + ':' + p(m) + ':' + p(ss)
+  return (d ? d + t('dash.day') : '') + p(h) + ':' + p(m) + ':' + p(ss)
 }
 function timeFull(s) {
   if (!s) return '-'
@@ -392,14 +398,14 @@ const clearing = ref(false)
 
 async function clearScans() {
   if (!histScansTotal.value) return
-  if (!confirm(`将清空全部 ${histScansTotal.value} 条扫描任务历史记录, 不可恢复。\n\n只清任务记录, 资产 / 漏洞 / 探针任务明细都不受影响。\n\n确认清空?`)) return
+  if (!confirm(t('dash.clearConfirm', { n: histScansTotal.value }))) return
   clearing.value = true
   try {
     const d = await v2('/scans', { method: 'DELETE' })
     await loadAll()
-    alert('已清空 ' + (d && d.deleted != null ? d.deleted : 0) + ' 条历史任务记录')
+    alert(t('dash.clearDone', { n: (d && d.deleted != null ? d.deleted : 0) }))
   } catch (e) {
-    alert('清空失败: ' + (e.message || e))
+    alert(t('dash.clearFail') + (e.message || e))
   } finally {
     clearing.value = false
   }
@@ -430,7 +436,7 @@ async function saveSwitches() {
       }
     })
   } catch (e) {
-    alert('保存失败: ' + (e && e.message || e))
+    alert(t('dash.saveFail') + (e && e.message || e))
     loadSwitches()
   }
 }
@@ -446,7 +452,7 @@ async function saveReport() {
       }
     })
   } catch (e) {
-    alert('保存失败: ' + (e && e.message || e))
+    alert(t('dash.saveFail') + (e && e.message || e))
     loadSwitches()
   }
 }

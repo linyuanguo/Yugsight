@@ -2,6 +2,7 @@
 // 不在 main.js 注册全局组件 —— 前端是单文件 exe 嵌入部署形态, 侵入 main.js
 // 只会增加无谓的耦合。多个 toast 纵向堆叠, 超时自动消失, 点击立即关闭。
 // type: ok(绿) | err(红) | info(蓝)
+import { t } from './i18n'
 
 let wrap = null
 
@@ -18,7 +19,7 @@ export function toast(msg, type = 'ok', ms = 2600) {
     const el = document.createElement('div')
     el.className = 'ys-toast' + (type === 'err' ? ' ys-toast-err' : type === 'info' ? ' ys-toast-info' : '')
     el.textContent = msg
-    el.title = '点击关闭'
+    el.title = t('common.clickClose')
     el.addEventListener('click', () => el.remove())
     ensureWrap().appendChild(el)
     setTimeout(() => {
