@@ -20,29 +20,29 @@
   <div class="g3" @pointerdown.stop @click.stop>
     <template v-if="side === 'front'">
       <div v-if="blocked" class="g3-mask">
-        <span class="g3-tag">受限</span>画布已有地球卡<br />
-        <span class="muted">每个地球占用一个 WebGL 上下文, 同一页最多 1 个</span>
+        <span class="g3-tag">{{ t('screen.globeBlocked') }}</span>{{ t('screen.globeBlockedMsg') }}<br />
+        <span class="muted">{{ t('screen.globeWebgl') }}</span>
       </div>
       <template v-else>
         <div ref="wrapEl" class="g3-canvas"></div>
-        <div v-if="state === 'loading'" class="g3-mask"><span class="g3-tag">加载中</span>正在加载 3D 地球资源</div>
-        <div v-else-if="state === 'error'" class="g3-mask"><span class="g3-tag">不可用</span>{{ errorMsg }}</div>
-        <div v-else-if="!ptCount" class="g3-mask"><span class="g3-tag">无数据</span>{{ emptyMsg }}</div>
+        <div v-if="state === 'loading'" class="g3-mask"><span class="g3-tag">{{ t('screen.cLoading') }}</span>{{ t('screen.globeLoading') }}</div>
+        <div v-else-if="state === 'error'" class="g3-mask"><span class="g3-tag">{{ t('screen.cUnavailable') }}</span>{{ errorMsg }}</div>
+        <div v-else-if="!ptCount" class="g3-mask"><span class="g3-tag">{{ t('screen.cNoData') }}</span>{{ emptyMsg }}</div>
         <div class="g3-hud">
-          <span><i class="d" style="background:#f87171"></i>高危</span>
-          <span><i class="d" style="background:#fb923c"></i>中危</span>
-          <span><i class="d" style="background:#38bdf8"></i>低危</span>
-          <span class="g3-hud-num">节点 {{ ptCount }} · 轨迹 {{ arcCount }}</span>
+          <span><i class="d" style="background:#f87171"></i>{{ t('screen.high') }}</span>
+          <span><i class="d" style="background:#fb923c"></i>{{ t('screen.midLv') }}</span>
+          <span><i class="d" style="background:#38bdf8"></i>{{ t('screen.lowLv') }}</span>
+          <span class="g3-hud-num">{{ t('screen.nodesArcs', { n: ptCount, m: arcCount }) }}</span>
         </div>
       </template>
     </template>
     <template v-else>
       <div class="g3-back">
-        <div><span>数据源</span><b>{{ card.custom ? '自定义 JSON' : '/api/dashboard/flows' }}</b></div>
-        <div><span>事件点</span><b>{{ ptCount }}</b></div>
-        <div><span>攻击轨迹</span><b>{{ arcCount }}</b></div>
-        <div><span>热点圆环</span><b>{{ ringCount }}</b></div>
-        <div><span>点上限</span><b>{{ max }}</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>{{ card.custom ? t('screen.customJson') : '/api/dashboard/flows' }}</b></div>
+        <div><span>{{ t('screen.events') }}</span><b>{{ ptCount }}</b></div>
+        <div><span>{{ t('screen.arcs') }}</span><b>{{ arcCount }}</b></div>
+        <div><span>{{ t('screen.rings') }}</span><b>{{ ringCount }}</b></div>
+        <div><span>{{ t('screen.maxPoints') }}</span><b>{{ max }}</b></div>
       </div>
     </template>
   </div>
@@ -51,6 +51,7 @@
 <script setup>
 import { ref, computed, inject, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useShared } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -72,7 +73,7 @@ const shared = useShared()
 const wrapEl = ref(null)
 const state = ref('loading')     // loading | ready | error
 const errorMsg = ref('')
-const emptyMsg = ref('暂无可定位的地理位置数据(多为内网段或 geoip 未开启)')
+const emptyMsg = computed(() => t('screen.globeEmpty'))
 
 const max = computed(() => props.card.maxPoints || 120)
 
@@ -101,7 +102,7 @@ const points = computed(() => {
   void shared.updatedAt
   const raw = props.card.custom ? parseCustom() : ((shared.flows && shared.flows.points) || [])
   const mapped = raw.map((d, i) => ({
-    id: d.id || String(i), name: d.name || d.ip || '未知', ip: d.ip || '',
+    id: d.id || String(i), name: d.name || d.ip || t('screen.unknown'), ip: d.ip || '',
     lat: Number(d.lat), lng: Number(d.lon || d.lng),
     value: Number(d.value || d.count || 0),
     lv: normLevel(d.level || levelOf(Number(d.value || d.count || 0))),
@@ -158,7 +159,7 @@ function applyData() {
     .pointAltitude(0.01)
     .pointRadius((d) => (d.lv === 'high' ? 0.5 : d.lv === 'mid' ? 0.4 : 0.28))
     .pointColor((d) => LV_COLOR[d.lv] || LV_COLOR.low)
-    .pointLabel((d) => `<div style="background:rgba(10,15,25,.92);padding:6px 10px;border-radius:6px;font-size:12px;border:1px solid rgba(56,189,248,.4)"><b>${d.name}</b><br/>数量 ${d.value}</div>`)
+    .pointLabel((d) => `<div style="background:rgba(10,15,25,.92);padding:6px 10px;border-radius:6px;font-size:12px;border:1px solid rgba(56,189,248,.4)"><b>${d.name}</b><br/>${t('screen.count')} ${d.value}</div>`)
     .ringsData(rings.value)
     .ringLat('lat').ringLng('lng')
     .ringMaxRadius('maxR')
@@ -209,7 +210,7 @@ let ctxEl = null
 function onCtxLost(e) {
   e.preventDefault()               // 关键: 不阻止默认行为就永远等不到 restored
   state.value = 'error'
-  errorMsg.value = 'WebGL 上下文丢失, 正在自动恢复…'
+  errorMsg.value = t('screen.webglLost')
 }
 function onCtxRestored() {
   // three 的 WebGLRenderer 内部 onContextRestore 会重建 GL 状态, 这里只需收起提示并重喂数据
@@ -249,7 +250,7 @@ async function init() {
     state.value = 'ready'
   } catch (e) {
     state.value = 'error'
-    errorMsg.value = (e && e.message) || '3D 资源加载失败'
+    errorMsg.value = (e && e.message) || t('screen.globeLoadFail')
   }
 }
 watch([points, arcs, rings], () => { if (state.value === 'ready') applyData() })

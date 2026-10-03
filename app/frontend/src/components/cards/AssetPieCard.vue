@@ -11,18 +11,18 @@
           <path v-for="s in segs" :key="s.k" :d="s.d" class="ap-slice" :style="{ fill: s.c }" />
           <circle v-if="!segs.length" cx="50" cy="50" r="34" class="ap-empty" />
         </svg>
-        <div class="ap-center"><b>{{ total }}</b><span v-if="!compact">设备</span></div>
+        <div class="ap-center"><b>{{ total }}</b><span v-if="!compact">{{ t('screen.cDevice') }}</span></div>
       </div>
       <div class="ap-legend">
         <div v-for="s in segs" :key="s.k" class="ap-row">
           <i :style="{ background: s.c }"></i><span>{{ s.t }}</span><b>{{ s.n }}</b>
         </div>
-        <div v-if="!segs.length" class="ap-hint">暂无设备类型数据(拓扑数据源接入后自动填充)</div>
+        <div v-if="!segs.length" class="ap-hint">{{ t('screen.noAsset') }}</div>
       </div>
     </template>
     <template v-else>
       <div class="ap-back">
-        <div><span>数据源</span><b>设备类型(拓扑接入后填充)</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>{{ t('screen.devType') }}</b></div>
         <div v-for="s in segs" :key="s.k"><span>{{ s.t }}</span><b :style="{ color: s.c }">{{ s.n }}</b></div>
       </div>
     </template>
@@ -32,6 +32,7 @@
 <script setup>
 import { computed, inject, ref } from 'vue'
 import { pieSlice } from './chartkit.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -41,7 +42,7 @@ const props = defineProps({
 })
 
 const cards = inject('bproCards', ref([]))
-const KIND_CN = { router: '路由器', switch: '交换机', server: '服务器', terminal: '终端' }
+const KIND_KEY = { router: 'typeRouter', switch: 'typeSwitch', server: 'typeServer', terminal: 'typeTerminal' }
 const KIND_COLOR = { router: '#a78bfa', switch: '#38bdf8', server: '#34d399', terminal: '#fbbf24' }
 
 const kindCount = computed(() => {
@@ -59,15 +60,15 @@ const kindCount = computed(() => {
   return m
 })
 const rows = computed(() => Object.keys(kindCount.value).map(k => ({
-  k, t: KIND_CN[k] || k, c: KIND_COLOR[k] || '#94a3b8', n: kindCount.value[k],
+  k, t: t('screen.' + (KIND_KEY[k] || 'typeSwitch')), c: KIND_COLOR[k] || '#94a3b8', n: kindCount.value[k],
 })).sort((a, b) => b.n - a.n))
 const total = computed(() => rows.value.reduce((a, b) => a + b.n, 0))
 const segs = computed(() => {
-  const t = total.value
-  if (!t) return []
+  const tot = total.value   // 2026-10-03: 原局部名 t 遮蔽 i18n 的 t(), 改 tot
+  if (!tot) return []
   let acc = 0
   return rows.value.map(r => {
-    const sweep = r.n * 360 / t
+    const sweep = r.n * 360 / tot
     const d = pieSlice(50, 50, 38, acc, acc + sweep)
     acc += sweep
     return { k: r.k, t: r.t, c: r.c, n: r.n, d }

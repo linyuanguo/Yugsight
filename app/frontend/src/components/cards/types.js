@@ -21,6 +21,7 @@ import TopoCard from './TopoCard.vue'
 import TaskListCard from './TaskListCard.vue'
 import { METRIC_OPTIONS, TYPE_OPTIONS } from './dashData.js'
 import { COLOR_OPTS } from './chartkit.js'
+import { t } from '../../i18n'
 
 let _seq = 0
 export function uid(p = 'c') {
@@ -30,7 +31,7 @@ export function uid(p = 'c') {
 export function makeScan(over = {}) {
   return {
     id: uid(), type: 'scan', x: 120, y: 120, w: 360, h: 260, z: 1, flipped: false,
-    title: '漏扫任务', status: 'running',
+    title: t('screen.dftScanTask'), status: 'running',
     vulns: { critical: 0, high: 0, medium: 0 }, progress: 0, scope: '—',
     policy: '—', ports: '—', duration: '—', history: '—',
     ...over,
@@ -40,7 +41,7 @@ export function makeScan(over = {}) {
 export function makeStat(over = {}) {
   return {
     id: uid(), type: 'stat', x: 470, y: 420, w: 320, h: 240, z: 1, flipped: false,
-    title: '任务总览',
+    title: t('screen.dftTasks'),
     ...over,
   }
 }
@@ -48,7 +49,7 @@ export function makeStat(over = {}) {
 export function makeTitle(over = {}) {
   return {
     id: uid(), type: 'title', x: 860, y: 420, w: 380, h: 130, z: 1, flipped: false,
-    title: '标题',
+    title: t('screen.dftTitle'),
     ...over,
   }
 }
@@ -56,7 +57,7 @@ export function makeTitle(over = {}) {
 export function makeNode(over = {}) {
   return {
     id: uid('node'), type: 'node', x: 1160, y: 60, w: 380, h: 300, z: 1, flipped: false,
-    deviceId: '', name: '设备', ip: '', mac: '', layer: 'access', kind: 'server',
+    deviceId: '', name: t('screen.dftNode'), ip: '', mac: '', layer: 'access', kind: 'server',
     cpu: 0, mem: 0, netUpBps: 0, netDownBps: 0, status: 'normal',
     ...over,
   }
@@ -66,7 +67,7 @@ export function makeNode(over = {}) {
 export function makeTaskList(over = {}) {
   return {
     id: uid('tl'), type: 'taskList', x: 470, y: 420, w: 380, h: 240, z: 1, flipped: false,
-    title: '任务列表', limit: 5, sortBy: 'time', filterStatus: 'all', tasks: [],
+    title: t('screen.dftTaskList'), limit: 5, sortBy: 'time', filterStatus: 'all', tasks: [],
     ...over,
   }
 }
@@ -75,21 +76,21 @@ export function makeTaskList(over = {}) {
 export function makeMetric(over = {}) {
   return {
     id: uid('metric'), type: 'metric', x: 16, y: 16, w: 452, h: 104, z: 1, flipped: false,
-    title: '核心指标', metric: 'vulnRisk', compare: '', color: 'accent', span: 14, note: '',
+    title: t('screen.dftStat'), metric: 'vulnRisk', compare: '', color: 'accent', span: 14, note: '',
     ...over,
   }
 }
 export function makeRatio(over = {}) {
   return {
     id: uid('ratio'), type: 'ratio', x: 470, y: 420, w: 260, h: 240, z: 1, flipped: false,
-    title: '占比统计', metric: 'assetAlive', total: 'assetTotal', color: 'ok', note: '',
+    title: t('screen.dftRatio'), metric: 'assetAlive', total: 'assetTotal', color: 'ok', note: '',
     ...over,
   }
 }
 export function makeStatusCard(over = {}) {
   return {
     id: uid('status'), type: 'status', x: 470, y: 420, w: 380, h: 200, z: 1, flipped: false,
-    title: '任务状态汇总', note: '',
+    title: t('screen.dftStatus'), note: '',
     ...over,
   }
 }
@@ -98,35 +99,35 @@ export function makeStatusCard(over = {}) {
 export function makeVulnLevel(over = {}) {
   return {
     id: uid('vl'), type: 'vlevel', x: 1216, y: 132, w: 328, h: 197, z: 1, flipped: false,
-    title: '漏洞分级统计', infoIncl: false,
+    title: t('screen.dftVulnLevel'), infoIncl: false,
     ...over,
   }
 }
 export function makeTrend(over = {}) {
   return {
     id: uid('tr'), type: 'trend', x: 860, y: 420, w: 380, h: 220, z: 1, flipped: false,
-    title: '扫描任务趋势', days: 7,
+    title: t('screen.dftTrend'), days: 7,
     ...over,
   }
 }
 export function makeTaskBars(over = {}) {
   return {
     id: uid('tb'), type: 'tbars', x: 1568, y: 132, w: 328, h: 197, z: 1, flipped: false,
-    title: '任务状态分布',
+    title: t('screen.dftStatusDist'),
     ...over,
   }
 }
 export function makeAssetPie(over = {}) {
   return {
     id: uid('ap'), type: 'apie', x: 1568, y: 341, w: 328, h: 193, z: 1, flipped: false,
-    title: '资产类型分布',
+    title: t('screen.dftAssetPie'),
     ...over,
   }
 }
 export function makeAlertTop(over = {}) {
   return {
     id: uid('at'), type: 'atop', x: 1216, y: 341, w: 328, h: 193, z: 1, flipped: false,
-    title: '告警 Top5', limit: 5,
+    title: t('screen.dftAlertTop'), limit: 5,
     ...over,
   }
 }
@@ -142,7 +143,7 @@ export function makeRoller(over = {}) {
 export function makeGlobe(over = {}) {
   return {
     id: uid('gl'), type: 'globe', x: 16, y: 132, w: 648, h: 402, z: 1, flipped: false,
-    title: '全球安全态势', maxPoints: 120, hiAt: 50, midAt: 10, custom: '', baseImage: '',
+    title: t('screen.dftGlobe'), maxPoints: 120, hiAt: 50, midAt: 10, custom: '', baseImage: '',
     ...over,
   }
 }
@@ -152,7 +153,7 @@ export function makeGlobe(over = {}) {
 export function makeTopo(over = {}) {
   return {
     id: uid('tp'), type: 'topo', x: 720, y: 136, w: 480, h: 400, z: 1, flipped: false,
-    title: '网络拓扑', view: '',
+    title: t('screen.dftTopo'), view: '',
     ...over,
   }
 }
@@ -292,10 +293,10 @@ export function defaultCards() {
     // 顶部通栏: 4 张核心指标卡(同源绑定 overview)
     // key 是模板体系的稳定标识: 内置模板按 key 重排几何/显隐, 不重建实例
     // 2026-09-28 重新校准: 严格对齐 1920×1080, 外边距 16px / 间距 16px, 与 BUILTIN.tpl_overview 完全一致
-    makeMetric({ key: 'm1', x: 16, y: 16, w: 460, h: 104, title: '累计漏洞总数', metric: 'vulnRisk', color: 'danger' }),
-    makeMetric({ key: 'm2', x: 492, y: 16, w: 460, h: 104, title: '今日新增漏洞', metric: 'findingToday', color: 'warn' }),
-    makeMetric({ key: 'm3', x: 968, y: 16, w: 460, h: 104, title: '已完成扫描任务', metric: 'taskSuccess', color: 'ok' }),
-    makeMetric({ key: 'm4', x: 1444, y: 16, w: 460, h: 104, title: '任务成功率', metric: 'successRate', color: 'accent' }),
+    makeMetric({ key: 'm1', x: 16, y: 16, w: 460, h: 104, title: t('screen.dcVulnTotal'), metric: 'vulnRisk', color: 'danger' }),
+    makeMetric({ key: 'm2', x: 492, y: 16, w: 460, h: 104, title: t('screen.dcVulnNew'), metric: 'findingToday', color: 'warn' }),
+    makeMetric({ key: 'm3', x: 968, y: 16, w: 460, h: 104, title: t('screen.dcTaskDone'), metric: 'taskSuccess', color: 'ok' }),
+    makeMetric({ key: 'm4', x: 1444, y: 16, w: 460, h: 104, title: t('screen.dcSuccessRate'), metric: 'successRate', color: 'accent' }),
     // 中部: 3D 地球 + 网络拓扑卡 + 右侧 2×2 图表(漏洞分级/任务柱状/告警/资产饼图)
     // 拓扑卡(x:720,y:136,w:480,h:400)回填原"拓扑缩略入口卡"预留空位:
     // 2026-09-29 用户要求拓扑只进大屏 —— 一级菜单与节点监控入口移除, 此卡为唯一入口。
@@ -306,14 +307,14 @@ export function defaultCards() {
     makeAlertTop({ key: 'at', x: 1216, y: 344, w: 336, h: 192 }),
     makeAssetPie({ key: 'ap', x: 1568, y: 344, w: 336, h: 192 }),
     // 底部: 三组任务卡(进行中 / 高危 / 已完成), 列宽 618
-    makeTitle({ key: 'gt1', x: 16, y: 552, w: 618, h: 48, title: '进行中任务' }),
-    makeScan({ key: 's1', x: 16, y: 612, w: 618, h: 220, title: '全网资产漏扫-2026Q3', status: 'running', vulns: { critical: 3, high: 12, medium: 28 }, progress: 64, scope: '192.168.0.0/16', policy: '深度扫描', ports: '1-65535', duration: '02:14:33', history: '近7天 12 次' }),
-    makeScan({ key: 's2', x: 16, y: 844, w: 618, h: 220, title: 'DMZ 区周期巡检', status: 'running', vulns: { critical: 1, high: 5, medium: 9 }, progress: 32, scope: '10.0.5.0/24', policy: '快速扫描', ports: '1-1024', duration: '00:21:07', history: '每日 1 次' }),
-    makeTitle({ key: 'gt2', x: 650, y: 552, w: 618, h: 48, title: '高危任务' }),
-    makeScan({ key: 's3', x: 650, y: 612, w: 618, h: 220, title: '数据库专项核查', status: 'error', vulns: { critical: 7, high: 15, medium: 22 }, progress: 78, scope: '10.0.3.0/24', policy: '深度+弱口令', ports: '3306,1433,6379', duration: '01:45:12', history: '本周 3 次' }),
-    makeScan({ key: 's4', x: 650, y: 844, w: 618, h: 220, title: '中间件补丁核查', status: 'error', vulns: { critical: 4, high: 9, medium: 14 }, progress: 51, scope: '10.0.6.0/24', policy: 'CVE 定向', ports: '8080,8443,443', duration: '00:58:41', history: '本周 2 次' }),
-    makeTitle({ key: 'gt3', x: 1284, y: 552, w: 618, h: 48, title: '已完成任务' }),
-    makeScan({ key: 's5', x: 1284, y: 612, w: 618, h: 220, title: '季度合规扫描', status: 'done', vulns: { critical: 0, high: 2, medium: 11 }, progress: 100, scope: '10.0.0.0/8', policy: '合规基线', ports: '全端口', duration: '04:32:09', history: '每季 1 次' }),
-    makeScan({ key: 's6', x: 1284, y: 844, w: 618, h: 220, title: '新上线资产体检', status: 'done', vulns: { critical: 0, high: 1, medium: 4 }, progress: 100, scope: '10.0.9.0/24', policy: '快速扫描', ports: '1-10000', duration: '00:12:55', history: '按需' }),
+    makeTitle({ key: 'gt1', x: 16, y: 552, w: 618, h: 48, title: t('screen.dcInProgress') }),
+    makeScan({ key: 's1', x: 16, y: 612, w: 618, h: 220, title: t('screen.dcFullNet'), status: 'running', vulns: { critical: 3, high: 12, medium: 28 }, progress: 64, scope: '192.168.0.0/16', policy: t('screen.dcDeep'), ports: '1-65535', duration: '02:14:33', history: t('screen.dcFullNetCnt') }),
+    makeScan({ key: 's2', x: 16, y: 844, w: 618, h: 220, title: t('screen.dcDmz'), status: 'running', vulns: { critical: 1, high: 5, medium: 9 }, progress: 32, scope: '10.0.5.0/24', policy: t('screen.dcQuick'), ports: '1-1024', duration: '00:21:07', history: t('screen.dcDaily') }),
+    makeTitle({ key: 'gt2', x: 650, y: 552, w: 618, h: 48, title: t('screen.dcHighTask') }),
+    makeScan({ key: 's3', x: 650, y: 612, w: 618, h: 220, title: t('screen.dcDbCheck'), status: 'error', vulns: { critical: 7, high: 15, medium: 22 }, progress: 78, scope: '10.0.3.0/24', policy: t('screen.dcDbDeep'), ports: '3306,1433,6379', duration: '01:45:12', history: t('screen.dcDbWeek') }),
+    makeScan({ key: 's4', x: 650, y: 844, w: 618, h: 220, title: t('screen.dcMwCheck'), status: 'error', vulns: { critical: 4, high: 9, medium: 14 }, progress: 51, scope: '10.0.6.0/24', policy: t('screen.dcCve'), ports: '8080,8443,443', duration: '00:58:41', history: t('screen.dcMwWeek') }),
+    makeTitle({ key: 'gt3', x: 1284, y: 552, w: 618, h: 48, title: t('screen.dcCompleted') }),
+    makeScan({ key: 's5', x: 1284, y: 612, w: 618, h: 220, title: t('screen.dcQuarter'), status: 'done', vulns: { critical: 0, high: 2, medium: 11 }, progress: 100, scope: '10.0.0.0/8', policy: t('screen.dcCompliance'), ports: t('screen.dcAllPorts'), duration: '04:32:09', history: t('screen.dcQuarterly') }),
+    makeScan({ key: 's6', x: 1284, y: 844, w: 618, h: 220, title: t('screen.dcNewAssets'), status: 'done', vulns: { critical: 0, high: 1, medium: 4 }, progress: 100, scope: '10.0.9.0/24', policy: t('screen.dcQuick'), ports: '1-10000', duration: '00:12:55', history: t('screen.dcOnDemand') }),
   ]
 }

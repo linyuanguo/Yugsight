@@ -12,22 +12,22 @@
         <div class="st-body">
           <div class="st-ring" :style="{ '--p': card.progress }"><span>{{ card.progress }}%</span></div>
           <div class="st-vulns">
-            <b class="crit">危 {{ card.vulns.critical }}</b>
-            <b class="high">高 {{ card.vulns.high }}</b>
-            <b class="med">中 {{ card.vulns.medium }}</b>
+            <b class="crit">{{ t('screen.sevCrit') }} {{ card.vulns.critical }}</b>
+            <b class="high">{{ t('screen.sevHigh') }} {{ card.vulns.high }}</b>
+            <b class="med">{{ t('screen.sevMid') }} {{ card.vulns.medium }}</b>
           </div>
         </div>
-        <div class="st-scope">扫描范围：{{ card.scope }}</div>
+        <div class="st-scope">{{ t('screen.scanRange') }}{{ card.scope }}</div>
       </template>
     </template>
     <!-- 背面 -->
     <template v-else>
-      <div class="st-back-title">任务详情</div>
+      <div class="st-back-title">{{ t('screen.taskDetail') }}</div>
       <ul class="st-list">
-        <li><span>扫描策略</span><b>{{ card.policy }}</b></li>
-        <li><span>端口范围</span><b>{{ card.ports }}</b></li>
-        <li><span>执行时长</span><b>{{ card.duration }}</b></li>
-        <li><span>历史记录</span><b>{{ card.history }}</b></li>
+        <li><span>{{ t('screen.cfgStrategy') }}</span><b>{{ card.policy }}</b></li>
+        <li><span>{{ t('screen.cfgPorts') }}</span><b>{{ card.ports }}</b></li>
+        <li><span>{{ t('screen.cfgDuration') }}</span><b>{{ card.duration }}</b></li>
+        <li><span>{{ t('screen.cfgHistory') }}</span><b>{{ card.history }}</b></li>
       </ul>
     </template>
   </div>
@@ -35,6 +35,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -42,8 +43,12 @@ const props = defineProps({
   side: { type: String, default: 'front' },
 })
 
-const STATUS = { pending: '待执行', running: '执行中', done: '已完成', error: '异常' }
-const statusText = computed(() => STATUS[props.card.status] || props.card.status)
+// 状态名本地化(响应式: computed 里调 t 随 locale 重算)
+const STATUS_KEY = { pending: 'cfgPending', running: 'cfgRunning', done: 'cfgDone', error: 'cfgError' }
+const statusText = computed(() => {
+  const k = STATUS_KEY[props.card.status]
+  return k ? t('screen.' + k) : props.card.status
+})
 </script>
 
 <style scoped>

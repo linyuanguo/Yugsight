@@ -14,13 +14,13 @@
           <span class="rc-sub" v-if="!compact">{{ fmt(num) }} / {{ fmt(den) }}</span>
         </div>
       </div>
-      <div v-if="!compact" class="rc-note">{{ card.note || (mA.label + ' 占 ' + mB.label) }}</div>
+      <div v-if="!compact" class="rc-note">{{ card.note || t('screen.ratioOf', { a: metricLabel(mA.key), b: metricLabel(mB.key) }) }}</div>
     </template>
     <template v-else>
       <div class="rc-back">
-        <div><span>分子</span><b>{{ mA.label }}</b></div>
-        <div><span>分母</span><b>{{ mB.label }}</b></div>
-        <div><span>数据源</span><b>/api/v2/screen/overview</b></div>
+        <div><span>{{ t('screen.numer') }}</span><b>{{ metricLabel(mA.key) }}</b></div>
+        <div><span>{{ t('screen.denom') }}</span><b>{{ metricLabel(mB.key) }}</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>/api/v2/screen/overview</b></div>
       </div>
     </template>
   </div>
@@ -29,7 +29,8 @@
 <script setup>
 import { computed } from 'vue'
 import { COLOR, fmt, arcRing } from './chartkit.js'
-import { useShared, pickMetric } from './dashData.js'
+import { useShared, pickMetric, metricLabel } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },

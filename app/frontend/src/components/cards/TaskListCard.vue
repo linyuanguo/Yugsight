@@ -8,27 +8,27 @@
         <span class="tl-title">{{ card.title }}</span>
         <!-- 2026-10-02 用户口径: 状态筛选选项=卡内任务列表里真实存在的状态(只含存在的) -->
         <select class="tl-filter" :value="card.filterStatus || 'all'" @change="setCfg('filterStatus', $event.target.value)">
-          <option value="all">全部</option>
-          <option v-for="s in statusOpts" :key="s" :value="s">{{ STATUS_CN[s] }}</option>
+          <option value="all">{{ t('screen.cAll') }}</option>
+          <option v-for="s in statusOpts" :key="s" :value="s">{{ statusName(s) }}</option>
         </select>
       </div>
       <div class="tl-list">
-        <div v-for="t in rows" :key="t.id" class="tl-row" :class="'s-' + t.status">
+        <div v-for="tk in rows" :key="tk.id" class="tl-row" :class="'s-' + tk.status">
           <i class="tl-dot"></i>
-          <span class="tl-name" :title="t.title">{{ t.title }}</span>
-          <span class="tl-badge">{{ STATUS_CN[t.status] || t.status }}</span>
-          <span class="tl-bar"><b :style="{ width: t.progress + '%' }"></b></span>
-          <span class="tl-v"><em class="crit">{{ t.critical }}</em>/<em class="high">{{ t.high }}</em></span>
+          <span class="tl-name" :title="tk.title">{{ tk.title }}</span>
+          <span class="tl-badge">{{ statusName(tk.status) }}</span>
+          <span class="tl-bar"><b :style="{ width: tk.progress + '%' }"></b></span>
+          <span class="tl-v"><em class="crit">{{ tk.critical }}</em>/<em class="high">{{ tk.high }}</em></span>
         </div>
-        <div v-if="!rows.length" class="tl-none">暂无任务</div>
+        <div v-if="!rows.length" class="tl-none">{{ t('screen.noTask') }}</div>
       </div>
     </template>
     <template v-else>
       <div class="tl-back">
-        <div>数据源 <b>overview.recentTasks</b></div>
-        <div>显示条数 <b>{{ limit }}</b></div>
-        <div>排序 <b>{{ sortText }}</b></div>
-        <div>筛选 <b>{{ (card.filterStatus || 'all') === 'all' ? '全部' : (STATUS_CN[card.filterStatus] || card.filterStatus) }}</b></div>
+        <div>{{ t('screen.cSrc') }} <b>overview.recentTasks</b></div>
+        <div>{{ t('screen.cShowCount') }} <b>{{ limit }}</b></div>
+        <div>{{ t('screen.cSort') }} <b>{{ sortText }}</b></div>
+        <div>{{ t('screen.filter') }} <b>{{ (card.filterStatus || 'all') === 'all' ? t('screen.cAll') : statusName(card.filterStatus) }}</b></div>
       </div>
     </template>
   </div>
@@ -37,6 +37,7 @@
 <script setup>
 import { computed, watch } from 'vue'
 import { useShared } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -46,12 +47,17 @@ const props = defineProps({
 })
 
 const S = useShared()
-const STATUS_CN = { pending: '待执行', running: '执行中', done: '已完成', error: '异常' }
+// 状态名本地化(响应式)
+const STATUS_KEY = { pending: 'cfgPending', running: 'cfgRunning', done: 'cfgDone', error: 'cfgError' }
+function statusName(s) { const k = STATUS_KEY[s]; return k ? t('screen.' + k) : s }
 // 后端 ScanTask 状态 → 卡片四态(与漏扫任务卡同口径)
 const MAP = { success: 'done', done: 'done', failed: 'error', error: 'error', running: 'running', sent: 'running', pending: 'pending', cancelled: 'error' }
 
 const limit = computed(() => props.card.limit || 5)
-const sortText = computed(() => (({ time: '按时间', progress: '按进度' }[props.card.sortBy] || '按时间')))
+const sortText = computed(() => {
+  const k = ({ time: 'cfgSortTime', progress: 'cfgSortProgress' }[props.card.sortBy] || 'cfgSortTime')
+  return t('screen.' + k)
+})
 
 const source = computed(() => {
   void S.updatedAt
@@ -59,7 +65,7 @@ const source = computed(() => {
   if (!list.length) return (props.card.tasks || []).map((t, i) => Object.assign({ id: 'st' + i }, t))
   return list.map(t => ({
     id: t.id,
-    title: (t.target || t.type || '任务'),
+    title: (t.target || t.type || t('screen.taskTitle')),
     status: MAP[t.status] || 'pending',
     // recentTasks 不带漏洞计数/进度, 如实留 0 —— 不编造数字
     critical: 0, high: 0,

@@ -1,1 +1,0 @@
-import{g as e}from"./utils-CU4oL7Dg.js";import{s as n,c as o,e as r,n as c,q as p}from"./index-CEMflWeG.js";const g={__name:"StatusTag",props:{status:{type:String,default:"pending"}},setup(s){const t=s,a=p(()=>e[t.status]||t.status);return(l,u)=>(n(),o("span",{class:c(["badge","st-"+s.status])},r(a.value),3))}};export{g as _};

@@ -11,7 +11,7 @@
         </svg>
         <div class="vl-center">
           <b>{{ fmt(total) }}</b>
-          <span v-if="!compact">未修复风险</span>
+          <span v-if="!compact">{{ t('screen.unfixedRisk') }}</span>
         </div>
       </div>
       <div v-if="!compact" class="vl-legend">
@@ -23,7 +23,7 @@
     <template v-else>
       <div class="vl-back">
         <div v-for="s in segs" :key="s.k"><span>{{ s.t }}</span><b :style="{ color: s.c }">{{ fmt(s.n) }}</b></div>
-        <div class="vl-back-note">info 级(加固建议)不计入风险基数</div>
+        <div class="vl-back-note">{{ t('screen.infoNote') }}</div>
       </div>
     </template>
   </div>
@@ -31,8 +31,9 @@
 
 <script setup>
 import { computed } from 'vue'
-import { fmt, arcRing, SEV, SEV_CN, SEV_ORDER } from './chartkit.js'
+import { fmt, arcRing, SEV, SEV_ORDER } from './chartkit.js'
 import { useShared, sev } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -53,12 +54,12 @@ const risk = computed(() => {
 const total = computed(() => risk.value.reduce((a, b) => a + b.n, 0))
 const segs = computed(() => {
   let acc = 0
-  const t = total.value || 1
+  const tot = total.value || 1   // 2026-10-03: 原局部名 t 遮蔽 i18n 的 t(), 改 tot
   return risk.value.map(r => {
-    const sweep = r.n * 360 / t
+    const sweep = r.n * 360 / tot
     const s = arcRing(50, 50, 42, 30, acc, acc + sweep)
     acc += sweep
-    return { k: r.k, t: SEV_CN[r.k] || r.k, c: SEV[r.k], n: r.n, p: Math.round(r.n * 1000 / t) / 10, d: s }
+    return { k: r.k, t: t('sev.' + r.k), c: SEV[r.k], n: r.n, p: Math.round(r.n * 1000 / tot) / 10, d: s }
   })
 })
 </script>

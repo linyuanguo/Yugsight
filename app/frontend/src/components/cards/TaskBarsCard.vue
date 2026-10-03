@@ -19,7 +19,7 @@
     <template v-else>
       <div class="tb-back">
         <div v-for="r in rows" :key="r.k"><span>{{ r.l }}</span><b :style="{ color: r.c }">{{ r.n }}</b></div>
-        <div><span>数据源</span><b>/api/v2/screen/overview</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>/api/v2/screen/overview</b></div>
       </div>
     </template>
   </div>
@@ -28,6 +28,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useShared, taskBars } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },

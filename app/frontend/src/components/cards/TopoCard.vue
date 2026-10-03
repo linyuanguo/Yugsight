@@ -17,15 +17,15 @@
     <!-- 正面 -->
     <template v-if="side === 'front'">
       <div class="tc-head">
-        <span class="tc-title">{{ card.title || '网络拓扑' }}</span>
+        <span class="tc-title">{{ card.title || t('screen.dftTopo') }}</span>
         <!-- 视图列表(2026-09-30 用户要求: 物理/逻辑取消, 多套独立视图, 每个视图互不影响) -->
         <div class="tc-hbtns" v-if="!compact">
           <select class="tc-view" :value="curViewName" @click.stop @change.stop="pickView($event.target.value)"
-                  :disabled="!store.views.length" title="拓扑视图列表(每套视图独立, 互不影响)">
+                  :disabled="!store.views.length" :title="t('screen.topoViewsTitle')">
             <option v-for="v in store.views" :key="v.name" :value="v.name">{{ v.name }}</option>
           </select>
         </div>
-        <button type="button" class="tc-fs" title="进入全功能拓扑页(双击卡片同样进入)" @click.stop="goFull">⤢ 全屏</button>
+        <button type="button" class="tc-fs" :title="t('screen.topoFullTitle')" @click.stop="goFull">⤢ {{ t('screen.cFullScreen') }}</button>
       </div>
       <div class="tc-body" @click.stop @pointerdown.stop>
         <!-- 无节点时不渲染场景(空场景只有分层带, 值守者会误以为"拓扑是空的"而非"还没数据"), 走空态提示 -->
@@ -38,29 +38,29 @@
         </div>
         <!-- 缩略态: 卡被缩到阈值以下(卡片体系 compact 口径) → 标题 + 一行统计 -->
         <div v-else-if="compact" class="tc-mini">
-          <b>{{ nodes.length }}</b> 台设备 · 在线 <em>{{ onlineRate }}%</em>
+          {{ t('screen.topoDevOnline', { n: nodes.length }) }} <em>{{ onlineRate }}%</em>
           <span class="tc-dots">
             <i v-for="g in LEGEND" :key="g.k" :style="{ background: g.c, color: g.c }" :title="g.t + ' ' + countOf(g.k)"></i>
           </span>
         </div>
         <div v-else-if="ready && !nodes.length" class="tc-empty">
-          <span>暂无拓扑数据</span>
-          <em>请进全屏页(编辑模式)添加设备/框, 或在「节点监控」添加采集任务</em>
+          <span>{{ t('screen.topoEmpty') }}</span>
+          <em>{{ t('screen.topoEmptyHint') }}</em>
         </div>
-        <div v-else class="tc-empty"><span>正在加载拓扑数据…</span></div>
+        <div v-else class="tc-empty"><span>{{ t('screen.topoLoading') }}</span></div>
       </div>
     </template>
     <!-- 背面: 汇总概览(点卡片翻转回拓扑) -->
     <template v-else>
       <div class="tb">
-        <div class="tb-title">{{ card.title || '网络拓扑' }}</div>
-        <div class="tb-row"><span>设备总数</span><b>{{ nodes.length }}</b></div>
-        <div class="tb-row"><span>在线率</span><b>{{ onlineRate }}%</b></div>
-        <div class="tb-row"><span>链路数</span><b>{{ links.length }}</b></div>
+        <div class="tb-title">{{ card.title || t('screen.dftTopo') }}</div>
+        <div class="tb-row"><span>{{ t('screen.topoTotal') }}</span><b>{{ nodes.length }}</b></div>
+        <div class="tb-row"><span>{{ t('screen.topoOnlineRate') }}</span><b>{{ onlineRate }}%</b></div>
+        <div class="tb-row"><span>{{ t('screen.topoLinks') }}</span><b>{{ links.length }}</b></div>
         <div class="tb-legend">
           <span v-for="g in LEGEND" :key="g.k"><i :style="{ background: g.c }"></i>{{ g.t }}<b>{{ countOf(g.k) }}</b></span>
         </div>
-        <div class="tb-src">数据源: {{ srcText }} · 点击返回拓扑</div>
+        <div class="tb-src">{{ t('screen.cSrc') }}: {{ srcText }} · {{ t('screen.topoBack') }}</div>
       </div>
     </template>
   </div>
@@ -79,6 +79,7 @@ import { useShared, shared, loadNetworkLinks } from './dashData.js'
 // ② 实画线两端在线自动发起实测(推测边不自动测, 见 topoLinkLive.js 口径)。
 import { applyApiLinks, autoCheckManualLinks, markChecking, isChecking } from '../topo3d/topoLinkLive.js'
 import { v2 } from '../../api/http.js'
+import { t } from '../../i18n'
 
 // 2026-09-30 修复"大屏拓扑卡整卡黑/空白"根因: 此前 defineProps 未接返回值,
 // script 里 curViewName/pickView 直接引用 prop 名 `card` → 每次计算都抛
@@ -217,14 +218,14 @@ const onlineRate = computed(() => nodes.value.length
   ? Math.round(nodes.value.filter(n => n.status !== 'down').length * 100 / nodes.value.length)
   : 0)
 // 安全状态四色(与 topoModel 同口径): 绿=在线/低风险 黄=告警/中危 红=离线/高危 灰=未纳管
-const LEGEND = [
-  { k: 'green', t: '在线/低风险', c: '#34d399' },
-  { k: 'yellow', t: '告警/中风险', c: '#fbbf24' },
-  { k: 'red', t: '离线/高危', c: '#f87171' },
-  { k: 'gray', t: '未监控', c: '#64748b' },
-]
+const LEGEND = computed(() => [
+  { k: 'green', t: t('screen.lgOnline'), c: '#34d399' },
+  { k: 'yellow', t: t('screen.lgWarn'), c: '#fbbf24' },
+  { k: 'red', t: t('screen.lgOff'), c: '#f87171' },
+  { k: 'gray', t: t('screen.lgNoMonitor'), c: '#64748b' },
+])
 function countOf(k) { return nodes.value.filter(n => safeStatus(n) === k).length }
-const srcText = computed(() => (shared.linkSource === 'api' ? '后端链路接口' : 'Mock(链路接口未接入)'))
+const srcText = computed(() => (shared.linkSource === 'api' ? t('screen.topoSrcApi') : t('screen.topoSrcMock')))
 
 function goFull() { router.push('/topology/3d') }
 </script>

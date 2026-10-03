@@ -19,15 +19,15 @@
             </div>
             <em :style="{ color: r.c }">{{ r.t }}</em>
           </div>
-          <div v-if="!rows.length" class="at-empty">暂无告警数据</div>
+          <div v-if="!rows.length" class="at-empty">{{ t('screen.alertEmpty') }}</div>
         </div>
       </div>
     </template>
     <template v-else>
       <div class="at-back">
-        <div><span>数据源</span><b>overview.topVulns</b></div>
-        <div><span>排序</span><b>等级 → CVSS</b></div>
-        <div><span>展示条数</span><b>{{ limit }}</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>overview.topVulns</b></div>
+        <div><span>{{ t('screen.cSort') }}</span><b>{{ t('screen.alertSortBy') }}</b></div>
+        <div><span>{{ t('screen.cShowCount') }}</span><b>{{ limit }}</b></div>
       </div>
     </template>
   </div>
@@ -35,8 +35,9 @@
 
 <script setup>
 import { computed } from 'vue'
-import { SEV, SEV_CN, SEV_ORDER } from './chartkit.js'
+import { SEV, SEV_ORDER } from './chartkit.js'
 import { useShared, alertRows } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -55,10 +56,10 @@ const rows = computed(() => {
     .sort((a, b) => (rank(a.severity) - rank(b.severity)) || ((b.cvss || 0) - (a.cvss || 0)))
     .slice(0, limit.value)
     .map(v => ({
-      title: v.title || v.cve || '未命名风险',
+      title: v.title || v.cve || t('screen.alertUnnamed'),
       target: (v.assetIp || '') + (v.port ? ':' + v.port : ''),
       severity: v.severity,
-      t: SEV_CN[(v.severity || '').toLowerCase()] || v.severity || '—',
+      t: t('sev.' + ((v.severity || 'info').toLowerCase())),
       c: SEV[(v.severity || '').toLowerCase()] || '#94a3b8',
     }))
 })

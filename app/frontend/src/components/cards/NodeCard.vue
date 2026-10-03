@@ -13,21 +13,21 @@
       </div>
       <div class="nc-metrics">
         <div class="nc-bar"><i>CPU</i><span class="nc-track"><b :style="{ width: cpu + '%', background: nodeColor(cpu) }"></b></span><em>{{ cpu }}%</em></div>
-        <div class="nc-bar"><i>内存</i><span class="nc-track"><b :style="{ width: mem + '%', background: nodeColor(mem) }"></b></span><em>{{ mem }}%</em></div>
+        <div class="nc-bar"><i>{{ t('screen.mem') }}</i><span class="nc-track"><b :style="{ width: mem + '%', background: nodeColor(mem) }"></b></span><em>{{ mem }}%</em></div>
       </div>
       <div class="nc-net">
         <span>↑ {{ fmt(card.netUpBps) }}</span>
         <span>↓ {{ fmt(card.netDownBps) }}</span>
-        <i v-if="managed" class="nc-mon" title="纳管设备: 指标由监控接口同步">监控同步</i>
+        <i v-if="managed" class="nc-mon" :title="t('screen.monDevTitle')">{{ t('screen.monSync') }}</i>
       </div>
     </template>
     <template v-else>
       <div class="nc-back">
-        <div>deviceId：{{ card.deviceId || '—' }}</div>
-        <div>MAC：{{ mac || '—' }}</div>
-        <div>层级：{{ layerText }}</div>
-        <div>类型：{{ kindText }}</div>
-        <div>纳管：{{ managed ? '是(监控同步)' : '否(本地字段)' }}</div>
+        <div>{{ t('screen.deviceId') }}{{ card.deviceId || '—' }}</div>
+        <div>{{ t('screen.mac') }}{{ mac || '—' }}</div>
+        <div>{{ t('screen.layer') }}{{ layerText }}</div>
+        <div>{{ t('screen.kind') }}{{ kindText }}</div>
+        <div>{{ t('screen.monitored') }}{{ managed ? t('screen.monYes') : t('screen.monNo') }}</div>
       </div>
     </template>
   </div>
@@ -36,6 +36,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useShared, deviceById } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -57,12 +58,21 @@ const mem = computed(() => (dev.value ? dev.value.memory : (props.card.mem || 0)
 const status = computed(() => (dev.value ? dev.value.status : (props.card.status || 'normal')))
 const ip = computed(() => ((dev.value && dev.value.ip) || props.card.ip || ''))
 const mac = computed(() => ((dev.value && dev.value.mac) || props.card.mac || ''))
-const name = computed(() => props.card.name || (dev.value && dev.value.name) || '设备')
+const name = computed(() => props.card.name || (dev.value && dev.value.name) || t('screen.cDevice'))
 
-const STATUS = { normal: '正常', warn: '告警', error: '异常', down: '断开' }
-const statusText = computed(() => STATUS[status.value] || status.value)
-const layerText = { core: '核心层', agg: '汇聚层', access: '接入层' }[props.card.layer] || props.card.layer
-const kindText = { router: '路由器', switch: '交换机', server: '服务器', terminal: '终端' }[props.card.kind] || props.card.kind
+// 状态/层级/类型 本地化(响应式)
+const statusText = computed(() => {
+  const k = { normal: 'cfgStateNormal', warn: 'cfgStateWarn', error: 'cfgStateError', down: 'cfgStateDown' }[status.value]
+  return k ? t('screen.' + k) : status.value
+})
+const layerText = computed(() => {
+  const k = { core: 'cfgLayerCore', agg: 'cfgLayerAgg', access: 'cfgLayerEdge' }[props.card.layer]
+  return k ? t('screen.' + k) : props.card.layer
+})
+const kindText = computed(() => {
+  const k = { router: 'typeRouter', switch: 'typeSwitch', server: 'typeServer', terminal: 'typeTerminal' }[props.card.kind]
+  return k ? t('screen.' + k) : props.card.kind
+})
 const kindGlyph = { router: '⇄', switch: '▦', server: '▤', terminal: '▭' }[props.card.kind] || '▣'
 
 // 负载→色(绿→黄→红), 与拓扑节点同一映射口径

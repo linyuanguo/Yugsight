@@ -25,11 +25,11 @@
     <!-- 右键菜单: Teleport 到 body, 避免被画布 transform 影响 fixed 定位 -->
     <Teleport to="body">
       <div v-if="menuOpen" class="cc-menu" :style="menuStyle" @pointerdown.stop @click.stop>
-        <button @click="act('edit')">编辑</button>
-        <button @click="act('flip')">切换正反面</button>
-        <button @click="act('front')">置顶</button>
-        <button @click="act('back')">置底</button>
-        <button class="danger" @click="act('remove')">删除</button>
+        <button @click="act('edit')">{{ t('screen.cEdit') }}</button>
+        <button @click="act('flip')">{{ t('screen.cFlip') }}</button>
+        <button @click="act('front')">{{ t('screen.cFront') }}</button>
+        <button @click="act('back')">{{ t('screen.cBack') }}</button>
+        <button class="danger" @click="act('remove')">{{ t('screen.cRemove') }}</button>
       </div>
     </Teleport>
   </div>
@@ -37,6 +37,7 @@
 
 <script setup>
 import { ref, inject, computed, onBeforeUnmount } from 'vue'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },

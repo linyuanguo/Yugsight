@@ -13,6 +13,7 @@
 import { reactive, onBeforeUnmount } from 'vue'
 import { v2, v2dash } from '../../api/http.js'
 import { mockLinks } from '../topo3d/topoModel.js'
+import { t } from '../../i18n'
 
 const S = reactive({
   ov: null, flows: null, frames: [], err: '', errFlow: '',
@@ -41,12 +42,12 @@ async function loadOverview() {
     S.err = ''
     S.updatedAt = new Date().toISOString()
   } catch (e) {
-    S.err = (e && e.message) || '概览数据获取失败'
+    S.err = (e && e.message) || t('screen.errOverview')
   }
 }
 async function loadFlows() {
   try { S.flows = await v2dash('/api/dashboard/flows'); S.errFlow = '' } catch (e) {
-    S.errFlow = (e && e.message) || '流向数据获取失败'
+    S.errFlow = (e && e.message) || t('screen.errFlows')
   }
   try {
     const d = await v2dash('/api/dashboard/flows?timeline=1')
@@ -251,7 +252,7 @@ async function loadAssets() {
     const r = await v2('/assets?size=200&host=1')
     assetCache = (r && (r.list || r.items)) || []
   } catch (e) {
-    S.errDev = (e && e.message) || '资产列表获取失败'
+    S.errDev = (e && e.message) || t('screen.errAssets')
   }
 }
 // 资产没有"设备类型"字段, 只能靠证据猜: 有明确 OS→服务器/终端, 常见交换端口→交换机,
@@ -307,7 +308,7 @@ export async function loadNetworkLinks(nodes) {
     } catch (e) {
       // 接口不可用时保留上一帧数据并标错误(页面条上显示), 不退回 Mock:
       // 真数据与 Mock 混用会让用户误以为"这条链路是真的"
-      S.errLink = (e && e.message) || '链路接口获取失败'
+      S.errLink = (e && e.message) || t('screen.errLinks')
       S.linkUpdatedAt = new Date().toISOString()
       return S.networkLinks
     }
@@ -377,10 +378,10 @@ export function taskBars() {
   // 后端 overview 把 pending 合并进 tasksRunning, 没有独立的"待执行"计数。
   // 这里不硬造 pending, 而是改用同样是真实字段的"今日新建", 避免数字无法溯源。
   return [
-    { k: 'today', l: '今日新建', n: o.tasksToday || 0, c: '#38bdf8' },
-    { k: 'running', l: '进行中', n: o.tasksRunning || 0, c: '#3884ff' },
-    { k: 'done', l: '已完成', n: o.tasksSuccess || 0, c: '#34d399' },
-    { k: 'failed', l: '失败', n: o.tasksFailed || 0, c: '#f87171' },
+    { k: 'today', l: t('screen.taskToday'), n: o.tasksToday || 0, c: '#38bdf8' },
+    { k: 'running', l: t('screen.taskRunning'), n: o.tasksRunning || 0, c: '#3884ff' },
+    { k: 'done', l: t('screen.taskDone'), n: o.tasksSuccess || 0, c: '#34d399' },
+    { k: 'failed', l: t('screen.taskFailed'), n: o.tasksFailed || 0, c: '#f87171' },
   ]
 }
 export function alertRows() { return (S.ov && S.ov.topVulns) || [] }
@@ -408,4 +409,16 @@ export const METRICS = [
 export const METRIC_OPTIONS = METRICS.map(m => ({ v: m.key, t: m.label }))
 export function pickMetric(key) {
   return METRICS.find(m => m.key === key) || METRICS[0]
+}
+// 2026-10-03 i18n: 卡片侧指标名本地化 getter(METRICS.label 中文保留给属性面板, 下批处理)。
+// key → screen.m* 词条键, 未命中回退 mVulnRisk。在 computed/模板里调用 → 随 locale 响应式。
+const METRIC_LABEL_KEY = {
+  vulnRisk: 'mVulnRisk', vulnTotal: 'mVulnTotal', vulnCrit: 'mVulnCritical', vulnHigh: 'mVulnHigh',
+  findingToday: 'mVulnNewToday', findingWeek: 'mVulnNew7d', fixedWeek: 'mVulnFixed7d',
+  taskToday: 'mTaskNewToday', taskRunning: 'mTaskRunning', taskSuccess: 'mTaskDone',
+  taskFailed: 'mTaskFailed', successRate: 'mTaskSuccessRate', assetTotal: 'mAssetTotal',
+  assetAlive: 'mAssetOnline', probeTotal: 'mProbeTotal', probeOnline: 'mProbeOnline',
+}
+export function metricLabel(key) {
+  return t('screen.' + (METRIC_LABEL_KEY[key] || 'mVulnRisk'))
 }

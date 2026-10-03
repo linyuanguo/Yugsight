@@ -2,19 +2,20 @@
   <!-- 统计汇总卡(2026-09-27): 实时聚合画布内所有漏扫任务卡的真实状态计数。 -->
   <div class="sc">
     <div class="sc-title">{{ card.title }}</div>
-    <div class="sc-total">{{ s.total }}<small>个任务</small></div>
+    <div class="sc-total">{{ s.total }}<small>{{ t('screen.tasksSuffix') }}</small></div>
     <div class="sc-rows">
-      <span class="r running">执行中 {{ s.running }}</span>
-      <span class="r done">已完成 {{ s.done }}</span>
-      <span class="r error">异常 {{ s.error }}</span>
-      <span class="r pending">待执行 {{ s.pending }}</span>
+      <span class="r running">{{ t('screen.cfgRunning') }} {{ s.running }}</span>
+      <span class="r done">{{ t('screen.cfgDone') }} {{ s.done }}</span>
+      <span class="r error">{{ t('screen.cfgError') }} {{ s.error }}</span>
+      <span class="r pending">{{ t('screen.cfgPending') }} {{ s.pending }}</span>
     </div>
-    <div class="sc-vuln">高危漏洞合计：<b class="crit">{{ s.crit }}</b> / <b class="high">{{ s.high }}</b></div>
+    <div class="sc-vuln">{{ t('screen.highVulnTotal') }}<b class="crit">{{ s.crit }}</b> / <b class="high">{{ s.high }}</b></div>
   </div>
 </template>
 
 <script setup>
 import { inject, ref, computed } from 'vue'
+import { t } from '../../i18n'
 
 defineProps({
   card: { type: Object, required: true },

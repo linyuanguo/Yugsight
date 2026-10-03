@@ -7,11 +7,11 @@
     <template v-if="side === 'front'">
       <div class="tc-head">
         <span class="tc-title">{{ card.title }}</span>
-        <span class="tc-range">近 {{ days }} 日</span>
+        <span class="tc-range">{{ t('screen.lastDays', { days }) }}</span>
       </div>
       <div class="tc-legend">
-        <span><i style="background:#38bdf8"></i>新发现</span>
-        <span><i style="background:#34d399"></i>已修复</span>
+        <span><i style="background:#38bdf8"></i>{{ t('screen.found') }}</span>
+        <span><i style="background:#34d399"></i>{{ t('screen.fixed') }}</span>
       </div>
       <svg class="tc-chart" :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none">
         <line v-for="g in grid" :key="'g' + g" :x1="0" :x2="W" :y1="g" :y2="g" class="tc-grid" />
@@ -26,9 +26,9 @@
     </template>
     <template v-else>
       <div class="tc-back">
-        <div><span>数据源</span><b>/api/v2/screen/overview</b></div>
-        <div><span>时间窗</span><b>近 {{ days }} 日</b></div>
-        <div><span>序列</span><b>new(新发现) / fixed(修复)</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>/api/v2/screen/overview</b></div>
+        <div><span>{{ t('screen.timeWindow') }}</span><b>{{ t('screen.lastDays', { days }) }}</b></div>
+        <div><span>{{ t('screen.series') }}</span><b>{{ t('screen.seriesHint') }}</b></div>
       </div>
     </template>
   </div>
@@ -38,6 +38,7 @@
 import { computed } from 'vue'
 import { linePath } from './chartkit.js'
 import { useShared, trendSlice } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },

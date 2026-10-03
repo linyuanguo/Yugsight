@@ -13,12 +13,12 @@
           <span class="sc-num" :style="{ color: r.c }">{{ fmt(r.n) }}</span>
         </div>
       </div>
-      <div v-if="!compact" class="sc-note">{{ card.note || '任务状态分布(实时)' }}</div>
+      <div v-if="!compact" class="sc-note">{{ card.note || t('screen.statusDist') }}</div>
     </template>
     <template v-else>
       <div class="sc-back">
         <div v-for="r in rows" :key="r.k"><span>{{ r.l }}</span><b :style="{ color: r.c }">{{ fmt(r.n) }}</b></div>
-        <div><span>数据源</span><b>/api/v2/screen/overview</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>/api/v2/screen/overview</b></div>
       </div>
     </template>
   </div>
@@ -28,6 +28,7 @@
 import { computed } from 'vue'
 import { fmt } from './chartkit.js'
 import { useShared, taskBars } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },

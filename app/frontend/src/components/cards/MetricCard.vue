@@ -18,10 +18,10 @@
     </template>
     <template v-else>
       <div class="mc-back">
-        <div><span>数据源</span><b>/api/v2/screen/overview</b></div>
-        <div><span>字段</span><b>{{ m.label }}</b></div>
-        <div><span>环比口径</span><b>近7天新增 vs 前7天</b></div>
-        <div><span>趋势点数</span><b>{{ span }} 点</b></div>
+        <div><span>{{ t('screen.cSrc') }}</span><b>/api/v2/screen/overview</b></div>
+        <div><span>{{ t('screen.field') }}</span><b>{{ metricLabel(m.key) }}</b></div>
+        <div><span>{{ t('screen.deltaBasis') }}</span><b>{{ t('screen.delta7d') }}</b></div>
+        <div><span>{{ t('screen.trendPoints') }}</span><b>{{ t('screen.points', { n: span }) }}</b></div>
       </div>
     </template>
   </div>
@@ -30,7 +30,8 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { COLOR, fmt, linePath, animateNum } from './chartkit.js'
-import { useShared, pickMetric, trendSlice, mom7 } from './dashData.js'
+import { useShared, pickMetric, trendSlice, mom7, metricLabel } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -66,8 +67,8 @@ const mm = computed(() => { void S.updatedAt; return mom7() })
 const chipText = computed(() => {
   if (props.card.compare) return props.card.compare
   const v = mm.value
-  if (v === null) return '环比 —'
-  return '环比 ' + (v > 0 ? '+' : '') + v + '%'
+  if (v === null) return t('screen.deltaNa')
+  return t('screen.deltaVal', { pct: (v > 0 ? '+' : '') + v })
 })
 const chipCls = computed(() => {
   const v = mm.value
@@ -79,7 +80,7 @@ const sp = computed(() => {
   const pts = trendSlice(span.value).map(p => p.new || 0)
   return linePath(pts, 100, 30, 3)
 })
-const foot = computed(() => props.card.note || m.value.label)
+const foot = computed(() => props.card.note || metricLabel(m.value.key))
 </script>
 
 <style scoped>

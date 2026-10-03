@@ -22,7 +22,7 @@
     </template>
     <template v-else>
       <div class="nr-back">
-        <div><span>轮播序列</span><b>{{ list.length }} 项</b></div>
+        <div><span>{{ t('screen.rollSeq') }}</span><b>{{ t('screen.items', { n: list.length }) }}</b></div>
         <div v-for="k in list" :key="k.key"><span>{{ k.label }}</span><b :style="{ color: k.color }">{{ k.get() }}</b></div>
       </div>
     </template>
@@ -32,7 +32,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { COLOR, fmt, animateNum } from './chartkit.js'
-import { useShared, pickMetric } from './dashData.js'
+import { useShared, pickMetric, metricLabel } from './dashData.js'
+import { t } from '../../i18n'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -46,7 +47,7 @@ const list = computed(() => {
   const raw = (props.card.keys || 'vulnTotal,assetAlive,probeOnline,vulnHigh').split(',')
   return raw.map(s => s.trim()).filter(Boolean).map((k, i) => {
     const m = pickMetric(k)
-    return { key: m.key, label: m.label, unit: m.unit, get: m.get, color: [COLOR.accent, COLOR.ok, COLOR.warn, COLOR.danger, COLOR.info, COLOR.purple][i % 6] }
+    return { key: m.key, label: metricLabel(m.key), unit: m.unit, get: m.get, color: [COLOR.accent, COLOR.ok, COLOR.warn, COLOR.danger, COLOR.info, COLOR.purple][i % 6] }
   })
 })
 const idx = ref(0)

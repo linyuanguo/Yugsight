@@ -7,6 +7,7 @@
 //
 // 约定: 角度制, 0° 指向正上方(12 点), 顺时针增大 —— 与人对时钟的直觉一致,
 // 省掉调用点反复做 -90° 修正。
+import { locale } from '../../i18n'
 
 export const C = {
   accent: '#3884ff', ok: '#34d399', warn: '#fbbf24', danger: '#f87171',
@@ -27,6 +28,13 @@ export function color(v) { return COLOR[v] || C.accent }
 export function fmt(n) {
   if (n === null || n === undefined || isNaN(n)) return '—'
   const v = Math.round(n)
+  // 2026-10-03 i18n: 英文用 K/M/B 记数法, 中文保留 万/亿
+  if (locale.value === 'en') {
+    if (Math.abs(v) >= 1e9) return (v / 1e9).toFixed(1) + 'B'
+    if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(1) + 'M'
+    if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(1) + 'K'
+    return String(v)
+  }
   if (Math.abs(v) >= 1e8) return (v / 1e8).toFixed(1) + '亿'
   if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(1) + '万'
   return String(v)

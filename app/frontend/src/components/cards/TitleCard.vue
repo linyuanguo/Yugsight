@@ -5,11 +5,12 @@
       <span class="tc-bar"></span>
       <span class="tc-text">{{ card.title }}</span>
     </template>
-    <div v-else class="tc-note">标题卡 · 用于大屏分区标注，无背面详情</div>
+    <div v-else class="tc-note">{{ t('screen.titleNote') }}</div>
   </div>
 </template>
 
 <script setup>
+import { t } from '../../i18n'
 defineProps({
   card: { type: Object, required: true },
   compact: { type: Boolean, default: false },
