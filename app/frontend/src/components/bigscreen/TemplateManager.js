@@ -12,6 +12,8 @@
 // (TopoCard, 复用 topo3d 场景)回到默认布局, 内置模板重新覆盖该 key。
 // 用户旧布局里残留的 topo 条目仍会被 applyLayout 忽略(找不到对应卡片), 无副作用。
 
+import { t } from '../../i18n'
+
 export const TPL_KEY = 'yugsight_bpro_tpls'
 export const CUR_KEY = 'yugsight_bpro_tpl_current'
 
@@ -22,12 +24,13 @@ const M = (title, metric) => ({ title, metric })
 // 每套覆盖默认 19 卡的全部 key(几何或 hidden), 无溢出、无重叠、间距统一。
 export const BUILTIN = [
   {
-    id: 'tpl_overview', name: '综合总览', scene: '日常值守', builtin: true,
+    // 2026-10-04 i18n: name/scene/cfg.title 存词条键, 渲染期 t() 解析(用户模板自由名不受影响)
+    id: 'tpl_overview', name: 'bpro.tplOverview', scene: 'bpro.sceneDaily', builtin: true,
     layout: {
-      m1: { x: 16, y: 16, w: 460, h: 104, cfg: M('累计漏洞总数', 'vulnRisk') },
-      m2: { x: 492, y: 16, w: 460, h: 104, cfg: M('今日新增漏洞', 'findingToday') },
-      m3: { x: 968, y: 16, w: 460, h: 104, cfg: M('已完成扫描任务', 'taskSuccess') },
-      m4: { x: 1444, y: 16, w: 460, h: 104, cfg: M('任务成功率', 'successRate') },
+      m1: { x: 16, y: 16, w: 460, h: 104, cfg: M('screen.dcVulnTotal', 'vulnRisk') },
+      m2: { x: 492, y: 16, w: 460, h: 104, cfg: M('screen.dcVulnNew', 'findingToday') },
+      m3: { x: 968, y: 16, w: 460, h: 104, cfg: M('screen.dcTaskDone', 'taskSuccess') },
+      m4: { x: 1444, y: 16, w: 460, h: 104, cfg: M('screen.dcSuccessRate', 'successRate') },
       globe: { x: 16, y: 136, w: 688, h: 400 },
       topo: { x: 720, y: 136, w: 480, h: 400 },
       vl: { x: 1216, y: 136, w: 336, h: 192 },
@@ -46,7 +49,7 @@ export const BUILTIN = [
     },
   },
   {
-    id: 'tpl_attack', name: '攻击态势', scene: '宏观威胁', builtin: true,
+    id: 'tpl_attack', name: 'bpro.tplAttack', scene: 'bpro.sceneThreat', builtin: true,
     // 说明: 后端暂无"攻击量/拦截数/攻击源国家数"指标, 顶部四个槽位沿用同源可得的
     // 风险/新增/任务/成功率, 不编造攻击数字(标题如实反映指标含义)。
     layout: {
@@ -54,10 +57,10 @@ export const BUILTIN = [
       vl: { x: 1404, y: 16, w: 500, h: 273 },
       at: { x: 1404, y: 305, w: 500, h: 273 },
       tb: { x: 1404, y: 594, w: 500, h: 273 },
-      m1: { x: 16, y: 884, w: 460, h: 180, cfg: M('风险总量', 'vulnRisk') },
-      m2: { x: 492, y: 884, w: 460, h: 180, cfg: M('今日新增', 'findingToday') },
-      m3: { x: 968, y: 884, w: 460, h: 180, cfg: M('已完成任务', 'taskSuccess') },
-      m4: { x: 1444, y: 884, w: 460, h: 180, cfg: M('任务成功率', 'successRate') },
+      m1: { x: 16, y: 884, w: 460, h: 180, cfg: M('bpro.mRiskTotal', 'vulnRisk') },
+      m2: { x: 492, y: 884, w: 460, h: 180, cfg: M('bpro.mTodayNew', 'findingToday') },
+      m3: { x: 968, y: 884, w: 460, h: 180, cfg: M('bpro.mTaskDone', 'taskSuccess') },
+      m4: { x: 1444, y: 884, w: 460, h: 180, cfg: M('screen.dcSuccessRate', 'successRate') },
       // 攻击态势把地球放大到 1372 宽(覆盖原拓扑卡位置), 拓扑卡隐藏避免重叠
       topo: { hidden: true },
       ap: { hidden: true },
@@ -67,7 +70,7 @@ export const BUILTIN = [
     },
   },
   {
-    id: 'tpl_topo', name: '网络拓扑', scene: '拓扑值守', builtin: true,
+    id: 'tpl_topo', name: 'bpro.tplTopo', scene: 'bpro.sceneTopo', builtin: true,
     // 2026-09-29: 用户要求新增"网络拓扑"默认模板 —— 把拓扑卡放大为主视觉(与攻击态势把
     // 地球放大到 1372 宽同口径, 拓扑卡用相同的大画布占比), 右侧挂漏洞分级/告警/任务柱状,
     // 底部四指标兜底整体态势。其余图表卡隐藏避免重叠。
@@ -76,10 +79,10 @@ export const BUILTIN = [
       vl: { x: 1404, y: 16, w: 500, h: 273 },
       at: { x: 1404, y: 305, w: 500, h: 273 },
       tb: { x: 1404, y: 594, w: 500, h: 273 },
-      m1: { x: 16, y: 884, w: 460, h: 180, cfg: M('风险总量', 'vulnRisk') },
-      m2: { x: 492, y: 884, w: 460, h: 180, cfg: M('今日新增', 'findingToday') },
-      m3: { x: 968, y: 884, w: 460, h: 180, cfg: M('已完成任务', 'taskSuccess') },
-      m4: { x: 1444, y: 884, w: 460, h: 180, cfg: M('任务成功率', 'successRate') },
+      m1: { x: 16, y: 884, w: 460, h: 180, cfg: M('bpro.mRiskTotal', 'vulnRisk') },
+      m2: { x: 492, y: 884, w: 460, h: 180, cfg: M('bpro.mTodayNew', 'findingToday') },
+      m3: { x: 968, y: 884, w: 460, h: 180, cfg: M('bpro.mTaskDone', 'taskSuccess') },
+      m4: { x: 1444, y: 884, w: 460, h: 180, cfg: M('screen.dcSuccessRate', 'successRate') },
       globe: { hidden: true },
       ap: { hidden: true },
       gt1: { hidden: true }, gt2: { hidden: true }, gt3: { hidden: true },
@@ -101,8 +104,8 @@ function persist(list) {
   return list
 }
 export function saveTpl(name, scene, layout) {
-  const list = loadTpls().filter(t => t.name !== name)
-  return persist(list.concat([{ id: 'ut_' + Date.now().toString(36), name: name || '未命名模板', scene: scene || '自定义', builtin: false, layout }]))
+  const list = loadTpls().filter(tp => tp.name !== name)
+  return persist(list.concat([{ id: 'ut_' + Date.now().toString(36), name: name || t('bpro.unnamedTpl'), scene: scene || t('bpro.custom'), builtin: false, layout }]))
 }
 export function renameTpl(id, name) {
   return persist(loadTpls().map(t => (t.id === id ? Object.assign({}, t, { name: name || t.name }) : t)))
@@ -151,6 +154,6 @@ export function exportTpl(t) {
 function snapshotLayoutOf(l) { return l }
 export function importTpl(text) {
   const o = JSON.parse(text)
-  if (!o || !o.layout) throw new Error('模板 JSON 缺少 layout 字段')
-  return saveTpl(o.name || '导入模板', o.scene || '导入', o.layout)
+  if (!o || !o.layout) throw new Error(t('bpro.tplNoLayout'))
+  return saveTpl(o.name || t('bpro.importedTpl'), o.scene || t('bpro.importScene'), o.layout)
 }

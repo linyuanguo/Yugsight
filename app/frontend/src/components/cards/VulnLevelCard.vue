@@ -4,7 +4,7 @@
        避免"缺失安全头"这类加固建议把风险占比稀释到看不出重点。 -->
   <div class="vl">
     <template v-if="side === 'front'">
-      <div class="vl-title">{{ card.title }}</div>
+      <div class="vl-title">{{ t(card.title) }}</div>
       <div class="vl-body">
         <svg class="vl-donut" viewBox="0 0 100 100">
           <path v-for="s in segs" :key="s.k" :d="s.d" class="vl-seg" :style="{ fill: s.c }" />

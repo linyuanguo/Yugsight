@@ -4,7 +4,7 @@
   <div class="mc">
     <template v-if="side === 'front'">
       <div class="mc-top">
-        <span class="mc-title">{{ card.title }}</span>
+        <span class="mc-title">{{ t(card.title) }}</span>
         <span v-if="!compact" class="mc-chip" :class="chipCls">{{ chipText }}</span>
       </div>
       <div class="mc-val" :style="{ color }">

@@ -4,7 +4,7 @@
        所以这里用"今日新建"代替无法拆出的"待执行", 见 dashData.taskBars 注释。 -->
   <div class="tb">
     <template v-if="side === 'front'">
-      <div class="tb-title">{{ card.title }}</div>
+      <div class="tb-title">{{ t(card.title) }}</div>
       <div class="tb-list">
         <div v-for="r in rows" :key="r.k" class="tb-item">
           <span class="tb-label">{{ r.l }}</span>

@@ -7,9 +7,10 @@
 //  - 暂停用"计数式"而不是布尔: 多处原因可能同时要求暂停, 任一原因解除就恢复会误播。
 //    这里用 reasons Set + 延时恢复计时器组合。
 
+// 2026-10-04 i18n: 档位文案键值化, BigScreenPro 渲染期 t() 解析
 export const INTERVALS = [
-  { v: 30, t: '30 秒' }, { v: 60, t: '1 分钟' },
-  { v: 180, t: '3 分钟' }, { v: 300, t: '5 分钟' },
+  { v: 30, t: 'bpro.iv30' }, { v: 60, t: 'bpro.iv60' },
+  { v: 180, t: 'bpro.iv180' }, { v: 300, t: 'bpro.iv300' },
 ]
 
 export function createCarousel(opts) {

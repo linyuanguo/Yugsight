@@ -29,54 +29,54 @@
 
     <!-- 右上角悬浮控制栏: 双模式开关 / 一键全屏 / 布局模板切换 / 新建卡片(编辑态) -->
     <div class="bpro-ctrl" :class="{ hidden: ctrlHidden }">
-      <div class="bpro-mode" :title="mode === 'browse' ? '切换到编辑模式: 解锁画布编辑' : '切换到浏览模式: 纯展示'">
-        <button type="button" :class="{ on: mode === 'browse' }" @click="setMode('browse')">浏览模式</button>
-        <button type="button" :class="{ on: mode === 'edit' }" @click="setMode('edit')">编辑模式</button>
+      <div class="bpro-mode" :title="mode === 'browse' ? t('bpro.modeEditTitle') : t('bpro.modeBrowseTitle')">
+        <button type="button" :class="{ on: mode === 'browse' }" @click="setMode('browse')">{{ t('bpro.modeBrowse') }}</button>
+        <button type="button" :class="{ on: mode === 'edit' }" @click="setMode('edit')">{{ t('bpro.modeEdit') }}</button>
       </div>
-      <button type="button" class="bpro-btn" :title="isFullscreen ? '退出全屏' : '一键全屏'" @click="toggleFullscreen">
-        {{ isFullscreen ? '退出全屏' : '全屏' }}
+      <button type="button" class="bpro-btn" :title="isFullscreen ? t('bpro.exitFullscreen') : t('bpro.fullscreenHint')" @click="toggleFullscreen">
+        {{ isFullscreen ? t('bpro.exitFullscreen') : t('bpro.fullscreen') }}
       </button>
       <!-- 模板下拉: 内置模板 / 我的自定义模板(只改几何与显隐, 不重建组件实例) -->
       <div class="bpro-new">
-        <button type="button" class="bpro-btn" @click.stop="tplOpen = !tplOpen">模板: {{ curTplName }}</button>
+        <button type="button" class="bpro-btn" @click.stop="tplOpen = !tplOpen">{{ t('bpro.tplLabel') }}: {{ curTplName }}</button>
         <div class="bpro-new-menu" v-if="tplOpen" @click.stop>
-          <div class="ni-group">内置模板</div>
-          <button v-for="t in BUILTIN" :key="t.id" type="button" @click="applyTpl(t.id)">
-            <span class="ni">▤</span><span class="ni-t">{{ t.name }}</span>
-            <span class="ni-tag">{{ t.scene }}</span>
+          <div class="ni-group">{{ t('bpro.builtinTpls') }}</div>
+          <button v-for="tpl in BUILTIN" :key="tpl.id" type="button" @click="applyTpl(tpl.id)">
+            <span class="ni">▤</span><span class="ni-t">{{ t(tpl.name) }}</span>
+            <span class="ni-tag">{{ t(tpl.scene) }}</span>
           </button>
           <template v-if="userTpls.length">
-            <div class="ni-group">我的模板</div>
-            <button v-for="t in userTpls" :key="t.id" type="button" @click="applyTpl(t.id)">
-              <span class="ni">★</span><span class="ni-t">{{ t.name }}</span>
-              <span class="ni-del" @click.stop="renameTplOf(t)">改名</span>
-              <span class="ni-del" @click.stop="delTplOf(t)">×</span>
+            <div class="ni-group">{{ t('bpro.myTpls') }}</div>
+            <button v-for="tpl in userTpls" :key="tpl.id" type="button" @click="applyTpl(tpl.id)">
+              <span class="ni">★</span><span class="ni-t">{{ tpl.name }}</span>
+              <span class="ni-del" @click.stop="renameTplOf(tpl)">{{ t('bpro.rename') }}</span>
+              <span class="ni-del" @click.stop="delTplOf(tpl)">×</span>
             </button>
           </template>
-          <div class="ni-group">管理</div>
-          <button type="button" @click="saveAsTpl"><span class="ni">＋</span>保存当前布局为模板</button>
-          <button type="button" @click="exportTplOf"><span class="ni">⤓</span>导出模板 JSON</button>
-          <button type="button" @click="importTplOf"><span class="ni">⤒</span>导入模板 JSON</button>
-          <button type="button" @click="applyTpl('tpl_overview')"><span class="ni">↺</span>重置为综合总览</button>
+          <div class="ni-group">{{ t('bpro.manage') }}</div>
+          <button type="button" @click="saveAsTpl"><span class="ni">＋</span>{{ t('bpro.saveAsLayout') }}</button>
+          <button type="button" @click="exportTplOf"><span class="ni">⤓</span>{{ t('bpro.exportTpl') }}</button>
+          <button type="button" @click="importTplOf"><span class="ni">⤒</span>{{ t('bpro.importTpl') }}</button>
+          <button type="button" @click="applyTpl('tpl_overview')"><span class="ni">↺</span>{{ t('bpro.resetOverview') }}</button>
         </div>
       </div>
       <!-- 保存布局(2026-09-29 用户要求: 布局保存按钮要显眼、一点就存) -->
-      <button type="button" class="bpro-btn" title="把当前画布布局保存为模板(只存几何与显隐, 供随时重排回用)" @click="saveAsTpl">保存布局</button>
+      <button type="button" class="bpro-btn" :title="t('bpro.saveLayoutTitle')" @click="saveAsTpl">{{ t('bpro.saveLayout') }}</button>
       <!-- 新建组件(仅编辑态): 按 基础/统计/图表/高级 分组 + 我的模板 -->
       <div class="bpro-new" v-if="mode === 'edit'">
-        <button type="button" class="bpro-btn" @click.stop="newOpen = !newOpen">+ 新建组件</button>
+        <button type="button" class="bpro-btn" @click.stop="newOpen = !newOpen">+ {{ t('bpro.newCard') }}</button>
         <div class="bpro-new-menu" v-if="newOpen" @click.stop>
           <template v-for="g in TYPE_GROUPS" :key="g.k">
-            <div class="ni-group">{{ g.t }}</div>
+            <div class="ni-group">{{ t(g.t) }}</div>
             <button v-for="k in typesOf(g.k)" :key="k" type="button" @click="addCard(k)">
-              <span class="ni">{{ CARD_TYPES[k].icon }}</span>{{ CARD_TYPES[k].label }}
+              <span class="ni">{{ CARD_TYPES[k].icon }}</span>{{ t(CARD_TYPES[k].label) }}
             </button>
           </template>
           <template v-if="tpls.length">
-            <div class="ni-group">我的模板</div>
-            <button v-for="t in tpls" :key="t.id" type="button" @click.stop="addFromTpl(t)">
-              <span class="ni">★</span><span class="ni-t">{{ t.name }}</span>
-              <span class="ni-del" @click.stop="delTpl(t)">×</span>
+            <div class="ni-group">{{ t('bpro.myTpls') }}</div>
+            <button v-for="tp in tpls" :key="tp.id" type="button" @click.stop="addFromTpl(tp)">
+              <span class="ni">★</span><span class="ni-t">{{ tp.name }}</span>
+              <span class="ni-del" @click.stop="delTpl(tp)">×</span>
             </button>
           </template>
         </div>
@@ -93,68 +93,68 @@
       </div>
       <div class="bp-body">
         <label v-for="f in panelFields" :key="f.k">
-          <span>{{ f.l }}<i v-if="isRo(f)" class="bp-ro">监控同步</i></span>
+          <span>{{ t(f.l) }}<i v-if="isRo(f)" class="bp-ro">{{ t('bpro.monitorSync') }}</i></span>
           <input v-if="f.t === 'text'" :disabled="isRo(f)" :value="panelTarget[f.k]" @input="setField(f, $event.target.value)" />
           <input v-else-if="f.t === 'number'" type="number" :disabled="isRo(f)" :value="panelTarget[f.k]" @input="setField(f, Number($event.target.value))" />
           <select v-else-if="f.t === 'select'" :disabled="isRo(f)" :value="String(panelTarget[f.k])" @change="setField(f, castSel(f, $event.target.value))">
-            <option v-for="o in optsFor(f)" :key="String(o.v)" :value="String(o.v)">{{ o.t }}</option>
+            <option v-for="o in optsFor(f)" :key="String(o.v)" :value="String(o.v)">{{ t(o.t) }}</option>
           </select>
           <textarea v-else-if="f.t === 'textarea'" rows="3" :value="panelTarget[f.k]" @input="setField(f, $event.target.value)"></textarea>
         </label>
-        <div v-if="!panelFields.length" class="bp-none">该对象无可配字段</div>
+        <div v-if="!panelFields.length" class="bp-none">{{ t('bpro.noFields') }}</div>
         <!-- 旧拓扑模块的"告警设置"分组(PushStatusPanel)与拓扑对象选中分支已一并删除:
              面板现在只编辑卡片, 不再有 selObj 互斥分支(3D 拓扑第三阶段对接时再扩展)。 -->
-        <div class="bp-sep">几何(也可直接拖拽与四角缩放)</div>
+        <div class="bp-sep">{{ t('bpro.geoSep') }}</div>
         <label v-for="g in GEO" :key="g.k" class="bp-geo">
-          <span>{{ g.l }}</span>
+          <span>{{ t(g.l) }}</span>
           <input type="number" :value="panelTarget[g.k]" @input="setField(g, Number($event.target.value))" />
         </label>
       </div>
       <div class="bp-foot">
-        <input class="bp-tplname" v-model="tplName" placeholder="组件模板名称" />
+        <input class="bp-tplname" v-model="tplName" :placeholder="t('bpro.tplNamePh')" />
         <!-- 2026-09-29: 此按钮存的是"选中的这张卡"为可复用组件模板, 不是整屏布局 —— 改名避免与
              控制栏「保存布局」混淆(布局模板走 saveAsTpl, 组件模板走 saveTpl) -->
-        <button type="button" @click="saveTpl">存为组件模板</button>
-        <button type="button" class="danger" @click="removeCard(sel.id)">删除</button>
+        <button type="button" @click="saveTpl">{{ t('bpro.saveAsCardTpl') }}</button>
+        <button type="button" class="danger" @click="removeCard(sel.id)">{{ t('bpro.del') }}</button>
       </div>
     </div>
 
     <!-- 批量右键菜单(选中 2 个以上时出现; 单项仍用卡片自带菜单) -->
     <Teleport to="body">
       <div v-if="batchMenu" class="bpro-batch" :style="batchMenuStyle" @pointerdown.stop @click.stop>
-        <div class="bb-h">批量操作({{ selIds.length }} 个元素)</div>
-        <button v-for="a in BATCH_ACTIONS" :key="a.k" type="button" :class="{ danger: a.danger }" @click="applyBatch(a.k)">{{ a.t }}</button>
+        <div class="bb-h">{{ t('bpro.batchOps', { n: selIds.length }) }}</div>
+        <button v-for="a in BATCH_ACTIONS" :key="a.k" type="button" :class="{ danger: a.danger }" @click="applyBatch(a.k)">{{ t(a.t) }}</button>
       </div>
     </Teleport>
 
     <!-- 轮播控制条(浏览模式): 上下切 + 播放/暂停 + 间隔档位 + 轮播设置 -->
     <div class="bpro-carousel" v-if="mode === 'browse'">
       <button type="button" @click="carousel && carousel.prev()">‹</button>
-      <button type="button" @click="togglePlay">{{ playing ? '暂停' : '播放' }}</button>
+      <button type="button" @click="togglePlay">{{ playing ? t('bpro.pause') : t('bpro.play') }}</button>
       <button type="button" @click="carousel && carousel.next()">›</button>
-      <select :value="carIntervalSel" @change="onIntervalChange" title="轮播间隔">
-        <option v-for="i in INTERVALS" :key="i.v" :value="i.v">{{ i.t }}</option>
-        <option value="custom">自定义</option>
+      <select :value="carIntervalSel" @change="onIntervalChange" :title="t('bpro.carIntervalTitle')">
+        <option v-for="i in INTERVALS" :key="i.v" :value="i.v">{{ t(i.t) }}</option>
+        <option value="custom">{{ t('bpro.custom') }}</option>
       </select>
-      <button type="button" @click="carOpen = !carOpen">轮播设置</button>
+      <button type="button" @click="carOpen = !carOpen">{{ t('bpro.carSettings') }}</button>
       <span class="bc-idx">{{ carouselIdx + 1 }}/{{ carouselList.length }}</span>
-      <span class="bc-state" v-if="!playing">已暂停</span>
+      <span class="bc-state" v-if="!playing">{{ t('bpro.paused') }}</span>
     </div>
     <!-- 轮播设置面板(浏览模式): 勾选参与轮播的模板 + 自定义间隔 -->
     <div class="bpro-carousel-set" v-if="mode === 'browse' && carOpen">
-      <div class="bcs-h">参与轮播的模板 <span class="bcs-hint">（至少勾选 2 个）</span></div>
-      <label v-for="t in carCandidates" :key="t.id" class="bcs-item">
-        <input type="checkbox" :checked="isCarChecked(t.id)" @change="toggleCarCheck(t.id, $event.target.checked)" />
-        <span class="bcs-name">{{ t.name }}</span>
-        <span class="bcs-tag">{{ t.builtin ? '内置' : '自定义' }}</span>
+      <div class="bcs-h">{{ t('bpro.carTplLabel') }} <span class="bcs-hint">{{ t('bpro.carMinHint') }}</span></div>
+      <label v-for="cp in carCandidates" :key="cp.id" class="bcs-item">
+        <input type="checkbox" :checked="isCarChecked(cp.id)" @change="toggleCarCheck(cp.id, $event.target.checked)" />
+        <span class="bcs-name">{{ cp.name }}</span>
+        <span class="bcs-tag">{{ cp.builtin ? t('bpro.builtin') : t('bpro.custom') }}</span>
       </label>
-      <div v-if="!carCandidates.length" class="bcs-empty">暂无布局模板</div>
+      <div v-if="!carCandidates.length" class="bcs-empty">{{ t('bpro.noLayoutTpl') }}</div>
       <div class="bcs-foot">
-        <label class="bcs-int">间隔
-          <input type="number" min="5" max="3600" :value="carInterval" @change="onCustomInterval" /> 秒
+        <label class="bcs-int">{{ t('bpro.interval') }}
+          <input type="number" min="5" max="3600" :value="carInterval" @change="onCustomInterval" /> {{ t('bpro.sec') }}
         </label>
-        <span class="bcs-count">{{ carouselList.length }} 个参与</span>
-        <button type="button" @click="carOpen = false">完成</button>
+        <span class="bcs-count">{{ t('bpro.carCount', { n: carouselList.length }) }}</span>
+        <button type="button" @click="carOpen = false">{{ t('bpro.done') }}</button>
       </div>
     </div>
 
@@ -162,23 +162,23 @@
          拖动把手(⠿)改位置, ✕ 隐藏(左下角"工具"按钮呼回), 位置/显隐持久化到 localStorage -->
     <div class="bpro-tools" v-if="mode === 'edit' && !toolsHidden" ref="toolsEl" :style="toolsStyle">
       <span class="bpro-tools-handle" title="拖动调整工具栏位置" @pointerdown.stop="startToolsDrag">⠿</span>
-      <label>网格
+      <label>{{ t('bpro.grid') }}
         <select :value="grid" @change="grid = Number($event.target.value)">
-          <option :value="1">1px(关)</option><option :value="8">8px</option>
+          <option :value="1">{{ t('bpro.gridOff') }}</option><option :value="8">8px</option>
           <option :value="16">16px</option><option :value="24">24px</option>
         </select>
       </label>
-      <button type="button" :disabled="!canUndo" @click="undo">撤销</button>
-      <button type="button" :disabled="!canRedo" @click="redo">恢复</button>
-      <button type="button" class="bpro-tools-hide" title="隐藏工具栏" @click="toggleToolsHidden">✕</button>
+      <button type="button" :disabled="!canUndo" @click="undo">{{ t('bpro.undo') }}</button>
+      <button type="button" :disabled="!canRedo" @click="redo">{{ t('bpro.redo') }}</button>
+      <button type="button" class="bpro-tools-hide" :title="t('bpro.hideTools')" @click="toggleToolsHidden">✕</button>
     </div>
     <!-- 工具栏被隐藏时的呼出入口(左下角) -->
-    <button v-if="mode === 'edit' && toolsHidden" type="button" class="bpro-tools-restore" title="显示工具栏" @click="toggleToolsHidden">工具</button>
+    <button v-if="mode === 'edit' && toolsHidden" type="button" class="bpro-tools-restore" :title="t('bpro.showTools')" @click="toggleToolsHidden">{{ t('bpro.tools') }}</button>
 
     <!-- 底部悬浮: 恢复默认布局 -->
     <div class="bpro-foot">
-      <button type="button" class="bpro-reset" @click="resetLayout">恢复默认布局</button>
-      <span class="bpro-done" v-if="resetTip">已恢复默认布局</span>
+      <button type="button" class="bpro-reset" @click="resetLayout">{{ t('bpro.resetLayout') }}</button>
+      <span class="bpro-done" v-if="resetTip">{{ t('bpro.resetDone') }}</span>
       <span class="bpro-warn" v-if="warn">{{ warn }}</span>
     </div>
   </div>
@@ -188,6 +188,7 @@
 import { ref, computed, provide, inject, watch, onMounted, onBeforeUnmount } from 'vue'
 import FreeCanvas from '../components/FreeCanvas.vue'
 import CanvasCard from '../components/cards/CanvasCard.vue'
+import { t } from '../i18n'
 import {
   CARD_TYPES, TYPE_GROUPS, CONTENT_COMP, CFG, defaultCards, uid, BATCH_ACTIONS,
   makeScan, makeStat, makeTitle, makeNode, makeTaskList,
@@ -238,7 +239,8 @@ function typesOf(g) { return Object.keys(CARD_TYPES).filter(k => CARD_TYPES[k].g
 // ===== 属性面板(编辑态): 字段表来自 CFG, 新增组件类型不必改本页 =====
 const sel = computed(() => cards.value.find(c => c.id === selId.value) || null)
 const fields = computed(() => (sel.value && CFG[sel.value.type]) ? CFG[sel.value.type] : [])
-const GEO = [{ k: 'x', l: 'X' }, { k: 'y', l: 'Y' }, { k: 'w', l: '宽' }, { k: 'h', l: '高' }]
+// l 是词条键(X/Y 语言无关, 面板渲染期 t() 回退原样)
+const GEO = [{ k: 'x', l: 'X' }, { k: 'y', l: 'Y' }, { k: 'w', l: 'bpro.geoW' }, { k: 'h', l: 'bpro.geoH' }]
 function setField(f, v) { if (sel.value) patchCard(sel.value.id, { [f.k]: v }) }
 // 下拉 option 的 value 一律转字符串(避开 Vue 数字/布尔绑定差异), 回写时按原值还原
 function castSel(f, val) {
@@ -255,7 +257,7 @@ function isRo(f) { return !!(f && f.ro) }
 // 面板只编辑"卡片级"对象(旧拓扑模块的节点/链路选中通道已整体删除)
 const panelTarget = computed(() => sel.value)
 const panelFields = computed(() => (sel.value ? (CFG[sel.value.type] || []) : []))
-const panelTitle = computed(() => (sel.value ? ((CARD_TYPES[sel.value.type] && CARD_TYPES[sel.value.type].label) || '组件') : '组件'))
+const panelTitle = computed(() => (sel.value ? t((CARD_TYPES[sel.value.type] && CARD_TYPES[sel.value.type].label) || 'bpro.newCard') : t('bpro.newCard')))
 function clearSelAll() { selId.value = null }
 // ===== 组件模板: 把配置好的卡片存起来复用 =====
 const TPL_KEY = 'yugsight_bpro_tpls'
@@ -329,73 +331,75 @@ function loadUserTpls() {
   } catch (e) { return [] }
 }
 const curTplName = computed(() => {
-  const t = findTpl(curTpl.value)
-  return t ? t.name : '综合总览'
+  // 内置模板 name 是词条键, t() 解析; 用户模板自由名非键 → 原样返回
+  const tpl = findTpl(curTpl.value)
+  return tpl ? t(tpl.name) : t('bpro.tplOverview')
 })
 
 // 切换: 先重置后应用 —— 撤过渡类让所有卡**瞬时**落到目标几何/显隐(无位移插值,
 // 不会飞行/相撞), 落位完成后再挂 fadein 类播一次淡入(只过渡 opacity), 结束即撤。
 // 不再用 0.9s 位移过渡: 快速切换时卡片会"飞行中再被改目标" → 布局错乱。
 function applyTpl(id, quiet) {
-  const t = findTpl(id)
-  if (!t) return
+  const tpl = findTpl(id)
+  if (!tpl) return
   pushHistory()
   curTpl.value = id
   setCur(id)
   clearSelection()   // 切模板即清空选中(模板换了布局, 旧选中集合已无意义)
   tplFade.value = false
-  applyLayout(cards.value, t.layout)
+  applyLayout(cards.value, tpl.layout)
   requestAnimationFrame(() => {
     tplFade.value = true
     if (fadeT) clearTimeout(fadeT)
     fadeT = setTimeout(() => { tplFade.value = false }, 520)
   })
   tplOpen.value = false
-  if (!quiet) flashWarn('已切换模板: ' + t.name)
+  if (!quiet) flashWarn(t('bpro.switchedTpl', { name: t(tpl.name) }))
 }
 function saveAsTpl() {
-  const name = (tplName.value || '').trim() || window.prompt('模板名称', '我的模板')
+  const name = (tplName.value || '').trim() || window.prompt(t('bpro.tplNamePrompt'), t('bpro.myTpls'))
   if (!name) return
-  const list = saveLayoutTpl(name, '自定义', snapshotLayout(cards.value))
+  const list = saveLayoutTpl(name, t('bpro.custom'), snapshotLayout(cards.value))
   userTpls.value = list
   const nt = list[list.length - 1]
   if (nt) carAddTpl(nt.id)   // 新模板默认参与轮播
   tplName.value = ''
   tplOpen.value = false
-  flashWarn('已保存模板: ' + name)
+  flashWarn(t('bpro.savedTpl', { name }))
 }
-function renameTplOf(t) {
-  const name = window.prompt('重命名模板', t.name)
+function renameTplOf(tp) {
+  const name = window.prompt(t('bpro.renamePrompt'), tp.name)
   if (!name) return
-  userTpls.value = renameLayoutTpl(t.id, name)
+  userTpls.value = renameLayoutTpl(tp.id, name)
   syncTpl()
 }
-function delTplOf(t) { userTpls.value = delLayoutTpl(t.id); carRemoveTpl(t.id); syncTpl() }
+function delTplOf(tp) { userTpls.value = delLayoutTpl(tp.id); carRemoveTpl(tp.id); syncTpl() }
 function syncTpl() {
   userTpls.value = loadUserTpls()
   if (carousel) carousel.setIndex(indexOfTpl(curTpl.value))
 }
 function exportTplOf() {
-  const t = findTpl(curTpl.value)
-  if (!t) return
-  const blob = new Blob([exportTpl(t)], { type: 'application/json' })
+  const tpl = findTpl(curTpl.value)
+  if (!tpl) return
+  const blob = new Blob([exportTpl(tpl)], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = (t.name || 'template') + '.json'
+  // 文件名用解析后的显示名(内置模板 name 是词条键, 不能直接进文件名)
+  a.download = (t(tpl.name) || 'template') + '.json'
   a.click()
   URL.revokeObjectURL(a.href)
 }
 function importTplOf() {
-  const text = window.prompt('粘贴模板 JSON')
+  const text = window.prompt(t('bpro.pasteTplJson'))
   if (!text) return
   try {
     const list = importTpl(text)
     userTpls.value = list
     const nt = list[list.length - 1]
     if (nt) carAddTpl(nt.id)
-    flashWarn('模板已导入'); syncTpl()
+    flashWarn(t('bpro.tplImported')); syncTpl()
   }
-  catch (e) { flashWarn('导入失败: ' + (e.message || 'JSON 解析错误')) }
+  catch (e) { flashWarn(t('bpro.importFail', { err: e.message || t('bpro.jsonParseErr') })) }
 }
 
 // ===== 轮播(候选池 = "勾选参与轮播"的布局模板; 至少 2 个才能自动播放) =====
@@ -459,7 +463,7 @@ const carousel = createCarousel({
 })
 function togglePlay() {
   if (playing.value) { carousel.hold('manual'); return }
-  if (carouselList.value.length < 2) { flashWarn('至少勾选 2 个模板才能开启自动轮播'); carOpen.value = true; return }
+  if (carouselList.value.length < 2) { flashWarn(t('bpro.need2Tpl')); carOpen.value = true; return }
   carousel.release('manual'); carousel.start()
 }
 // 增删模板后: 同步轮播勾选(新增默认参与, 删除移除), 候选池随之更新
@@ -482,7 +486,7 @@ watch(() => shared.updatedAt, () => {
   const c = (shared.ov && shared.ov.overview && shared.ov.overview.vulns && shared.ov.overview.vulns.critical) || 0
   if (c > 0) {
     carousel.hold('alert')
-    if (curTpl.value !== 'tpl_attack') { applyTpl('tpl_attack', true); flashWarn('检测到严重漏洞, 已切到攻击态势模板并暂停轮播') }
+    if (curTpl.value !== 'tpl_attack') { applyTpl('tpl_attack', true); flashWarn(t('bpro.alertSwitch')) }
   } else {
     carousel.release('alert')
   }
@@ -786,7 +790,7 @@ function addCard(type) {
   newOpen.value = false
   // 3D 地球每个实例独占一个 WebGL 上下文, 超限后浏览器会丢上下文且不可恢复, 这里硬拦
   if (type === 'globe' && cards.value.some(c => c.type === 'globe')) {
-    flashWarn('画布已有 3D 地球卡(同一画布最多 1 个)')
+    flashWarn(t('bpro.globeLimit'))
     return
   }
   const factory = FACTORY[type] || makeScan

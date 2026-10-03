@@ -5,7 +5,7 @@
     <!-- 正面 -->
     <template v-if="side === 'front'">
       <div class="st-head">
-        <span class="st-title">{{ card.title }}</span>
+        <span class="st-title">{{ t(card.title) }}</span>
         <span class="st-badge" :title="statusText">{{ statusText }}</span>
       </div>
       <template v-if="!compact">
@@ -24,10 +24,10 @@
     <template v-else>
       <div class="st-back-title">{{ t('screen.taskDetail') }}</div>
       <ul class="st-list">
-        <li><span>{{ t('screen.cfgStrategy') }}</span><b>{{ card.policy }}</b></li>
+        <li><span>{{ t('screen.cfgStrategy') }}</span><b>{{ t(card.policy) }}</b></li>
         <li><span>{{ t('screen.cfgPorts') }}</span><b>{{ card.ports }}</b></li>
         <li><span>{{ t('screen.cfgDuration') }}</span><b>{{ card.duration }}</b></li>
-        <li><span>{{ t('screen.cfgHistory') }}</span><b>{{ card.history }}</b></li>
+        <li><span>{{ t('screen.cfgHistory') }}</span><b>{{ t(card.history) }}</b></li>
       </ul>
     </template>
   </div>

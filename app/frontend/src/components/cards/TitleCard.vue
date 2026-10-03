@@ -3,7 +3,7 @@
   <div class="tc">
     <template v-if="side === 'front'">
       <span class="tc-bar"></span>
-      <span class="tc-text">{{ card.title }}</span>
+      <span class="tc-text">{{ t(card.title) }}</span>
     </template>
     <div v-else class="tc-note">{{ t('screen.titleNote') }}</div>
   </div>

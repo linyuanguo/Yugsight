@@ -6,7 +6,7 @@
   <div class="tc">
     <template v-if="side === 'front'">
       <div class="tc-head">
-        <span class="tc-title">{{ card.title }}</span>
+        <span class="tc-title">{{ t(card.title) }}</span>
         <span class="tc-range">{{ t('screen.lastDays', { days }) }}</span>
       </div>
       <div class="tc-legend">

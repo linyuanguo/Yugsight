@@ -17,7 +17,7 @@
     <!-- 正面 -->
     <template v-if="side === 'front'">
       <div class="tc-head">
-        <span class="tc-title">{{ card.title || t('screen.dftTopo') }}</span>
+        <span class="tc-title">{{ t(card.title || 'screen.dftTopo') }}</span>
         <!-- 视图列表(2026-09-30 用户要求: 物理/逻辑取消, 多套独立视图, 每个视图互不影响) -->
         <div class="tc-hbtns" v-if="!compact">
           <select class="tc-view" :value="curViewName" @click.stop @change.stop="pickView($event.target.value)"
@@ -53,7 +53,7 @@
     <!-- 背面: 汇总概览(点卡片翻转回拓扑) -->
     <template v-else>
       <div class="tb">
-        <div class="tb-title">{{ card.title || t('screen.dftTopo') }}</div>
+        <div class="tb-title">{{ t(card.title || 'screen.dftTopo') }}</div>
         <div class="tb-row"><span>{{ t('screen.topoTotal') }}</span><b>{{ nodes.length }}</b></div>
         <div class="tb-row"><span>{{ t('screen.topoOnlineRate') }}</span><b>{{ onlineRate }}%</b></div>
         <div class="tb-row"><span>{{ t('screen.topoLinks') }}</span><b>{{ links.length }}</b></div>

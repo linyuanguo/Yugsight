@@ -5,7 +5,7 @@
   <div class="tl">
     <template v-if="side === 'front'">
       <div class="tl-head">
-        <span class="tl-title">{{ card.title }}</span>
+        <span class="tl-title">{{ t(card.title) }}</span>
         <!-- 2026-10-02 用户口径: 状态筛选选项=卡内任务列表里真实存在的状态(只含存在的) -->
         <select class="tl-filter" :value="card.filterStatus || 'all'" @change="setCfg('filterStatus', $event.target.value)">
           <option value="all">{{ t('screen.cAll') }}</option>

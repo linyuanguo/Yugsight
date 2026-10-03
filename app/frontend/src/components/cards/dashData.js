@@ -388,37 +388,32 @@ export function alertRows() { return (S.ov && S.ov.topVulns) || [] }
 export function updatedAtText() { return S.updatedAt || '—' }
 
 // ===== 指标字典(属性面板"数据源字段"下拉的唯一事实来源) =====
+// 2026-10-04 i18n: label 一律词条键(screen.m*), METRIC_OPTIONS/卡片渲染期 t() 解析;
+// 用户切语言时下拉与卡片指标名跟随刷新, 不再冻结在首载语言。
 export const METRICS = [
-  { key: 'vulnRisk', label: '未修复漏洞(风险)', unit: '', get: () => sev().risk || 0 },
-  { key: 'vulnTotal', label: '漏洞总数(含已修复)', unit: '', get: () => overview().vulnTotal || 0 },
-  { key: 'vulnCrit', label: '严重漏洞', unit: '', get: () => sev().critical || 0 },
-  { key: 'vulnHigh', label: '高危漏洞', unit: '', get: () => sev().high || 0 },
-  { key: 'findingToday', label: '今日新增漏洞', unit: '', get: () => overview().findingsToday || 0 },
-  { key: 'findingWeek', label: '近7天新增漏洞', unit: '', get: () => overview().findingsWeek || 0 },
-  { key: 'fixedWeek', label: '近7天修复漏洞', unit: '', get: () => overview().fixedWeek || 0 },
-  { key: 'taskToday', label: '今日新建任务', unit: '', get: () => overview().tasksToday || 0 },
-  { key: 'taskRunning', label: '进行中任务', unit: '', get: () => overview().tasksRunning || 0 },
-  { key: 'taskSuccess', label: '已完成任务', unit: '', get: () => overview().tasksSuccess || 0 },
-  { key: 'taskFailed', label: '失败任务', unit: '', get: () => overview().tasksFailed || 0 },
-  { key: 'successRate', label: '任务成功率', unit: '%', get: () => successRate() },
-  { key: 'assetTotal', label: '资产总数', unit: '', get: () => overview().assets || 0 },
-  { key: 'assetAlive', label: '在线资产', unit: '', get: () => overview().assetsAlive || 0 },
-  { key: 'probeTotal', label: '探针总数', unit: '', get: () => overview().probes || 0 },
-  { key: 'probeOnline', label: '在线探针', unit: '', get: () => overview().probesOnline || 0 },
+  { key: 'vulnRisk', label: 'screen.mVulnRisk', unit: '', get: () => sev().risk || 0 },
+  { key: 'vulnTotal', label: 'screen.mVulnTotal', unit: '', get: () => overview().vulnTotal || 0 },
+  { key: 'vulnCrit', label: 'screen.mVulnCritical', unit: '', get: () => sev().critical || 0 },
+  { key: 'vulnHigh', label: 'screen.mVulnHigh', unit: '', get: () => sev().high || 0 },
+  { key: 'findingToday', label: 'screen.mVulnNewToday', unit: '', get: () => overview().findingsToday || 0 },
+  { key: 'findingWeek', label: 'screen.mVulnNew7d', unit: '', get: () => overview().findingsWeek || 0 },
+  { key: 'fixedWeek', label: 'screen.mVulnFixed7d', unit: '', get: () => overview().fixedWeek || 0 },
+  { key: 'taskToday', label: 'screen.mTaskNewToday', unit: '', get: () => overview().tasksToday || 0 },
+  { key: 'taskRunning', label: 'screen.mTaskRunning', unit: '', get: () => overview().tasksRunning || 0 },
+  { key: 'taskSuccess', label: 'screen.mTaskDone', unit: '', get: () => overview().tasksSuccess || 0 },
+  { key: 'taskFailed', label: 'screen.mTaskFailed', unit: '', get: () => overview().tasksFailed || 0 },
+  { key: 'successRate', label: 'screen.mTaskSuccessRate', unit: '%', get: () => successRate() },
+  { key: 'assetTotal', label: 'screen.mAssetTotal', unit: '', get: () => overview().assets || 0 },
+  { key: 'assetAlive', label: 'screen.mAssetOnline', unit: '', get: () => overview().assetsAlive || 0 },
+  { key: 'probeTotal', label: 'screen.mProbeTotal', unit: '', get: () => overview().probes || 0 },
+  { key: 'probeOnline', label: 'screen.mProbeOnline', unit: '', get: () => overview().probesOnline || 0 },
 ]
 export const METRIC_OPTIONS = METRICS.map(m => ({ v: m.key, t: m.label }))
 export function pickMetric(key) {
   return METRICS.find(m => m.key === key) || METRICS[0]
 }
-// 2026-10-03 i18n: 卡片侧指标名本地化 getter(METRICS.label 中文保留给属性面板, 下批处理)。
-// key → screen.m* 词条键, 未命中回退 mVulnRisk。在 computed/模板里调用 → 随 locale 响应式。
-const METRIC_LABEL_KEY = {
-  vulnRisk: 'mVulnRisk', vulnTotal: 'mVulnTotal', vulnCrit: 'mVulnCritical', vulnHigh: 'mVulnHigh',
-  findingToday: 'mVulnNewToday', findingWeek: 'mVulnNew7d', fixedWeek: 'mVulnFixed7d',
-  taskToday: 'mTaskNewToday', taskRunning: 'mTaskRunning', taskSuccess: 'mTaskDone',
-  taskFailed: 'mTaskFailed', successRate: 'mTaskSuccessRate', assetTotal: 'mAssetTotal',
-  assetAlive: 'mAssetOnline', probeTotal: 'mProbeTotal', probeOnline: 'mProbeOnline',
-}
+// 2026-10-03 i18n: 卡片侧指标名本地化 getter(METRICS.label 是词条键, t() 渲染期解析)。
 export function metricLabel(key) {
-  return t('screen.' + (METRIC_LABEL_KEY[key] || 'mVulnRisk'))
+  const m = METRICS.find(x => x.key === key)
+  return m ? t(m.label) : t('screen.mVulnRisk')
 }

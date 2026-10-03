@@ -5,7 +5,7 @@
        删除后该数据源下线, 本卡降级为 0 并提示; 第三阶段新拓扑对接时恢复数据源。 -->
   <div class="ap">
     <template v-if="side === 'front'">
-      <div class="ap-title">{{ card.title }}</div>
+      <div class="ap-title">{{ t(card.title) }}</div>
       <div class="ap-body">
         <svg class="ap-pie" viewBox="0 0 100 100">
           <path v-for="s in segs" :key="s.k" :d="s.d" class="ap-slice" :style="{ fill: s.c }" />

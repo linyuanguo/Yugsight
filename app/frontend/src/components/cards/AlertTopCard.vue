@@ -6,7 +6,7 @@
   <div class="at">
     <template v-if="side === 'front'">
       <div class="at-head">
-        <span class="at-title">{{ card.title }}</span>
+        <span class="at-title">{{ t(card.title) }}</span>
         <span class="at-count">Top {{ Math.min(limit, rows.length) }}</span>
       </div>
       <div class="at-view">

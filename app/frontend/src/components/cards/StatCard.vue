@@ -1,7 +1,7 @@
 <template>
   <!-- 统计汇总卡(2026-09-27): 实时聚合画布内所有漏扫任务卡的真实状态计数。 -->
   <div class="sc">
-    <div class="sc-title">{{ card.title }}</div>
+    <div class="sc-title">{{ t(card.title) }}</div>
     <div class="sc-total">{{ s.total }}<small>{{ t('screen.tasksSuffix') }}</small></div>
     <div class="sc-rows">
       <span class="r running">{{ t('screen.cfgRunning') }} {{ s.running }}</span>

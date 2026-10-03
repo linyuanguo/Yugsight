@@ -3,7 +3,7 @@
        分子/分母各自绑定指标字典里的字段, 可配颜色主题。 -->
   <div class="rc">
     <template v-if="side === 'front'">
-      <div class="rc-title">{{ card.title }}</div>
+      <div class="rc-title">{{ t(card.title) }}</div>
       <div class="rc-body">
         <svg class="rc-ring" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="40" class="rc-track" />

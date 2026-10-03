@@ -16,9 +16,10 @@ export const C = {
 export const COLOR = {
   accent: C.accent, ok: C.ok, warn: C.warn, danger: C.danger, info: C.info, purple: C.purple,
 }
+// 2026-10-04 i18n: 颜色主题文案键值化, 属性面板渲染期 t() 解析
 export const COLOR_OPTS = [
-  { v: 'accent', t: '科技蓝' }, { v: 'ok', t: '安全绿' }, { v: 'warn', t: '告警橙' },
-  { v: 'danger', t: '危险红' }, { v: 'info', t: '信息青' }, { v: 'purple', t: '幻紫' },
+  { v: 'accent', t: 'color.accent' }, { v: 'ok', t: 'color.ok' }, { v: 'warn', t: 'color.warn' },
+  { v: 'danger', t: 'color.danger' }, { v: 'info', t: 'color.info' }, { v: 'purple', t: 'color.purple' },
 ]
 export const SEV = { critical: '#f87171', high: '#fb923c', medium: '#fbbf24', low: '#38bdf8', info: '#94a3b8' }
 export const SEV_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }

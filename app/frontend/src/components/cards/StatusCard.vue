@@ -4,7 +4,7 @@
        (后端 overview 未拆分 pending, 见 dashData.taskBars 注释)。 -->
   <div class="sc">
     <template v-if="side === 'front'">
-      <div class="sc-title">{{ card.title }}</div>
+      <div class="sc-title">{{ t(card.title) }}</div>
       <div class="sc-list">
         <div v-for="r in rows" :key="r.k" class="sc-row">
           <i class="sc-dot" :style="{ background: r.c, boxShadow: '0 0 8px ' + r.c }"></i>
