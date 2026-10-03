@@ -1,25 +1,25 @@
 <template>
   <div>
-    <PageHeader title="报告中心" desc="生成、对比与存档安全报告"></PageHeader>
+    <PageHeader :title="t('rp.title')" :desc="t('rp.desc')"></PageHeader>
 
     <!-- 未启用引导 -->
     <div class="card" v-if="status && !status.enabled">
       <div class="empty-hint">
-        <b>报告引擎未启用</b>
-        <p class="muted small">{{ status.hint || '请在配置文件中开启后重试' }}</p>
-        <p class="muted small mono">配置文件: {{ status.configPath }}</p>
+        <b>{{ t('rp.disabled') }}</b>
+        <p class="muted small">{{ status.hint || t('rp.disabledHint') }}</p>
+        <p class="muted small mono">{{ t('rp.cfgFile') }}: {{ status.configPath }}</p>
       </div>
     </div>
 
     <template v-else>
       <div class="tabs">
-        <button class="tab" :class="{ on: tab === 'gen' }" @click="tab = 'gen'">报告生成</button>
-        <button class="tab" :class="{ on: tab === 'raw' }" @click="tab = 'raw'; loadRaw()">原始报告</button>
-        <button class="tab" :class="{ on: tab === 'arch' }" @click="tab = 'arch'; loadArchives()">报告存档</button>
-        <button class="tab" :class="{ on: tab === 'diff' }" @click="tab = 'diff'; loadHistory(); loadArchives()">历史对比</button>
+        <button class="tab" :class="{ on: tab === 'gen' }" @click="tab = 'gen'">{{ t('rp.tabGen') }}</button>
+        <button class="tab" :class="{ on: tab === 'raw' }" @click="tab = 'raw'; loadRaw()">{{ t('rp.tabRaw') }}</button>
+        <button class="tab" :class="{ on: tab === 'arch' }" @click="tab = 'arch'; loadArchives()">{{ t('rp.tabArch') }}</button>
+        <button class="tab" :class="{ on: tab === 'diff' }" @click="tab = 'diff'; loadHistory(); loadArchives()">{{ t('rp.tabDiff') }}</button>
         <div class="spacer"></div>
-        <span class="muted small" v-if="status && status.rawCount != null">原始报告 {{ status.rawCount }} 份</span>
-        <span class="muted small" v-if="status && status.archiveCount != null">已存档 {{ status.archiveCount }} 份</span>
+        <span class="muted small" v-if="status && status.rawCount != null">{{ t('rp.rawCount', { n: status.rawCount }) }}</span>
+        <span class="muted small" v-if="status && status.archiveCount != null">{{ t('rp.archCount', { n: status.archiveCount }) }}</span>
       </div>
       <!-- 2026-09-25 用户口径调整:
            ① "资产拓扑"不再是独立页签 —— 拓扑只是原始报告内容的列表化, 随原始报告
@@ -33,48 +33,44 @@
            版权信息, 支持字体颜色/底色/加粗等格式, 可删), 浮窗底部保存。
            模板落 data/outp; 下面三个按钮出报告, 模板用于后续报告存档。 -->
       <div class="card" v-show="tab === 'gen'">
-        <div class="block-title">报告模板</div>
-        <p class="muted small" style="margin:0 0 10px">
-          点「新建模板 / 编辑」在浮窗里排版: 标题、客户、页眉页脚、免责声明、版权信息、
-          报告人、检测工具、生成时间都能改(支持字体颜色/底色/格式, 清空即删除该处)。
-          保存后落到 data/outp, 之后"生成并存档"的报告都用这个版式。
-        </p>
+        <div class="block-title">{{ t('rp.tplBlock') }}</div>
+        <p class="muted small" style="margin:0 0 10px">{{ t('rp.tplHint') }}</p>
         <div class="toolbar" style="margin-bottom:8px">
-          <button class="btn primary" @click="openTplModal('')">新建模板</button>
+          <button class="btn primary" @click="openTplModal('')">{{ t('rp.newTpl') }}</button>
           <span class="muted small" v-if="tplSavedMsg" style="color:var(--ok,#16a34a)">{{ tplSavedMsg }}</span>
         </div>
         <div class="table-wrap" v-if="wordTpls.length">
           <table class="table">
-            <thead><tr><th>名称</th><th>类型</th><th>更新时间</th><th style="width:200px">操作</th></tr></thead>
+            <thead><tr><th>{{ t('rp.colName') }}</th><th>{{ t('rp.colType') }}</th><th>{{ t('rp.colUpdated') }}</th><th style="width:200px">{{ t('rp.colOp') }}</th></tr></thead>
             <tbody>
-              <tr v-for="t in wordTpls" :key="t.name">
-                <td class="small">{{ t.name }}<span class="tag-mini" v-if="t.logo">logo</span></td>
-                <td class="small muted">{{ (t.builtin || t.name === 'default') ? '内置默认' : (t.visual ? '可视化排版' : 'Word 文件导入') }}</td>
-                <td class="muted small mono">{{ t.updated || '-' }}</td>
+              <tr v-for="wp in wordTpls" :key="wp.name">
+                <td class="small">{{ wp.name }}<span class="tag-mini" v-if="wp.logo">logo</span></td>
+                <td class="small muted">{{ (wp.builtin || wp.name === 'default') ? t('rp.tplBuiltin') : (wp.visual ? t('rp.tplVisual') : t('rp.tplWord')) }}</td>
+                <td class="muted small mono">{{ wp.updated || '-' }}</td>
                 <td>
-                  <button class="btn xs" :disabled="t.name === 'default'" :title="t.name === 'default' ? '内置默认模板不可编辑' : ''" @click="openTplModal(t.name)">编辑</button>
-                  <button class="btn xs" @click="previewWordTpl(t.name)">预览</button>
-                  <button class="btn xs" v-if="!t.builtin" :disabled="t.name === 'default'" :title="t.name === 'default' ? '内置默认模板不可删除' : ''" @click="delWordTpl(t)">删除</button>
+                  <button class="btn xs" :disabled="wp.name === 'default'" :title="wp.name === 'default' ? t('rp.builtinNoEdit') : ''" @click="openTplModal(wp.name)">{{ t('rp.edit') }}</button>
+                  <button class="btn xs" @click="previewWordTpl(wp.name)">{{ t('rp.preview') }}</button>
+                  <button class="btn xs" v-if="!wp.builtin" :disabled="wp.name === 'default'" :title="wp.name === 'default' ? t('rp.builtinNoDel') : ''" @click="delWordTpl(wp)">{{ t('rp.del') }}</button>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p class="muted small" v-else style="margin:6px 0 0">暂无自定义模板(不保存时按内置版式出报告)</p>
+        <p class="muted small" v-else style="margin:6px 0 0">{{ t('rp.noTpl') }}</p>
 
-        <div class="block-title">生成报告</div>
+        <div class="block-title">{{ t('rp.genBlock') }}</div>
         <!-- 2026-09-26: 生成报告只突出三项(选模板 + 选任务 + 选格式), 7 个漏洞
              范围筛选项收进下方默认收起的"高级筛选"。任务可多选(取并集)。 -->
         <div class="form-grid" style="margin-bottom:12px">
-          <label>报告模板
+          <label>{{ t('rp.tplLabel') }}
             <select class="select" v-model="form.f.template">
-              <option value="builtin">内置版式</option>
-              <option v-for="t in genTplOptions" :key="t.name" :value="t.name">{{ t.name }}</option>
+              <option value="builtin">{{ t('rp.builtinLayout') }}</option>
+              <option v-for="gp in genTplOptions" :key="gp.name" :value="gp.name">{{ gp.name }}</option>
             </select>
           </label>
-          <label>扫描任务(必选, 可多选)
+          <label>{{ t('rp.jobLabel') }}
             <select class="select" v-model="jobPicker" @change="addJob()">
-              <option value="" disabled>选择扫描任务...</option>
+              <option value="" disabled>{{ t('rp.jobPh') }}</option>
               <option v-for="j in jobList" :key="j.id" :value="j.id">{{ j.name }} · {{ j.target }}</option>
             </select>
             <div class="job-chips" v-if="form.f.jobIds.length">
@@ -83,102 +79,97 @@
                 <a class="chip-x" href="javascript:void(0)" @click="removeJob(id)">×</a>
               </span>
             </div>
-            <div class="muted small" v-else>未选择(必选: 请至少选一个扫描任务)</div>
+            <div class="muted small" v-else>{{ t('rp.jobEmpty') }}</div>
           </label>
-          <label>报告格式
+          <label>{{ t('rp.fmtLabel') }}
             <select class="select" v-model="form.f.format">
               <option value="word">Word (.docx)</option>
-              <option value="html">HTML (网页)</option>
-              <option value="pdf">PDF (浏览器打印)</option>
+              <option value="html">{{ t('rp.fmtHtml') }}</option>
+              <option value="pdf">{{ t('rp.fmtPdf') }}</option>
             </select>
           </label>
         </div>
 
         <details class="gen-filter">
-          <summary>高级筛选(可选, 按漏洞范围收窄报告内容)</summary>
+          <summary>{{ t('rp.advFilter') }}</summary>
           <div class="form-grid">
-            <label>风险等级
+            <label>{{ t('rp.sevLabel') }}
               <!-- 2026-10-02 用户口径: 风险等级选项 = 漏洞库中真实存在的等级
                    (后端 /report/options 按存量聚合; 之前固定 5 级全量) -->
               <select class="select" v-model="form.f.severity">
-                <option value="">全部等级</option>
-                <option v-for="s in options.severities" :key="s" :value="s">{{ SEV_CN[s] || s }}</option>
+                <option value="">{{ t('rp.allSev') }}</option>
+                <option v-for="s in options.severities" :key="s" :value="s">{{ t('sev.' + s) }}</option>
               </select>
             </label>
-            <label>IP 段<input class="input mono" v-model.trim="form.f.cidr" placeholder="192.168.1.0/24"></label>
-            <label>资产 IP<input class="input mono" v-model.trim="form.f.ip" placeholder="精确匹配"></label>
-            <label>CVE 编号<input class="input mono" v-model.trim="form.f.cve" placeholder="支持前缀, 如 CVE-2021"></label>
-            <label>扫描起始<input class="input" type="date" v-model="form.f.from"></label>
-            <label>扫描截止<input class="input" type="date" v-model="form.f.to"></label>
-            <label>探针节点
+            <label>{{ t('rp.cidr') }}<input class="input mono" v-model.trim="form.f.cidr" placeholder="192.168.1.0/24"></label>
+            <label>{{ t('rp.assetIp') }}<input class="input mono" v-model.trim="form.f.ip" :placeholder="t('rp.exact')"></label>
+            <label>CVE<input class="input mono" v-model.trim="form.f.cve" :placeholder="t('rp.cvePh')"></label>
+            <label>{{ t('rp.from') }}<input class="input" type="date" v-model="form.f.from"></label>
+            <label>{{ t('rp.to') }}<input class="input" type="date" v-model="form.f.to"></label>
+            <label>{{ t('rp.probeNode') }}
               <select class="select" v-model="form.f.probeNode">
-                <option value="">全部节点</option>
+                <option value="">{{ t('rp.allNodes') }}</option>
                 <option v-for="n in options.nodes" :key="n.id" :value="n.id">{{ n.name }}</option>
               </select>
             </label>
-            <label class="chk"><input type="checkbox" v-model="form.f.onlyEvidence"> 仅含验证证据的漏洞</label>
+            <label class="chk"><input type="checkbox" v-model="form.f.onlyEvidence"> {{ t('rp.onlyEvidence') }}</label>
           </div>
         </details>
 
         <div class="toolbar" style="margin-top:14px">
           <!-- 选了任务时高亮提示: 报告只含所选任务并集数据, 标题默认取任务名 -->
-          <span class="chip blue" v-if="jobNameOf" :title="'报告将只包含所选扫描任务「' + jobNameOf + '」的数据, 标题默认取任务名'">
-            按任务生成: {{ jobNameOf }}
+          <span class="chip blue" v-if="jobNameOf" :title="t('rp.jobScopeTitle', { name: jobNameOf })">
+            {{ t('rp.genByJob') }}: {{ jobNameOf }}
           </span>
           <div class="spacer"></div>
           <!-- 预览=HTML 抽屉内查看(可打印成 PDF); 下载/存档=所选格式(按所选模板版式) -->
-          <button class="btn" @click="genPreview" :disabled="busy || !form.f.jobIds.length">预览报告</button>
-          <button class="btn primary" @click="genDownload" :disabled="busy || !form.f.jobIds.length">生成并下载</button>
-          <button class="btn" @click="genArchive" :disabled="busy || !form.f.jobIds.length">生成并存档</button>
-          <span class="muted small" v-if="busy">处理中...</span>
+          <button class="btn" @click="genPreview" :disabled="busy || !form.f.jobIds.length">{{ t('rp.previewReport') }}</button>
+          <button class="btn primary" @click="genDownload" :disabled="busy || !form.f.jobIds.length">{{ t('rp.genDownload') }}</button>
+          <button class="btn" @click="genArchive" :disabled="busy || !form.f.jobIds.length">{{ t('rp.genArchive') }}</button>
+          <span class="muted small" v-if="busy">{{ t('rp.processing') }}</span>
         </div>
       </div>
 
       <!-- ===== 原始报告(二期: 业务模块执行后的原始结构化结果) ===== -->
       <div class="card" v-show="tab === 'raw'">
-        <p class="muted small" style="margin:0 0 10px">
-          实时抓包 / 扫描作业 / 弱口令检测 / 渗透验证执行完成后, 原始结构化结果自动存到这里(只存原始数据, 不做加工)。
-          节点监控为连续采样, 不生成原始报告(采集结果仅记日志, 2026-10-02 用户口径; 存量历史报告仍可查)。
-          业务页"AI 分析"的研判结果挂在本报告下(带 AI 徽标), 原始数据 + AI 研判可同时查看;
-          勾选多份(含已 AI 分析的)可合并为汇总报告, AI 内容随合并保留。
-        </p>
+        <p class="muted small" style="margin:0 0 10px">{{ t('rp.rawHint') }}</p>
         <div class="toolbar">
           <!-- 按扫描作业(任务名)分类: 选某任务名只看该作业的原始报告(用户要求"按任务名分类进子表") -->
           <select class="select" v-model="rawF.job" @change="loadRaw()">
-            <option value="">全部作业</option>
+            <option value="">{{ t('rp.allJobs') }}</option>
             <option v-for="j in rawOptions.jobs" :key="j" :value="j">{{ j }}</option>
           </select>
           <select class="select" v-model="rawF.module" @change="loadRaw()">
-            <option value="">全部来源</option>
+            <option value="">{{ t('rp.allSrc') }}</option>
             <option v-for="m in rawOptions.modules" :key="m.id" :value="m.id">{{ m.label }} ({{ m.count }})</option>
           </select>
           <select class="select" v-model="rawF.tag" @change="loadRaw()">
-            <option value="">全部标签</option>
-            <option v-for="t in rawOptions.tags" :key="t" :value="t">{{ t }}</option>
+            <option value="">{{ t('rp.allTags') }}</option>
+            <option v-for="tg in rawOptions.tags" :key="tg" :value="tg">{{ tg }}</option>
           </select>
-          <input class="input mono" v-model.trim="rawF.asset" placeholder="资产 IP(支持前缀)" @keyup.enter="loadRaw()">
-          <input class="input" type="date" v-model="rawF.from" title="起始日期">
+          <input class="input mono" v-model.trim="rawF.asset" :placeholder="t('rp.assetPh')" @keyup.enter="loadRaw()">
+          <input class="input" type="date" v-model="rawF.from" :title="t('rp.dateFrom')">
           <span class="muted">~</span>
-          <input class="input" type="date" v-model="rawF.to" title="截止日期">
-          <input class="input" v-model.trim="rawF.keyword" placeholder="标题/摘要关键字" @keyup.enter="loadRaw()">
-          <button class="btn sm" @click="loadRaw()">查询</button>
-          <button class="btn xs" @click="resetRawFilter">重置</button>
+          <input class="input" type="date" v-model="rawF.to" :title="t('rp.dateTo')">
+          <input class="input" v-model.trim="rawF.keyword" :placeholder="t('rp.kwPh')" @keyup.enter="loadRaw()">
+          <button class="btn sm" @click="loadRaw()">{{ t('rp.query') }}</button>
+          <button class="btn xs" @click="resetRawFilter">{{ t('rp.reset') }}</button>
           <div class="spacer"></div>
-          <span class="muted small">共 {{ rawTotal }} 份</span>
+          <span class="muted small">{{ t('rp.totalN', { n: rawTotal }) }}</span>
         </div>
 
         <!-- 合并栏: 选中 >=1 份时出现 -->
         <div class="raw-mergebar" v-if="rawSel.length">
-          <span><b>{{ rawSel.length }}</b> 份已选</span>
-          <input class="input" v-model.trim="mergeForm.title" placeholder="合并报告标题(留空自动命名)">
-          <input class="input" v-model.trim="mergeForm.tags" placeholder="标签(逗号分隔)">
+          <span>{{ t('rp.selectedN', { n: rawSel.length }) }}</span>
+          <input class="input" v-model.trim="mergeForm.title" :placeholder="t('rp.mergeTitlePh')">
+          <input class="input" v-model.trim="mergeForm.tags" :placeholder="t('rp.tagsPh')">
           <button class="btn primary sm" @click="mergeRaw" :disabled="rawBusy || rawSel.length < 2">
-            {{ rawBusy ? '合并中...' : '合并为汇总报告' }}
+            {{ rawBusy ? t('rp.merging') : t('rp.mergeBtn') }}
           </button>
           <!-- 2026-09-26: 删除选中(批量, 走 /raw/batch-delete) -->
-          <button class="btn danger sm" @click="rawBatchDel" :disabled="rawBusy || !rawSel.length">删除选中</button>
-          <button class="btn xs" @click="rawSel = []">清空选择</button>
-          <span class="muted small" v-if="rawSel.length === 1">至少选 2 份才能合并</span>
+          <button class="btn danger sm" @click="rawBatchDel" :disabled="rawBusy || !rawSel.length">{{ t('rp.delSel') }}</button>
+          <button class="btn xs" @click="rawSel = []">{{ t('rp.clearSel') }}</button>
+          <span class="muted small" v-if="rawSel.length === 1">{{ t('rp.need2Merge') }}</span>
         </div>
 
         <div class="table-wrap">
@@ -186,15 +177,15 @@
             <thead>
               <tr>
                 <th style="width:30px"><input type="checkbox" :checked="allRawSelected" @change="toggleAllRaw"></th>
-                <th>报告</th>
-                <th>来源模块</th>
-                <th>任务名</th>
-                <th>来源标记</th>
-                <th>资产</th>
-                <th>关键统计</th>
-                <th>标签</th>
-                <th>生成时间</th>
-                <th style="width:110px">操作</th>
+                <th>{{ t('rp.colReport') }}</th>
+                <th>{{ t('rp.colModule') }}</th>
+                <th>{{ t('rp.colJob') }}</th>
+                <th>{{ t('rp.colSource') }}</th>
+                <th>{{ t('rp.colAsset') }}</th>
+                <th>{{ t('rp.colStats') }}</th>
+                <th>{{ t('rp.colTag') }}</th>
+                <th>{{ t('rp.colCreatedAt') }}</th>
+                <th style="width:110px">{{ t('rp.colOp') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -202,53 +193,53 @@
                 <td><input type="checkbox" :checked="rawSel.includes(r.id)" @change="toggleRawSel(r.id)"></td>
                 <td>
                   <b class="small">{{ r.title }}</b>
-                  <span class="badge ai-badge" v-if="r.aiAnalyzedAt" :title="'AI 分析于 ' + fmtDT(r.aiAnalyzedAt)">AI</span>
+                  <span class="badge ai-badge" v-if="r.aiAnalyzedAt" :title="t('rp.aiAt', { at: fmtDT(r.aiAnalyzedAt) })">AI</span>
                   <div class="muted small" v-if="r.summary">{{ r.summary }}</div>
                 </td>
                 <td><span class="badge" :class="'mod-' + rawModKey(r.module)">{{ rawModLabel(r.module) }}</span></td>
-                <td class="small" :title="r.job || '独立扫描(未关联作业)'">
+                <td class="small" :title="r.job || t('rp.standalone')">
                   <template v-if="r.job">{{ r.job }}</template>
                   <span v-else class="muted">-</span>
                 </td>
                 <td class="mono small">{{ r.source || '-' }}<template v-if="r.operator"> / {{ r.operator }}</template></td>
                 <td class="mono small">
                   <template v-if="r.assets && r.assets.length">
-                    {{ r.assets.slice(0, 3).join(', ') }}<span v-if="r.assets.length > 3"> …共{{ r.assets.length }}</span>
+                    {{ r.assets.slice(0, 3).join(', ') }}<span v-if="r.assets.length > 3"> …{{ t('rp.assetsMore', { n: r.assets.length }) }}</span>
                   </template>
                   <span v-else class="muted">-</span>
                 </td>
                 <td class="mono small">{{ rawStatsText(r) }}</td>
-                <td><span class="tag-mini" v-for="t in (r.tags || [])" :key="t">{{ t }}</span></td>
+                <td><span class="tag-mini" v-for="tg in (r.tags || [])" :key="tg">{{ tg }}</span></td>
                 <td class="muted small mono">{{ fmtDT(r.createdAt) }}</td>
                 <td>
-                  <button class="btn xs" @click="viewRaw(r)">查看</button>
-                  <button class="btn xs" @click="delRaw(r)">删除</button>
+                  <button class="btn xs" @click="viewRaw(r)">{{ t('rp.view') }}</button>
+                  <button class="btn xs" @click="delRaw(r)">{{ t('rp.del') }}</button>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-if="!rawList.length" text="暂无原始报告(实时抓包 / 扫描作业 / 弱口令检测 / 渗透验证执行完成后自动存入; 节点监控不生成原始报告)"></Empty>
+        <Empty v-if="!rawList.length" :text="t('rp.noRaw')"></Empty>
 
         <!-- 原始报告详情 -->
         <Modal v-if="rawDetail" :title="rawDetail.title" @close="rawDetail = null">
           <table class="kv">
-            <tr><td>来源模块</td><td><span class="badge" :class="'mod-' + rawModKey(rawDetail.module)">{{ rawModLabel(rawDetail.module) }}</span></td></tr>
-            <tr><td>来源标记</td><td class="mono">{{ rawDetail.source || '-' }}<template v-if="rawDetail.operator"> / {{ rawDetail.operator }}</template></td></tr>
-            <tr v-if="rawDetail.target"><td>目标</td><td class="mono">{{ rawDetail.target }}</td></tr>
-            <tr v-if="rawDetail.assets && rawDetail.assets.length"><td>涉及资产</td><td class="mono small">{{ rawDetail.assets.join(', ') }}</td></tr>
-            <tr v-if="rawDetail.tags && rawDetail.tags.length"><td>标签</td><td><span class="tag-mini" v-for="t in rawDetail.tags" :key="t">{{ t }}</span></td></tr>
-            <tr v-if="rawDetail.durationMs"><td>执行耗时</td><td class="mono">{{ (rawDetail.durationMs / 1000).toFixed(1) }} s</td></tr>
-            <tr><td>生成时间</td><td class="mono">{{ fmtDT(rawDetail.createdAt) }}</td></tr>
+            <tr><td>{{ t('rp.colModule') }}</td><td><span class="badge" :class="'mod-' + rawModKey(rawDetail.module)">{{ rawModLabel(rawDetail.module) }}</span></td></tr>
+            <tr><td>{{ t('rp.colSource') }}</td><td class="mono">{{ rawDetail.source || '-' }}<template v-if="rawDetail.operator"> / {{ rawDetail.operator }}</template></td></tr>
+            <tr v-if="rawDetail.target"><td>{{ t('rp.colTarget') }}</td><td class="mono">{{ rawDetail.target }}</td></tr>
+            <tr v-if="rawDetail.assets && rawDetail.assets.length"><td>{{ t('rp.assetsInvolved') }}</td><td class="mono small">{{ rawDetail.assets.join(', ') }}</td></tr>
+            <tr v-if="rawDetail.tags && rawDetail.tags.length"><td>{{ t('rp.colTag') }}</td><td><span class="tag-mini" v-for="tg in rawDetail.tags" :key="tg">{{ tg }}</span></td></tr>
+            <tr v-if="rawDetail.durationMs"><td>{{ t('rp.duration') }}</td><td class="mono">{{ (rawDetail.durationMs / 1000).toFixed(1) }} s</td></tr>
+            <tr><td>{{ t('rp.colCreatedAt') }}</td><td class="mono">{{ fmtDT(rawDetail.createdAt) }}</td></tr>
           </table>
           <p class="muted small" v-if="rawDetail.summary" style="margin:8px 0 0">{{ rawDetail.summary }}</p>
 
           <!-- 按模块的摘要视图(只读原始结构化数据, 不做加工) -->
           <template v-if="rawDetail.module === 'scan' && rawScanFindings.length">
-            <div class="block-title">漏洞发现({{ rawScanFindings.length }})</div>
+            <div class="block-title">{{ t('rp.findings', { n: rawScanFindings.length }) }}</div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>级别</th><th>标题</th><th>CVE</th><th>资产</th><th>端口</th></tr></thead>
+                <thead><tr><th>{{ t('rp.colLevel') }}</th><th>{{ t('rp.colTitle') }}</th><th>CVE</th><th>{{ t('rp.colAsset') }}</th><th>{{ t('rp.colPort') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="(f, i) in rawScanFindings" :key="i">
                     <td><SevTag :sev="f.severity || 'info'" /></td>
@@ -263,17 +254,17 @@
           </template>
 
           <template v-if="rawDetail.module === 'weakpass' && rawWpResults.length">
-            <div class="block-title">检测结果({{ rawWpResults.length }})</div>
+            <div class="block-title">{{ t('rp.wpResults', { n: rawWpResults.length }) }}</div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>目标</th><th>服务</th><th>结果</th><th>命中口令</th><th>备注</th></tr></thead>
+                <thead><tr><th>{{ t('rp.colTarget') }}</th><th>{{ t('rp.colService') }}</th><th>{{ t('rp.colResult') }}</th><th>{{ t('rp.hitPass') }}</th><th>{{ t('rp.colNote') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="(r, i) in rawWpResults" :key="i">
                     <td class="mono small">{{ r.host }}:{{ r.port }}</td>
                     <td class="mono small">{{ r.service }}</td>
                     <td>
-                      <span class="badge" :class="r.ok ? 'mod-weakpass' : 'mod-other'">{{ r.ok ? '命中' : '未命中' }}</span>
-                      <span class="muted small" v-if="r.emptyPass && r.ok">空口令</span>
+                      <span class="badge" :class="r.ok ? 'mod-weakpass' : 'mod-other'">{{ r.ok ? t('rp.hit') : t('rp.miss') }}</span>
+                      <span class="muted small" v-if="r.emptyPass && r.ok">{{ t('rp.emptyPass') }}</span>
                     </td>
                     <td class="mono small">{{ r.password || '-' }}</td>
                     <td class="small muted">{{ r.stopped || r.error || '-' }}</td>
@@ -284,10 +275,10 @@
           </template>
 
           <template v-if="rawDetail.module === 'capture' && rawPkts.length">
-            <div class="block-title">报文({{ rawDetail.payload && rawDetail.payload.packets ? rawDetail.payload.packets.length : 0 }}, 展示前 {{ rawPkts.length }} 条)</div>
+            <div class="block-title">{{ t('rp.pkts', { n: rawDetail.payload && rawDetail.payload.packets ? rawDetail.payload.packets.length : 0, m: rawPkts.length }) }}</div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>时间</th><th>协议</th><th>源</th><th>目的</th><th>长度</th><th>摘要</th></tr></thead>
+                <thead><tr><th>{{ t('rp.colTime') }}</th><th>{{ t('rp.colProto') }}</th><th>{{ t('rp.colSrc') }}</th><th>{{ t('rp.colDst') }}</th><th>{{ t('rp.colLen') }}</th><th>{{ t('rp.colSummary') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="p in rawPkts" :key="p.seq">
                     <td class="mono small">{{ p.time }}</td>
@@ -303,23 +294,23 @@
           </template>
 
           <template v-if="rawDetail.module === 'monitor' && rawMonTargets.length">
-            <div class="block-title">监控目标({{ rawMonTargets.length }})</div>
+            <div class="block-title">{{ t('rp.monTargets', { n: rawMonTargets.length }) }}</div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>名称</th><th>地址</th><th>版本</th><th>状态</th><th>运行时长</th><th>CPU</th><th>内存</th><th>接口数</th></tr></thead>
+                <thead><tr><th>{{ t('rp.colName') }}</th><th>{{ t('rp.colAddr') }}</th><th>{{ t('rp.colVer') }}</th><th>{{ t('rp.colStatus') }}</th><th>{{ t('rp.uptime') }}</th><th>CPU</th><th>{{ t('rp.colMem') }}</th><th>{{ t('rp.ifCount') }}</th></tr></thead>
                 <tbody>
-                  <tr v-for="t in rawMonTargets" :key="t.id">
-                    <td class="small">{{ t.name || t.id }}</td>
-                    <td class="mono small">{{ t.addr }}</td>
-                    <td class="mono small">{{ t.version }}</td>
+                  <tr v-for="mt in rawMonTargets" :key="mt.id">
+                    <td class="small">{{ mt.name || mt.id }}</td>
+                    <td class="mono small">{{ mt.addr }}</td>
+                    <td class="mono small">{{ mt.version }}</td>
                     <td>
-                      <span v-if="t.sample" class="badge" :class="t.sample.ok ? 'mod-scan' : 'mod-other'">{{ t.sample.ok ? '在线' : '离线' }}</span>
-                      <span v-else class="muted small">未采集</span>
+                      <span v-if="mt.sample" class="badge" :class="mt.sample.ok ? 'mod-scan' : 'mod-other'">{{ mt.sample.ok ? t('rp.online') : t('rp.offline') }}</span>
+                      <span v-else class="muted small">{{ t('rp.notCollected') }}</span>
                     </td>
-                    <td class="mono small">{{ t.sample && t.sample.uptimeSec ? (t.sample.uptimeSec / 3600).toFixed(1) + ' h' : '-' }}</td>
-                    <td class="mono small">{{ t.sample && t.sample.cpuLoad ? t.sample.cpuLoad + '%' : '-' }}</td>
-                    <td class="mono small">{{ t.sample && t.sample.memTotal ? (t.sample.memUsed / 1048576).toFixed(0) + '/' + (t.sample.memTotal / 1048576).toFixed(0) + ' MB' : '-' }}</td>
-                    <td class="mono small">{{ t.sample && t.sample.ifNumber || '-' }}</td>
+                    <td class="mono small">{{ mt.sample && mt.sample.uptimeSec ? (mt.sample.uptimeSec / 3600).toFixed(1) + ' h' : '-' }}</td>
+                    <td class="mono small">{{ mt.sample && mt.sample.cpuLoad ? mt.sample.cpuLoad + '%' : '-' }}</td>
+                    <td class="mono small">{{ mt.sample && mt.sample.memTotal ? (mt.sample.memUsed / 1048576).toFixed(0) + '/' + (mt.sample.memTotal / 1048576).toFixed(0) + ' MB' : '-' }}</td>
+                    <td class="mono small">{{ mt.sample && mt.sample.ifNumber || '-' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -327,10 +318,10 @@
           </template>
 
           <template v-if="rawDetail.module === 'merged' && rawSections.length">
-            <div class="block-title">汇总章节(按来源模块)</div>
+            <div class="block-title">{{ t('rp.sections') }}</div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>来源模块</th><th>报告数</th></tr></thead>
+                <thead><tr><th>{{ t('rp.colModule') }}</th><th>{{ t('rp.reportCount') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="s in rawSections" :key="s.module">
                     <td><span class="badge" :class="'mod-' + rawModKey(s.module)">{{ rawModLabel(s.module) }}</span></td>
@@ -339,10 +330,10 @@
                 </tbody>
               </table>
             </div>
-            <div class="block-title" v-if="rawMergedFrom.length">来源报告({{ rawMergedFrom.length }})</div>
+            <div class="block-title" v-if="rawMergedFrom.length">{{ t('rp.srcReports', { n: rawMergedFrom.length }) }}</div>
             <div class="table-wrap" v-if="rawMergedFrom.length">
               <table class="table">
-                <thead><tr><th>ID</th><th>标题</th><th>来源</th><th>时间</th><th>AI</th></tr></thead>
+                <thead><tr><th>ID</th><th>{{ t('rp.colTitle') }}</th><th>{{ t('rp.colSource') }}</th><th>{{ t('rp.colTime') }}</th><th>AI</th></tr></thead>
                 <tbody>
                   <tr v-for="m in rawMergedFrom" :key="m.id">
                     <td class="mono small">{{ m.id }}</td>
@@ -359,7 +350,7 @@
             </div>
             <!-- 合并报告的源 AI 研判: 逐源可展开(合并 = 原始报告 + AI 报告的整合) -->
             <details v-for="m in rawMergedFrom" :key="'ai-' + m.id" v-if="m.ai && m.ai.aiNote" class="raw-ai-src">
-              <summary class="muted small">查看「{{ m.title }}」的 AI 研判</summary>
+              <summary class="muted small">{{ t('rp.viewAi', { title: m.title }) }}</summary>
               <pre class="raw-ai-note">{{ m.ai.aiNote }}</pre>
             </details>
           </template>
@@ -367,23 +358,23 @@
           <!-- 资产拓扑(2026-09-25 用户口径: 拓扑就是原始报告里资产信息的列表化,
                只做子表, 不做独立页签/画布): 资产 -> 开放端口 -> 关联漏洞数 -->
           <template v-if="rawTopo.length">
-            <div class="block-title">资产拓扑(列表, {{ rawTopo.length }} 台)</div>
+            <div class="block-title">{{ t('rp.topoList', { n: rawTopo.length }) }}</div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>资产</th><th>主机名</th><th>操作系统</th><th>开放端口</th><th>关联漏洞</th></tr></thead>
+                <thead><tr><th>{{ t('rp.colAsset') }}</th><th>{{ t('rp.hostname') }}</th><th>{{ t('rp.osCol') }}</th><th>{{ t('rp.openPorts') }}</th><th>{{ t('rp.relatedVulns') }}</th></tr></thead>
                 <tbody>
-                  <tr v-for="t in rawTopo" :key="t.ip">
-                    <td class="mono small">{{ t.ip }}</td>
-                    <td class="small">{{ t.hostname || '-' }}</td>
-                    <td class="small">{{ t.os || '-' }}</td>
+                  <tr v-for="tp in rawTopo" :key="tp.ip">
+                    <td class="mono small">{{ tp.ip }}</td>
+                    <td class="small">{{ tp.hostname || '-' }}</td>
+                    <td class="small">{{ tp.os || '-' }}</td>
                     <td class="mono small">
-                      <template v-if="t.ports && t.ports.length">
-                        <span class="tag-mini" v-for="p in t.ports" :key="p">{{ p }}</span>
+                      <template v-if="tp.ports && tp.ports.length">
+                        <span class="tag-mini" v-for="p in tp.ports" :key="p">{{ p }}</span>
                       </template>
                       <span v-else class="muted">-</span>
                     </td>
                     <td class="mono small">
-                      <span v-if="t.vulns > 0" class="score warn">{{ t.vulns }}</span>
+                      <span v-if="tp.vulns > 0" class="score warn">{{ tp.vulns }}</span>
                       <span v-else class="muted">0</span>
                     </td>
                   </tr>
@@ -394,34 +385,31 @@
 
           <!-- AI 分析(阶段 3): 业务页触发的研判结果挂在本报告下; 也可在此直接(重新)分析 -->
           <div class="block-title" style="display:flex; align-items:center; justify-content:space-between; gap:12px">
-            <span>AI 分析</span>
+            <span>{{ t('rp.aiTitle') }}</span>
             <AiAnalyzeButton :module="rawDetail.module" :reportId="rawDetail.id"
-                             :label="rawDetail.aiAnalyzedAt ? '重新分析' : 'AI 分析'" />
+                             :label="rawDetail.aiAnalyzedAt ? t('rp.reanalyze') : t('rp.analyze')" />
           </div>
-          <p class="muted small" v-if="!rawDetail.aiAnalyzedAt">
-            尚未进行 AI 分析。点上方"AI 分析"立即研判, 或在对应业务页面(实时抓包 / 扫描作业 / 弱口令 / 节点监控)触发,
-            研判结果会自动存到本报告(参数与知识库在 系统配置 → AI 配置 管理)。
-          </p>
+          <p class="muted small" v-if="!rawDetail.aiAnalyzedAt">{{ t('rp.aiHint') }}</p>
           <div v-else>
             <p class="muted small mono">
-              分析时间: {{ fmtDT(rawDetail.aiAnalyzedAt) }}
-              <template v-if="rawAiData.model"> · 模型: {{ rawAiData.model }}</template>
+              {{ t('rp.aiTime') }}: {{ fmtDT(rawDetail.aiAnalyzedAt) }}
+              <template v-if="rawAiData.model"> · {{ t('rp.aiModel') }}: {{ rawAiData.model }}</template>
               <template v-if="rawAiData.template"> · {{ rawAiData.template }}</template>
-              <template v-if="rawAiData.ragHits"> · RAG 参考 {{ rawAiData.ragHits }} 条</template>
-              <template v-if="rawAiData.memoryItems"> · 历史记忆 {{ rawAiData.memoryItems }} 条</template>
-              <template v-if="rawAiData.elapsedMs"> · 耗时 {{ (rawAiData.elapsedMs / 1000).toFixed(1) }}s</template>
+              <template v-if="rawAiData.ragHits"> · {{ t('rp.ragHits', { n: rawAiData.ragHits }) }}</template>
+              <template v-if="rawAiData.memoryItems"> · {{ t('rp.memItems', { n: rawAiData.memoryItems }) }}</template>
+              <template v-if="rawAiData.elapsedMs"> · {{ t('rp.aiElapsed') }} {{ (rawAiData.elapsedMs / 1000).toFixed(1) }}s</template>
             </p>
             <pre class="raw-ai-note">{{ rawDetail.aiNote }}</pre>
           </div>
 
           <!-- 原始 JSON(可折叠, 大正文截断展示) -->
           <details class="raw-json">
-            <summary>原始数据(JSON)</summary>
+            <summary>{{ t('rp.rawJson') }}</summary>
             <pre class="mono small">{{ prettyPayload() }}</pre>
           </details>
           <template #footer>
-            <button class="btn sm" @click="copyPayload">复制原始 JSON</button>
-            <button class="btn sm" @click="rawDetail = null">关闭</button>
+            <button class="btn sm" @click="copyPayload">{{ t('rp.copyJson') }}</button>
+            <button class="btn sm" @click="rawDetail = null">{{ t('rp.close') }}</button>
           </template>
         </Modal>
       </div>
@@ -429,20 +417,20 @@
       <!-- ===== 报告存档 ===== -->
       <div class="card" v-show="tab === 'arch'">
         <div class="toolbar">
-          <button class="btn sm" @click="loadArchives">刷新</button>
+          <button class="btn sm" @click="loadArchives">{{ t('rp.refresh') }}</button>
           <div class="spacer"></div>
-          <span class="muted small">共 {{ archives.length }} 份</span>
+          <span class="muted small">{{ t('rp.totalN', { n: archives.length }) }}</span>
         </div>
         <div class="table-wrap" v-if="archives.length">
           <table class="table">
             <thead>
-              <tr><th>标题</th><th>格式</th><th>漏洞</th><th>资产</th><th>风险分</th><th>报告人</th><th>生成时间</th><th style="width:150px">操作</th></tr>
+              <tr><th>{{ t('rp.colTitle') }}</th><th>{{ t('rp.colFormat') }}</th><th>{{ t('rp.colVulns') }}</th><th>{{ t('rp.colAsset') }}</th><th>{{ t('rp.riskScore') }}</th><th>{{ t('rp.operator') }}</th><th>{{ t('rp.colCreatedAt') }}</th><th style="width:150px">{{ t('rp.colOp') }}</th></tr>
             </thead>
             <tbody>
               <tr v-for="a in archives" :key="a.id">
                 <td>
                   <b style="font-size:12.5px">{{ a.title }}</b>
-                  <span class="badge" v-if="a.kind === 'diff'" style="margin-left:6px">对比</span>
+                  <span class="badge" v-if="a.kind === 'diff'" style="margin-left:6px">{{ t('rp.diffBadge') }}</span>
                 </td>
                 <td class="mono small">{{ (a.format || 'html').toUpperCase() }}</td>
                 <td class="mono small">{{ a.stats ? a.stats.vulnTotal : '-' }}</td>
@@ -451,15 +439,15 @@
                 <td class="small muted">{{ a.operator || '-' }}</td>
                 <td class="muted small mono">{{ fmtDT(a.createdAt) }}</td>
                 <td>
-                  <button class="btn xs" @click="previewArchive(a)">预览</button>
-                  <button class="btn xs" @click="download(a)">下载</button>
-                  <button class="btn xs" @click="del(a)">删除</button>
+                  <button class="btn xs" @click="previewArchive(a)">{{ t('rp.preview') }}</button>
+                  <button class="btn xs" @click="download(a)">{{ t('rp.download') }}</button>
+                  <button class="btn xs" @click="del(a)">{{ t('rp.del') }}</button>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else text="暂无报告存档(生成报告时默认归档)"></Empty>
+        <Empty v-else :text="t('rp.noArch')"></Empty>
         <!-- 预览统一走右侧抽屉(2026-09-25 二轮: "像抽屉一样打开页面看"):
              Word 存档由服务端转 HTML(X-Yugsight-Preview: word-html), 所有格式
              都能在抽屉 iframe 里直接看, 不再"必须下载"。 -->
@@ -467,58 +455,56 @@
 
       <!-- ===== 历史对比 ===== -->
       <div class="card" v-show="tab === 'diff'">
-        <div class="block-title">存档对比(选择两份报告存档)</div>
+        <div class="block-title">{{ t('rp.diffBlock') }}</div>
         <!-- 2026-09-26: 历史对比主入口 = 选两份报告存档对比(按各自筛选条件重建
              漏洞明细), 而非无根据的时间窗; 时间窗对比降为下方备选。 -->
         <div class="form-grid" style="margin-bottom:10px">
-          <label>基线存档(较早)
+          <label>{{ t('rp.baseArch') }}
             <select class="select" v-model="diffForm.baseId">
-              <option value="">请选择</option>
+              <option value="">{{ t('rp.select') }}</option>
               <option v-for="a in archives" :key="a.id" :value="a.id">{{ a.title }} · {{ fmtDT(a.createdAt) }}</option>
             </select>
           </label>
-          <label>目标存档(较晚)
+          <label>{{ t('rp.targetArch') }}
             <select class="select" v-model="diffForm.targetId">
-              <option value="">请选择</option>
+              <option value="">{{ t('rp.select') }}</option>
               <option v-for="a in archives" :key="a.id" :value="a.id">{{ a.title }} · {{ fmtDT(a.createdAt) }}</option>
             </select>
           </label>
         </div>
         <div class="toolbar">
-          <button class="btn primary sm" @click="runDiff" :disabled="diffBusy">开始对比</button>
-          <span class="muted small" v-if="diffBusy">对比中...</span>
+          <button class="btn primary sm" @click="runDiff" :disabled="diffBusy">{{ t('rp.runDiff') }}</button>
+          <span class="muted small" v-if="diffBusy">{{ t('rp.diffing') }}</span>
           <div class="spacer"></div>
-          <label class="chk small"><input type="checkbox" v-model="diffForm.save"> 存档对比报告</label>
+          <label class="chk small"><input type="checkbox" v-model="diffForm.save"> {{ t('rp.saveDiff') }}</label>
         </div>
-        <p class="muted small" style="margin:6px 0 0">
-          按两份存档各自的筛选条件重新取数对比(新增/修复/仍存在明细), 按「资产 + CVE」匹配(无 CVE 时按资产+协议:端口+标题), 人工标记的误报不参与。前提: 对应漏洞仍在库中。
-        </p>
+        <p class="muted small" style="margin:6px 0 0">{{ t('rp.diffHint') }}</p>
         <details class="gen-filter" style="margin-top:10px">
-          <summary>备选: 按时间窗对比(全库漏洞切窗, 不依赖存档)</summary>
+          <summary>{{ t('rp.winDiffSummary') }}</summary>
           <div class="toolbar">
-            <span class="small muted">目标轮次时间窗</span>
+            <span class="small muted">{{ t('rp.winLabel') }}</span>
             <input class="input" type="date" v-model="diffForm.from">
             <span class="muted">~</span>
             <input class="input" type="date" v-model="diffForm.to">
-            <button class="btn sm" @click="runWindowDiff" :disabled="diffBusy">按时间窗对比</button>
+            <button class="btn sm" @click="runWindowDiff" :disabled="diffBusy">{{ t('rp.runWinDiff') }}</button>
           </div>
-          <p class="muted small" style="margin:6px 0 0">基线自动取目标时间窗之前等长的一段。</p>
+          <p class="muted small" style="margin:6px 0 0">{{ t('rp.winHint') }}</p>
         </details>
 
         <div v-if="diff">
-          <div class="block-title">差异总览</div>
+          <div class="block-title">{{ t('rp.diffOverview') }}</div>
           <div class="stat-row">
-            <div class="stat new"><b>{{ diff.stats.newCount }}</b><span>新增漏洞</span></div>
-            <div class="stat fixed"><b>{{ diff.stats.fixedCount }}</b><span>已修复</span></div>
-            <div class="stat keep"><b>{{ diff.stats.persistedCount }}</b><span>仍然存在</span></div>
-            <div class="stat delta"><b>{{ diff.stats.delta }}</b><span>总数变化</span></div>
-            <div class="stat crit"><b>{{ diff.stats.newCritical }}</b><span>新增严重</span></div>
+            <div class="stat new"><b>{{ diff.stats.newCount }}</b><span>{{ t('rp.newVulnsShort') }}</span></div>
+            <div class="stat fixed"><b>{{ diff.stats.fixedCount }}</b><span>{{ t('rp.fixedShort') }}</span></div>
+            <div class="stat keep"><b>{{ diff.stats.persistedCount }}</b><span>{{ t('rp.persistShort') }}</span></div>
+            <div class="stat delta"><b>{{ diff.stats.delta }}</b><span>{{ t('rp.deltaShort') }}</span></div>
+            <div class="stat crit"><b>{{ diff.stats.newCritical }}</b><span>{{ t('rp.newCritShort') }}</span></div>
           </div>
 
-          <div class="block-title">新增漏洞({{ diff.stats.newCount }})</div>
+          <div class="block-title">{{ t('rp.newVulns', { n: diff.stats.newCount }) }}</div>
           <div class="table-wrap" v-if="diff.new && diff.new.length">
             <table class="table">
-              <thead><tr><th>级别</th><th>标题</th><th>CVE</th><th>资产</th><th>端口</th></tr></thead>
+              <thead><tr><th>{{ t('rp.colLevel') }}</th><th>{{ t('rp.colTitle') }}</th><th>CVE</th><th>{{ t('rp.colAsset') }}</th><th>{{ t('rp.colPort') }}</th></tr></thead>
               <tbody>
                 <tr v-for="(d, i) in diff.new" :key="i">
                   <td><SevTag :sev="d.targetSeverity" /></td>
@@ -530,12 +516,12 @@
               </tbody>
             </table>
           </div>
-          <Empty v-else text="本段对比未发现新增漏洞"></Empty>
+          <Empty v-else :text="t('rp.noNew')"></Empty>
 
-          <div class="block-title">已修复漏洞({{ diff.stats.fixedCount }})</div>
+          <div class="block-title">{{ t('rp.fixedVulns', { n: diff.stats.fixedCount }) }}</div>
           <div class="table-wrap" v-if="diff.fixed && diff.fixed.length">
-            <table class="table">
-              <thead><tr><th>原级别</th><th>标题</th><th>CVE</th><th>资产</th><th>端口</th></tr></thead>
+          <table class="table">
+            <thead><tr><th>{{ t('rp.colLvOrig') }}</th><th>{{ t('rp.colTitle') }}</th><th>CVE</th><th>{{ t('rp.colAsset') }}</th><th>{{ t('rp.colPort') }}</th></tr></thead>
               <tbody>
                 <tr v-for="(d, i) in diff.fixed" :key="i">
                   <td><SevTag :sev="d.baseSeverity" /></td>
@@ -547,12 +533,12 @@
               </tbody>
             </table>
           </div>
-          <Empty v-else text="本段对比未发现已修复漏洞"></Empty>
+          <Empty v-else :text="t('rp.noFixed')"></Empty>
 
-          <div class="block-title">仍然存在({{ diff.stats.persistedCount }})</div>
+          <div class="block-title">{{ t('rp.persistVulns', { n: diff.stats.persistedCount }) }}</div>
           <div class="table-wrap" v-if="diff.persisted && diff.persisted.length">
             <table class="table">
-              <thead><tr><th>级别</th><th>标题</th><th>CVE</th><th>资产</th><th>端口</th><th>等级变化</th></tr></thead>
+              <thead><tr><th>{{ t('rp.colLevel') }}</th><th>{{ t('rp.colTitle') }}</th><th>CVE</th><th>{{ t('rp.colAsset') }}</th><th>{{ t('rp.colPort') }}</th><th>{{ t('rp.sevChange') }}</th></tr></thead>
               <tbody>
                 <tr v-for="(d, i) in diff.persisted" :key="i">
                   <td><SevTag :sev="d.targetSeverity" /></td>
@@ -560,35 +546,35 @@
                   <td class="mono small">{{ d.cve || '-' }}</td>
                   <td class="mono small">{{ d.assetIp }}</td>
                   <td class="mono small">{{ d.port || '-' }}</td>
-                  <td class="small muted">{{ d.severityChange || '未变化' }}</td>
+                  <td class="small muted">{{ d.severityChange || t('rp.unchanged') }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <Empty v-else text="没有重复出现的漏洞"></Empty>
+          <Empty v-else :text="t('rp.noPersist')"></Empty>
 
           <div class="toolbar" style="margin-top:12px">
-            <button class="btn sm" @click="diffPreview" v-if="lastDiffID">查看对比报告</button>
+            <button class="btn sm" @click="diffPreview" v-if="lastDiffID">{{ t('rp.viewDiff') }}</button>
           </div>
         </div>
 
-        <div class="block-title">历史扫描记录</div>
+        <div class="block-title">{{ t('rp.historyBlock') }}</div>
         <div class="table-wrap" v-if="history.length">
           <table class="table">
-            <thead><tr><th>任务 ID</th><th>类型</th><th>目标</th><th>状态</th><th>探针节点</th><th>时间</th></tr></thead>
+            <thead><tr><th>{{ t('rp.colTaskId') }}</th><th>{{ t('rp.colType') }}</th><th>{{ t('rp.colTarget') }}</th><th>{{ t('rp.colStatus') }}</th><th>{{ t('rp.probeNode') }}</th><th>{{ t('rp.colTime') }}</th></tr></thead>
             <tbody>
               <tr v-for="hTask in history" :key="hTask.id">
                 <td class="mono small">{{ hTask.id }}</td>
                 <td class="small">{{ hTask.type }}</td>
                 <td class="mono small">{{ hTask.target }}</td>
                 <td class="small">{{ hTask.status }}</td>
-                <td class="mono small">{{ hTask.probeNode || 'local' }}</td>
+                <td class="mono small">{{ hTask.probeNode || t('rp.localNode') }}</td>
                 <td class="muted small mono">{{ fmtDT(hTask.createdAt) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else text="暂无扫描任务记录"></Empty>
+        <Empty v-else :text="t('rp.noHistory')"></Empty>
       </div>
 
     </template>
@@ -600,13 +586,13 @@
     <div class="drawer-mask" v-if="drawer.url" @click.self="closeDrawer">
       <div class="drawer">
         <div class="drawer-head">
-          <b class="drawer-title">{{ drawer.title || '报告预览' }}</b>
+          <b class="drawer-title">{{ drawer.title || t('rp.previewTitle') }}</b>
           <div class="spacer"></div>
-          <button class="btn xs" v-if="drawer.download" @click="window.open(drawer.download, '_blank')">下载原件</button>
-          <button class="btn xs" @click="closeDrawer">关闭 (Esc)</button>
+          <button class="btn xs" v-if="drawer.download" @click="window.open(drawer.download, '_blank')">{{ t('rp.downloadOrig') }}</button>
+          <button class="btn xs" @click="closeDrawer">{{ t('rp.closeEsc') }}</button>
         </div>
         <div class="drawer-body">
-          <iframe :src="drawer.url" title="报告预览"></iframe>
+          <iframe :src="drawer.url" :title="t('rp.previewTitle')"></iframe>
         </div>
       </div>
     </div>
@@ -618,38 +604,38 @@
     <div class="tpl-mask" v-if="tplModal" @click.self="closeTplModal">
       <div class="tpl-modal" @click="closePops">
         <div class="tpl-head">
-          <b>编辑报告模板</b>
-          <label class="head-field">名称
-            <input class="input xs" v-model.trim="vis.name" placeholder="如: 客户A季度报告">
+          <b>{{ t('rp.editTpl') }}</b>
+          <label class="head-field">{{ t('rp.name') }}
+            <input class="input xs" v-model.trim="vis.name" :placeholder="t('rp.namePh')">
           </label>
           <!-- 主题色: 顶栏只放一个色块入口, 点开才是色板(2026-09-26 深色化: 少控件、少亮色块) -->
           <div class="head-accent">
             <button class="accent-btn" type="button" :style="{ background: vis.accent }"
-                    title="主题色(封面标题/章节标题条)" @click.stop="accentOpen = !accentOpen"></button>
+                    :title="t('rp.accentTitle')" @click.stop="accentOpen = !accentOpen"></button>
             <div class="pop" v-if="accentOpen" @click.stop>
-              <div class="pop-title">主题色</div>
+              <div class="pop-title">{{ t('rp.accent') }}</div>
               <div class="swatches">
                 <button v-for="c in ACCENTS" :key="c.hex" type="button" class="sw"
                         :class="{ on: vis.accent.toLowerCase() === c.hex.toLowerCase() }"
-                        :style="{ background: c.hex }" :title="c.name"
+                        :style="{ background: c.hex }" :title="t(c.name)"
                         @click="vis.accent = c.hex; accentOpen = false"></button>
               </div>
-              <label class="pop-custom">自定义
+              <label class="pop-custom">{{ t('rp.custom') }}
                 <input type="color" v-model="vis.accent">
                 <span class="mono small muted">{{ vis.accent }}</span>
               </label>
             </div>
           </div>
-          <label class="chk"><input type="checkbox" v-model="vis.cover"> 封面</label>
-          <button class="btn xs" @click="pickLogo">{{ visLogo ? '更换 logo' : '上传 logo' }}</button>
-          <button class="btn xs" v-if="visLogo" @click="delLogo">移除 logo</button>
+          <label class="chk"><input type="checkbox" v-model="vis.cover"> {{ t('rp.cover') }}</label>
+          <button class="btn xs" @click="pickLogo">{{ visLogo ? t('rp.logoChange') : t('rp.logoUpload') }}</button>
+          <button class="btn xs" v-if="visLogo" @click="delLogo">{{ t('rp.logoRemove') }}</button>
           <input type="file" ref="logoInput" accept="image/png,image/jpeg,image/gif"
                  style="display:none" @change="onLogoFile">
           <div class="spacer"></div>
-          <span class="muted small" v-if="visBusy">保存中...</span>
-          <button class="btn xs" @click="resetVis">重置</button>
-          <button class="btn xs" @click="closeTplModal">取消 (Esc)</button>
-          <button class="btn xs primary" @click="saveVisualTpl" :disabled="visBusy">保存</button>
+          <span class="muted small" v-if="visBusy">{{ t('rp.saving') }}</span>
+          <button class="btn xs" @click="resetVis">{{ t('rp.reset') }}</button>
+          <button class="btn xs" @click="closeTplModal">{{ t('rp.cancel') }}</button>
+          <button class="btn xs primary" @click="saveVisualTpl" :disabled="visBusy">{{ t('rp.save') }}</button>
         </div>
         <!-- 2026-09-26 用户: 字符格式工具条(样式/BIU/字色/底色/字号/清格式)在画布上"点了没反应",
              直接删除; 配色改由左侧「风格预设」一键套用, 版权信息由下方文案字段 + 章节勾选控制。 -->
@@ -659,35 +645,33 @@
                字段类配置全部上移到顶栏/页面就地编辑 —— 用户口径: 不要挨个自定义。 -->
           <div class="tpl-left">
           <div class="tpl-field">
-            <div class="tpl-field-label">生成时间</div>
+            <div class="tpl-field-label">{{ t('rp.genTime') }}</div>
             <div class="tpl-time">
-              <label class="chk"><input type="radio" value="auto" v-model="vis.timeMode"> 自动生成(报告生成时刻)</label>
-              <label class="chk"><input type="radio" value="custom" v-model="vis.timeMode"> 自定义</label>
+              <label class="chk"><input type="radio" value="auto" v-model="vis.timeMode"> {{ t('rp.timeAuto') }}</label>
+              <label class="chk"><input type="radio" value="custom" v-model="vis.timeMode"> {{ t('rp.custom') }}</label>
             </div>
             <!-- 自定义时直接在此处填(与封面同步); 以前输入框只藏在右侧页面里, 用户找不到 -->
-            <input class="input xs" v-model.trim="vis.timeText" placeholder="自定义生成时间, 如 2026-09-26"
+            <input class="input xs" v-model.trim="vis.timeText" :placeholder="t('rp.timePh')"
                    :disabled="vis.timeMode !== 'custom'" style="margin-top:6px; width:100%">
           </div>
 
           <!-- 风格预设(2026-09-26 四轮补刀: 用户"好亮好闪、不要挨个挨个自定义";
                改为 WPS 式整套配色一键套用, 而非逐章节堆一堆亮色块) -->
           <div class="tpl-field">
-            <div class="tpl-field-label">风格预设(整套配色一键套用)</div>
+            <div class="tpl-field-label">{{ t('rp.stylePreset') }}</div>
             <div class="style-presets">
               <button v-for="p in STYLE_PRESETS_THEME" :key="p.key" type="button"
                       class="style-sw" :class="{ on: stylePreset === p.key }"
-                      :title="p.name" @click="applyStylePreset(p.key)">
+                      :title="t(p.name)" @click="applyStylePreset(p.key)">
                 <span class="style-sw-bar" :style="{ background: p.accent }"></span>
-                <span class="style-sw-name">{{ p.name }}</span>
+                <span class="style-sw-name">{{ t(p.name) }}</span>
               </button>
             </div>
-            <p class="muted small" style="margin:7px 0 0; line-height:1.6">
-              选一套配色即应用到全部章节(封面标题 / 章节标题条 / 章节底色), 像 WPS 选模板, 无需逐章节调。
-            </p>
+            <p class="muted small" style="margin:7px 0 0; line-height:1.6">{{ t('rp.styleHint') }}</p>
           </div>
 
           <div class="tpl-field">
-            <div class="tpl-field-label">章节结构(勾选 + 排序)</div>
+            <div class="tpl-field-label">{{ t('rp.secStruct') }}</div>
             <div class="vis-sec-list">
               <!-- 点行/点画布章节互相选中(activeSec): 版面编辑模式下"选中谁改谁" -->
               <div class="vis-sec-row" v-for="(k, i) in vis.sections" :key="k"
@@ -699,12 +683,12 @@
                     :disabled="k === 'copyright' ? false : !secOptional(k)"
                     @change="k === 'copyright' ? toggleCopyright() : toggleVisSec(k)">
                   <span class="small">{{ secTitle(k) }}</span>
-                  <span class="muted small" v-if="k === 'copyright'">(可勾选开关; 文案在下方编辑)</span>
-                  <span class="muted small" v-else-if="!secOptional(k)">(核心章节, 始终保留)</span>
-                  <span class="muted small" v-else-if="visEnabled[k] === false">(无数据时自动省略)</span>
+                  <span class="muted small" v-if="k === 'copyright'">{{ t('rp.copyrightHint') }}</span>
+                  <span class="muted small" v-else-if="!secOptional(k)">{{ t('rp.coreSec') }}</span>
+                  <span class="muted small" v-else-if="visEnabled[k] === false">{{ t('rp.optionalSec') }}</span>
                   <div class="spacer"></div>
-                  <button class="btn xs" @click="moveVisSec(i, -1)" :disabled="i === 0">上移</button>
-                  <button class="btn xs" @click="moveVisSec(i, 1)" :disabled="i === vis.sections.length - 1">下移</button>
+                  <button class="btn xs" @click="moveVisSec(i, -1)" :disabled="i === 0">{{ t('rp.moveUp') }}</button>
+                  <button class="btn xs" @click="moveVisSec(i, 1)" :disabled="i === vis.sections.length - 1">{{ t('rp.moveDown') }}</button>
                 </div>
               </div>
             </div>
@@ -714,49 +698,49 @@
           <!-- 版面编辑(2026-09-26): 不再是只读预览 —— 页面上的文字点哪改哪,
                改完即时进 vis 并最终落到报告。灰色占位条 = 扫描数据自动填充(不可改)。 -->
           <div class="tpl-preview-wrap">
-            <div class="tpl-preview-title muted small">版面编辑(直接在页面上点选文字修改)</div>
+            <div class="tpl-preview-title muted small">{{ t('rp.layoutEdit') }}</div>
             <div class="tpl-page" :style="{ '--tp-accent': vis.accent }">
               <!-- 封面(就地编辑) -->
               <div class="tp-cover" v-if="vis.cover">
                 <div class="tp-logo" v-if="visLogo"><img :src="visLogo" alt="logo"></div>
-                <Editable class="tp-title" v-model="vis.title" placeholder="报告标题(留空 = 用报告标题)" />
-                <Editable class="tp-sub" v-model="vis.subtitle" placeholder="副标题" />
-                <Editable class="tp-client" v-model="vis.client" placeholder="客户名(可空)" />
-                <div class="tp-risk">整体风险: <b>生成时按扫描数据自动填充</b></div>
+                <Editable class="tp-title" v-model="vis.title" :placeholder="t('rp.titlePh')" />
+                <Editable class="tp-sub" v-model="vis.subtitle" :placeholder="t('rp.subtitle')" />
+                <Editable class="tp-client" v-model="vis.client" :placeholder="t('rp.clientPh')" />
+                <div class="tp-risk">{{ t('rp.overallRisk') }}: <b>{{ t('rp.autoFill') }}</b></div>
                 <div class="tp-meta">
-                  <div>报告人: <Editable class="tp-inline" v-model="vis.operator" placeholder="留空 = 登录账号" /></div>
-                  <div>检测工具: <Editable class="tp-inline" v-model="vis.tool" placeholder="留空 = 平台名" /></div>
-                  <div v-if="vis.timeMode === 'custom'">生成时间: <Editable class="tp-inline" v-model="vis.timeText" placeholder="如 2026-09-26" /></div>
-                  <div v-else>生成时间: <span class="muted">自动生成(报告生成时刻)</span></div>
+                  <div>{{ t('rp.operator') }}: <Editable class="tp-inline" v-model="vis.operator" :placeholder="t('rp.operatorPh')" /></div>
+                  <div>{{ t('rp.tool') }}: <Editable class="tp-inline" v-model="vis.tool" :placeholder="t('rp.toolPh')" /></div>
+                  <div v-if="vis.timeMode === 'custom'">{{ t('rp.genTime') }}: <Editable class="tp-inline" v-model="vis.timeText" :placeholder="t('rp.timeShort')" /></div>
+                  <div v-else>{{ t('rp.genTime') }}: <span class="muted">{{ t('rp.timeAuto') }}</span></div>
                 </div>
               </div>
               <!-- 封面关闭时字段仍要给编辑入口: 否则这些值再也改不动 -->
               <div class="tp-cover-off" v-else>
-                <div class="muted small">封面已关闭(不输出)。封面字段仍可编辑:</div>
-                <div>标题 <Editable class="tp-inline" v-model="vis.title" placeholder="标题" /></div>
-                <div>副标题 <Editable class="tp-inline" v-model="vis.subtitle" placeholder="副标题" /></div>
-                <div>客户 <Editable class="tp-inline" v-model="vis.client" placeholder="客户名" /></div>
+                <div class="muted small">{{ t('rp.coverOff') }}</div>
+                <div>{{ t('rp.titleCol') }} <Editable class="tp-inline" v-model="vis.title" :placeholder="t('rp.titleCol')" /></div>
+                <div>{{ t('rp.subtitle') }} <Editable class="tp-inline" v-model="vis.subtitle" :placeholder="t('rp.subtitle')" /></div>
+                <div>{{ t('rp.client') }} <Editable class="tp-inline" v-model="vis.client" :placeholder="t('rp.client')" /></div>
               </div>
               <!-- 正文页: 页眉 + 章节(可点选 → 左侧改样式) + 免责/版权 + 页脚 -->
               <div class="tp-body">
-                <div class="tp-header">页眉 <Editable class="tp-inline" v-model="vis.header" placeholder="留空 = 默认" /></div>
+                <div class="tp-header">{{ t('rp.header') }} <Editable class="tp-inline" v-model="vis.header" :placeholder="t('rp.defaultPh')" /></div>
                 <div class="tp-sec" v-for="(k, i) in previewSections" :key="k"
                      :class="{ 'sec-on': activeSec === k }" @click="activeSec = k"
-                     :title="'点击选中「' + secTitle(k) + '」, 在左侧改它的字体/底色/顺序'">
+                     :title="t('rp.secClick', { name: secTitle(k) })">
                   <div class="tp-sec-title" :style="tpTitleStyle(k)">
                     <span class="tp-sec-no">{{ String(i + 1).padStart(2, '0') }}</span>
                     <span v-html="secTitle(k)"></span>
                   </div>
                   <div class="tp-sec-body" :style="tpBodyStyle(k)">
                     <div class="tp-line" v-for="n in 3" :key="n"></div>
-                    <div class="tp-note muted small">正文由扫描数据自动生成(不可编辑)</div>
+                    <div class="tp-note muted small">{{ t('rp.bodyAuto') }}</div>
                   </div>
                 </div>
                 <!-- 免责/版权在底部单独呈现并可就地编辑文案; 与"未勾选不显示"同口径:
                      在右侧章节结构里勾上才显示, 取消勾选这里即不显示。文案留空 = 用内置默认。 -->
-                <div class="tp-tail" v-if="visEnabled.disclaimer">免责声明 <Editable class="tp-inline" v-model="vis.disclaimer" placeholder="留空 = 用内置默认文案" /></div>
-                <div class="tp-tail" v-if="vis.copyrightOn">版权信息 <Editable class="tp-inline" v-model="vis.copyright" placeholder="留空 = 用内置默认文案" /></div>
-                <div class="tp-footer">页脚 <Editable class="tp-inline" v-model="vis.footer" placeholder="页脚文案" /></div>
+                <div class="tp-tail" v-if="visEnabled.disclaimer">{{ t('rp.disclaimer') }} <Editable class="tp-inline" v-model="vis.disclaimer" :placeholder="t('rp.defaultTextPh')" /></div>
+                <div class="tp-tail" v-if="vis.copyrightOn">{{ t('rp.copyright') }} <Editable class="tp-inline" v-model="vis.copyright" :placeholder="t('rp.defaultTextPh')" /></div>
+                <div class="tp-footer">{{ t('rp.footer') }} <Editable class="tp-inline" v-model="vis.footer" :placeholder="t('rp.footerPh')" /></div>
               </div>
             </div>
           </div>
@@ -779,6 +763,7 @@ import AiAnalyzeButton from '../components/AiAnalyzeButton.vue'
 import Editable from '../components/Editable.vue'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
+import { t } from '../i18n'
 
 const route = useRoute()
 // tab 支持 URL query 驱动(如 /reports?tab=gen&job=<id>, 从"扫描作业"页跳来直接
@@ -793,7 +778,7 @@ const diffBusy = ref(false)
 const drawer = ref({ url: '', title: '', download: '' })
 const lastDiffID = ref('')
 
-const options = ref({ nodes: [{ id: 'local', name: '中心本地' }] })
+const options = ref({ nodes: [{ id: 'local', name: t('rp.localNode') }] })
 // Word 模板列表(可视化排版 + 手动导入的 .docx; builtin 不在列表里展示)
 const wordTpls = ref([])
 // 可视化排版编辑器状态(2026-09-25 起它就是"报告生成"页本体)
@@ -815,7 +800,8 @@ const vis = reactive({
 })
 // 版权默认文案(与后端 report.CopyrightLine 口径一致; 预填进编辑器,
 // 用户清空 = 报告不出版权章)
-const DEFAULT_COPYRIGHT = 'Copyright © 2026 yugo. 版权所有。\n本报告由 Yugsight(御视)安全运维一体化平台自动生成, 报告内容仅限内部安全运维使用。\n未经著作权人书面许可, 不得复制、传播本报告全部或部分内容。'
+// 2026-10-04 i18n: 默认版权文案键值化(运行时取, 跟随语言)
+function dftCopyright() { return t('rp.dftCopyright') }
 // 模板编辑浮窗(2026-09-25 三轮: "点击编辑时是浮窗并有保存功能")
 const tplModal = ref(false)
 // 封面 logo(2026-09-25 用户要求"模板能放 logo"): visLogo 是预览用 data URL,
@@ -966,27 +952,27 @@ const previewSections = computed(() =>
 
 // ===== 主题色预设(2026-09-26 用户: 默认色太亮眼, 给一组沉稳的商务色) =====
 const ACCENTS = [
-  { hex: '#1F3A5F', name: '深蓝(推荐)' },
-  { hex: '#374151', name: '墨灰' },
-  { hex: '#0F766E', name: '深青' },
-  { hex: '#065F46', name: '深绿' },
-  { hex: '#7F1D1D', name: '暗红' },
-  { hex: '#1E3A8A', name: '藏青' },
-  { hex: '#4B5563', name: '石墨' },
-  { hex: '#5B4B8A', name: '黛紫' },
-  { hex: '#B45309', name: '赭石' },
-  { hex: '#4F46E5', name: '靛蓝(旧默认)' }
+  { hex: '#1F3A5F', name: 'rp.accDeep' },
+  { hex: '#374151', name: 'rp.accInk' },
+  { hex: '#0F766E', name: 'rp.accTeal' },
+  { hex: '#065F46', name: 'rp.accGreen' },
+  { hex: '#7F1D1D', name: 'rp.accRed' },
+  { hex: '#1E3A8A', name: 'rp.accNavy' },
+  { hex: '#4B5563', name: 'rp.accGraphite' },
+  { hex: '#5B4B8A', name: 'rp.accViolet' },
+  { hex: '#B45309', name: 'rp.accOchre' },
+  { hex: '#4F46E5', name: 'rp.accIndigo' }
 ]
 
 // ===== 风格预设(2026-09-26 四轮补刀: 取代"逐章节一堆亮色块"的挨个自定义)。
 //   每套是协调好的整套配色(accent + 各章节标题色/底色/正文字色), 一键套用到全部章节,
 //   像 WPS 选模板。颜色都取沉稳系, 不刺眼。 =====
 const STYLE_PRESETS_THEME = [
-  { key: 'biz',   name: '商务经典', accent: '#1F3A5F', titleColor: '#1F3A5F', titleBg: '#EAF0F7', fontColor: '#1F2937', bg: '#FFFFFF' },
-  { key: 'gray',  name: '简约灰',   accent: '#374151', titleColor: '#374151', titleBg: '#F3F4F6', fontColor: '#1F2937', bg: '#FFFFFF' },
-  { key: 'gov',   name: '政务红',   accent: '#9B2C2C', titleColor: '#9B2C2C', titleBg: '#FBEAEA', fontColor: '#1F2937', bg: '#FFFFFF' },
-  { key: 'teal',  name: '科技青',   accent: '#0F766E', titleColor: '#0F766E', titleBg: '#E0F2FE', fontColor: '#1F2937', bg: '#FFFFFF' },
-  { key: 'green', name: '清新绿',   accent: '#166534', titleColor: '#166534', titleBg: '#DCFCE7', fontColor: '#1F2937', bg: '#FFFFFF' }
+  { key: 'biz',   name: 'rp.spBiz',   accent: '#1F3A5F', titleColor: '#1F3A5F', titleBg: '#EAF0F7', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'gray',  name: 'rp.spGray',  accent: '#374151', titleColor: '#374151', titleBg: '#F3F4F6', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'gov',   name: 'rp.spGov',   accent: '#9B2C2C', titleColor: '#9B2C2C', titleBg: '#FBEAEA', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'teal',  name: 'rp.spTeal',  accent: '#0F766E', titleColor: '#0F766E', titleBg: '#E0F2FE', fontColor: '#1F2937', bg: '#FFFFFF' },
+  { key: 'green', name: 'rp.spGreen', accent: '#166534', titleColor: '#166534', titleBg: '#DCFCE7', fontColor: '#1F2937', bg: '#FFFFFF' }
 ]
 
 // ===== 版面就地编辑状态(2026-09-26 四轮: 形态对齐 WPS —— 风格预设 + 画布点选高亮) =====
@@ -1137,7 +1123,7 @@ function resetVisEnabled() {
 }
 
 async function saveVisualTpl() {
-  if (!vis.name.trim()) { window.alert('请填写模板名称'); return false }
+  if (!vis.name.trim()) { window.alert(t('rp.needTplName')); return false }
   visBusy.value = true
   try {
     // 只提交勾选的章节(顺序 = 当前排列); 版权信息由版权勾选(copyrightOn)决定:
@@ -1154,19 +1140,19 @@ async function saveVisualTpl() {
         client: vis.client, subtitle: vis.subtitle,
         operator: vis.operator, tool: vis.tool,
         timeMode: vis.timeMode, timeText: vis.timeMode === 'custom' ? vis.timeText : '',
-        footer: vis.footer, copyright: vis.copyrightOn ? (vis.copyright || DEFAULT_COPYRIGHT) : '',
+        footer: vis.footer, copyright: vis.copyrightOn ? (vis.copyright || dftCopyright()) : '',
         disclaimer: vis.disclaimer,
         accent: vis.accent, cover: vis.cover, sections: secs,
         sectionStyles: cleanSecStyles() // 逐章节字体样式(空 = 不带, 旧模板零差异)
       })
     })
-    tplSavedMsg.value = '已保存到 data/outp/' + vis.name.trim()
+    tplSavedMsg.value = t('rp.savedTo', { name: vis.name.trim() })
     setTimeout(() => { tplSavedMsg.value = '' }, 4000)
     loadWordTpls()
     closeTplModal()
     return true
   } catch (e) {
-    window.alert('模板保存失败: ' + (e.message || e))
+    window.alert(t('rp.saveFail', { err: e.message || e }))
     return false
   } finally { visBusy.value = false }
 }
@@ -1180,15 +1166,15 @@ function resetVis() {
   vis.title = ''
   vis.header = ''
   vis.client = ''
-  vis.subtitle = '网络安全扫描与漏洞评估报告'
+  vis.subtitle = t('rp.dftSubtitle')
   vis.operator = ''
   vis.tool = ''
   vis.timeMode = 'auto'
   vis.timeText = ''
   vis.footer = ''
-  vis.copyright = DEFAULT_COPYRIGHT
+  vis.copyright = dftCopyright()
   vis.copyrightOn = true // 新建模板默认带版权章
-  vis.disclaimer = '本报告基于 Yugsight 自动化扫描结果生成, 结论仅供安全加固参考。'
+  vis.disclaimer = t('rp.dftDisclaimer')
   vis.accent = '#1F3A5F' // 默认改沉稳深蓝(2026-09-26 用户: 原靛蓝太亮眼)
   vis.cover = true
   visLogo.value = ''
@@ -1217,7 +1203,7 @@ async function onLogoFile(e) {
   const f = e.target.files && e.target.files[0]
   e.target.value = '' // 允许重复选同一文件
   if (!f) return
-  if (!vis.name.trim()) { window.alert('请先填写模板名称再上传 logo'); return }
+  if (!vis.name.trim()) { window.alert(t('rp.needNameForLogo')); return }
   logoBusy.value = true
   try {
     const b64 = await fileToB64(f)
@@ -1226,9 +1212,9 @@ async function onLogoFile(e) {
       body: JSON.stringify({ name: vis.name.trim(), data: b64 })
     })
     visLogo.value = 'data:' + (f.type || 'image/png') + ';base64,' + b64
-    tplSavedMsg.value = 'logo 已保存(记得点"保存模板"让它进入报告)'
+    tplSavedMsg.value = t('rp.logoSaved')
     setTimeout(() => { tplSavedMsg.value = '' }, 4000)
-  } catch (err) { window.alert('logo 上传失败: ' + err.message) }
+  } catch (err) { window.alert(t('rp.logoFail', { err: err.message })) }
   finally { logoBusy.value = false }
 }
 
@@ -1237,13 +1223,13 @@ async function delLogo() {
   try {
     await v2('/report/word/templates/visual/logo?name=' + encodeURIComponent(vis.name.trim()), { method: 'DELETE' })
     visLogo.value = ''
-  } catch (e) { window.alert('删除失败: ' + e.message) }
+  } catch (e) { window.alert(t('rp.delFail', { err: e.message })) }
 }
 
-async function delWordTpl(t) {
-  if (!window.confirm('删除 Word 模板 ' + t.name + ' ?')) return
+async function delWordTpl(tp) {
+  if (!window.confirm(t('rp.delTplConfirm', { name: tp.name }))) return
   try {
-    await v2('/report/word/templates/' + encodeURIComponent(t.name), { method: 'DELETE' })
+    await v2('/report/word/templates/' + encodeURIComponent(tp.name), { method: 'DELETE' })
     loadWordTpls()
   } catch (e) { /* http.js 统一提示 */ }
 }
@@ -1257,7 +1243,7 @@ function fileToB64(file) {
       const i = s.indexOf(',')
       resolve(i >= 0 ? s.slice(i + 1) : s)
     }
-    fr.onerror = () => reject(new Error('读取失败'))
+    fr.onerror = () => reject(new Error(t('rp.readFail')))
     fr.readAsDataURL(file)
   })
 }
@@ -1272,7 +1258,7 @@ async function loadStatus() {
   } catch (e) { status.value = { enabled: false, hint: e.message } }
 }
 
-const SEV_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+// 2026-10-04 i18n: 级别中文名统一走 sev.* 词条(原 SEV_CN 常量删除)
 async function loadOptions() {
   try {
     options.value = await v2('/report/options')
@@ -1333,8 +1319,8 @@ async function genPreview() {
     })
     if (!r.ok) throw new Error('HTTP ' + r.status)
     const html = await r.text()
-    openDrawer(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '报告预览')
-  } catch (e) { alert('预览失败: ' + e.message) } finally { busy.value = false }
+    openDrawer(URL.createObjectURL(new Blob([html], { type: 'text/html' })), t('rp.previewTitle'))
+  } catch (e) { alert(t('rp.previewFail', { err: e.message })) } finally { busy.value = false }
 }
 
 // 生成前确保选中的模板已落盘(用户"编辑完直接出报告"的路径):
@@ -1351,7 +1337,7 @@ async function genDownload() {
     await ensureTemplateSaved()
     const d = await v2('/report/generate', { method: 'POST', body: { ...buildRequest(form.f.format), archive: false } })
     downloadReport(d.report.id)
-  } catch (e) { alert('生成失败: ' + e.message) } finally { busy.value = false }
+  } catch (e) { alert(t('rp.genFail', { err: e.message })) } finally { busy.value = false }
 }
 
 async function genArchive() {
@@ -1359,11 +1345,11 @@ async function genArchive() {
   try {
     await ensureTemplateSaved()
     const d = await v2('/report/generate', { method: 'POST', body: { ...buildRequest(form.f.format), archive: true } })
-    alert('报告已生成并归档')
+    alert(t('rp.archDone'))
     loadArchives()
     tab.value = 'arch'
     return d
-  } catch (e) { alert('生成失败: ' + e.message) } finally { busy.value = false }
+  } catch (e) { alert(t('rp.genFail', { err: e.message })) } finally { busy.value = false }
 }
 
 // 下载走浏览器原生下载(服务端已设置 Content-Disposition)
@@ -1374,7 +1360,7 @@ function downloadReport(id) {
 function download(a) { downloadReport(a.id) }
 
 async function del(a) {
-  if (!confirm('确认删除报告「' + a.title + '」?')) return
+  if (!confirm(t('rp.delReportConfirm', { title: a.title }))) return
   try {
     await v2('/report/' + a.id, { method: 'DELETE' })
     loadArchives()
@@ -1385,36 +1371,36 @@ async function del(a) {
 // 主入口: 选两份报告存档对比(按各自筛选条件重建漏洞明细, 2026-09-26 用户口径:
 // 历史对比应对存档做对比, 而非无根据的时间窗)
 async function runDiff() {
-  if (!diffForm.baseId || !diffForm.targetId) { alert('请分别选择「基线存档」与「目标存档」'); return }
+  if (!diffForm.baseId || !diffForm.targetId) { alert(t('rp.needBothArch')); return }
   diffBusy.value = true
   try {
     const b = archives.value.find(a => a.id === diffForm.baseId)
-    const t = archives.value.find(a => a.id === diffForm.targetId)
+    const tgt = archives.value.find(a => a.id === diffForm.targetId)
     const d = await v2('/report/compare', {
       method: 'POST',
       body: {
         baseId: diffForm.baseId, targetId: diffForm.targetId,
         save: diffForm.save,
-        title: '存档对比 ' + (b ? b.title : diffForm.baseId) + ' vs ' + (t ? t.title : diffForm.targetId)
+        title: t('rp.diffTitle', { base: b ? b.title : diffForm.baseId, target: tgt ? tgt.title : diffForm.targetId })
       }
     })
     diff.value = d.diff
     lastDiffID.value = d.archiveId || ''
-  } catch (e) { alert('对比失败: ' + e.message) } finally { diffBusy.value = false }
+  } catch (e) { alert(t('rp.diffFail', { err: e.message })) } finally { diffBusy.value = false }
 }
 
 // 备选: 按时间窗对比(全库漏洞切窗, 不依赖存档; 基线自动取目标窗前等长一段)
 async function runWindowDiff() {
-  if (!diffForm.from && !diffForm.to) { alert('请至少选择时间窗的起止日期'); return }
+  if (!diffForm.from && !diffForm.to) { alert(t('rp.needWinDates')); return }
   diffBusy.value = true
   try {
     const d = await v2('/report/compare', {
       method: 'POST',
-      body: { from: diffForm.from, to: diffForm.to, save: diffForm.save, title: '时间窗对比 ' + (diffForm.from || '') + '~' + (diffForm.to || '') }
+      body: { from: diffForm.from, to: diffForm.to, save: diffForm.save, title: t('rp.winTitle', { from: diffForm.from || '', to: diffForm.to || '' }) }
     })
     diff.value = d.diff
     lastDiffID.value = d.archiveId || ''
-  } catch (e) { alert('对比失败: ' + e.message) } finally { diffBusy.value = false }
+  } catch (e) { alert(t('rp.diffFail', { err: e.message })) } finally { diffBusy.value = false }
 }
 
 function diffPreview() {
@@ -1442,20 +1428,21 @@ const rawBusy = ref(false)
 const mergeForm = reactive({ title: '', tags: '' })
 
 // 来源模块展示(与后端 report.RawModules 同口径, 未知模块原样回显)
-const RAW_MOD = { capture: '实时抓包', scan: '扫描作业', weakpass: '弱口令', monitor: '节点监控', penta: '渗透验证', merged: '合并报告' }
-function rawModLabel(m) { return RAW_MOD[m] || m }
-function rawModKey(m) { return RAW_MOD[m] ? m : 'other' }
+// 2026-10-04 i18n: 模块名词条键(rp.mod*), 渲染期 t() 解析
+const RAW_MOD_KEYS = { capture: 'rp.modCapture', scan: 'rp.modScan', weakpass: 'rp.modWp', monitor: 'rp.modMonitor', penta: 'rp.modPenta', merged: 'rp.modMerged' }
+function rawModLabel(m) { return RAW_MOD_KEYS[m] ? t(RAW_MOD_KEYS[m]) : m }
+function rawModKey(m) { return RAW_MOD_KEYS[m] ? m : 'other' }
 
 // 关键统计列: 各模块的条目数口径不同, 按模块拼一行
 function rawStatsText(r) {
   const s = r.stats || {}
   const ex = s.extra || {}
   switch (r.module) {
-    case 'capture': return s.items != null ? s.items + ' 报文' : '-'
-    case 'scan': return s.items != null ? s.items + ' 漏洞' + (ex.assets != null ? ' / ' + ex.assets + ' 资产' : '') + (ex.alive != null ? ' / ' + ex.alive + ' 存活' : '') : '-'
-    case 'weakpass': return s.items != null ? s.items + ' 目标' + (ex.found != null ? ' / 命中 ' + ex.found : '') : '-'
-    case 'monitor': return s.items != null ? s.items + ' 目标' + (ex.online != null ? ' / 在线 ' + ex.online : '') + (ex.ok != null ? ' / 成功 ' + ex.ok : '') : '-'
-    case 'merged': return s.items != null ? '合计 ' + s.items + ' 项' : '-'
+    case 'capture': return s.items != null ? t('rp.sPkt', { n: s.items }) : '-'
+    case 'scan': return s.items != null ? t('rp.sVuln', { n: s.items }) + (ex.assets != null ? ' / ' + t('rp.sAsset', { n: ex.assets }) : '') + (ex.alive != null ? ' / ' + t('rp.sAlive', { n: ex.alive }) : '') : '-'
+    case 'weakpass': return s.items != null ? t('rp.sTarget', { n: s.items }) + (ex.found != null ? ' / ' + t('rp.sHit', { n: ex.found }) : '') : '-'
+    case 'monitor': return s.items != null ? t('rp.sTarget', { n: s.items }) + (ex.online != null ? ' / ' + t('rp.sOnline', { n: ex.online }) : '') + (ex.ok != null ? ' / ' + t('rp.sOk', { n: ex.ok }) : '') : '-'
+    case 'merged': return s.items != null ? t('rp.sTotal', { n: s.items }) : '-'
     default: return '-'
   }
 }
@@ -1526,7 +1513,7 @@ async function viewRaw(r) {
 }
 
 async function delRaw(r) {
-  if (!confirm('确认删除原始报告「' + r.title + '」?')) return
+  if (!confirm(t('rp.delRawConfirm', { title: r.title }))) return
   try {
     await v2('/raw/' + r.id, { method: 'DELETE' })
     rawSel.value = rawSel.value.filter(id => id !== r.id)
@@ -1538,8 +1525,8 @@ async function delRaw(r) {
 async function rawBatchDel() {
   const n = rawSel.value.length
   if (!n) return
-  if (n > 500) { alert('单次最多删除 500 条'); return }
-  if (!confirm('确认删除选中的 ' + n + ' 份原始报告？\n\n删除后不可恢复，继续？')) return
+  if (n > 500) { alert(t('rp.max500')); return }
+  if (!confirm(t('rp.batchDelConfirm', { n }))) return
   rawBusy.value = true
   try {
     const r = await v2('/raw/batch-delete', {
@@ -1547,13 +1534,13 @@ async function rawBatchDel() {
       body: { ids: [...rawSel.value] }
     })
     rawSel.value = []
-    alert('已删除 ' + (r.deleted || 0) + ' 份原始报告')
+    alert(t('rp.deletedN', { n: r.deleted || 0 }))
     loadRaw()
   } catch (e) { alert(e.message) } finally { rawBusy.value = false }
 }
 
 async function mergeRaw() {
-  if (rawSel.value.length < 2) { alert('至少选择 2 份原始报告'); return }
+  if (rawSel.value.length < 2) { alert(t('rp.need2Raw')); return }
   rawBusy.value = true
   try {
     const tags = mergeForm.tags
@@ -1574,10 +1561,10 @@ async function mergeRaw() {
 // 详情里的原始 JSON: payload 是 JSON 对象, 格式化 + 大正文截断(渲染 200KB 会卡)
 function prettyPayload() {
   const d = rawDetail.value
-  if (!d || !d.payload) return '(无正文)'
+  if (!d || !d.payload) return t('rp.noBody')
   const p = typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload
   const s = JSON.stringify(p, null, 2)
-  return s.length > 200000 ? s.slice(0, 200000) + '\n... (内容过大, 已截断)' : s
+  return s.length > 200000 ? s.slice(0, 200000) + '\n... ' + t('rp.truncated') : s
 }
 
 function copyPayload() {
