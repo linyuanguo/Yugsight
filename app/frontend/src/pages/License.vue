@@ -1,25 +1,25 @@
 <template>
   <div>
-    <PageHeader title="授权与模型" desc="用户 / 登录会话 / 审计日志 / 服务管理 · AI 配置"></PageHeader>
+    <PageHeader :title="t('lic.title')" :desc="t('lic.desc')"></PageHeader>
 
     <div class="tabs" style="margin-bottom:14px">
-      <div class="tab" :class="{ active: tab === 'license' }" @click="setTab('license')">授权与模型</div>
-      <div class="tab" :class="{ active: tab === 'ai' }" @click="setTab('ai')">AI 配置</div>
+      <div class="tab" :class="{ active: tab === 'license' }" @click="setTab('license')">{{ t('lic.tabLicense') }}</div>
+      <div class="tab" :class="{ active: tab === 'ai' }" @click="setTab('ai')">{{ t('lic.tabAi') }}</div>
     </div>
 
     <div v-if="tab === 'license'">
     <div class="grid cols-2">
       <!-- 账户 -->
       <div class="card">
-        <div class="card-title">账户</div>
+        <div class="card-title">{{ t('lic.account') }}</div>
         <div class="kv">
-          <div class="k">当前用户</div><div class="v mono">{{ user || '-' }}</div>
-          <div class="k">角色</div>
+          <div class="k">{{ t('lic.cUser') }}</div><div class="v mono">{{ user || '-' }}</div>
+          <div class="k">{{ t('lic.cRole') }}</div>
           <div class="v"><span class="badge" :class="role === 'admin' ? 'st-success' : (role === 'operator' ? 'st-pending' : '')">{{ roleLabel(role) }}</span></div>
-          <div class="k">已注册</div>
-          <div class="v"><span class="badge" :class="st.registered ? 'st-success' : 'st-failed'">{{ st.registered ? '是' : '否' }}</span></div>
-          <div class="k">模式</div>
-          <div class="v"><span class="badge" :class="st.disabled ? 'st-success' : 'st-pending'">{{ st.disabled ? '免登录' : '标准' }}</span></div>
+          <div class="k">{{ t('lic.registered') }}</div>
+          <div class="v"><span class="badge" :class="st.registered ? 'st-success' : 'st-failed'">{{ st.registered ? t('lic.yes') : t('lic.no') }}</span></div>
+          <div class="k">{{ t('lic.mode') }}</div>
+          <div class="v"><span class="badge" :class="st.disabled ? 'st-success' : 'st-pending'">{{ st.disabled ? t('lic.noLogin') : t('lic.standard') }}</span></div>
         </div>
         <!-- 2FA 动态码"点击自动填入"开关(2026-10-03 用户要求): 本机浏览器偏好,
              存 localStorage, 默认开(保持既有行为); 关后登录页点数字不填入需手输。
@@ -28,103 +28,103 @@
         <div style="border-top:1px solid var(--border); margin-top:12px; padding-top:12px">
           <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); cursor:pointer">
             <input type="checkbox" v-model="clickFillOn" @change="saveClickFill" />
-            2FA 动态码点击自动填入
+            {{ t('lic.clickFill') }}
           </label>
           <p class="muted small" style="margin:6px 0 0; line-height:1.6">
-            开启: 登录页点击动态码即自动填入并提交; 关闭: 需手动输入 6 位码。
-            <span class="muted">(仅本机浏览器生效, 免重启)</span>
+            {{ t('lic.clickFillOn') }} {{ t('lic.clickFillOff') }}
+            <span class="muted">{{ t('lic.clickFillLocal') }}</span>
           </p>
         </div>
       </div>
 
       <!-- 用户管理(仅管理员可见; auditor 的写接口会被后端 403 兜底) -->
       <div class="card" v-if="role === 'admin'">
-        <div class="card-title">用户管理 <span class="sub">admin 全权限 / operator 除授权与模型外全功能 / auditor 只读</span></div>
+        <div class="card-title">{{ t('lic.users') }} <span class="sub">{{ t('lic.usersSub') }}</span></div>
         <div class="form-row">
-          <input v-model="newUser.name" class="input" placeholder="用户名" maxlength="20" />
-          <input v-model="newUser.pass" class="input" type="password" placeholder="初始密码" />
+          <input v-model="newUser.name" class="input" :placeholder="t('lic.phUser')" maxlength="20" />
+          <input v-model="newUser.pass" class="input" type="password" :placeholder="t('lic.phPass')" />
           <select v-model="newUser.role" class="input">
-            <option value="auditor">只读</option>
-            <option value="operator">操作员</option>
-            <option value="admin">管理员</option>
+            <option value="auditor">{{ t('lic.rAuditor') }}</option>
+            <option value="operator">{{ t('lic.rOperator') }}</option>
+            <option value="admin">{{ t('lic.rAdmin') }}</option>
           </select>
-          <button class="btn" :disabled="busy" @click="createUser">创建</button>
+          <button class="btn" :disabled="busy" @click="createUser">{{ t('lic.create') }}</button>
         </div>
         <div class="table-wrap" v-if="users.length">
           <table class="table">
-            <thead><tr><th>用户</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>{{ t('lic.cUser') }}</th><th>{{ t('lic.cRole') }}</th><th>{{ t('lic.cState') }}</th><th>{{ t('lic.cOps') }}</th></tr></thead>
             <tbody>
               <tr v-for="u in users" :key="u.username">
                 <td class="mono small">{{ u.username }}</td>
                 <td><span class="badge" :class="u.role === 'admin' ? 'st-success' : (u.role === 'operator' ? 'st-pending' : '')">{{ roleLabel(u.role) }}</span></td>
-                <td><span class="badge" :class="u.enabled ? 'st-success' : 'st-failed'">{{ u.enabled ? '启用' : '停用' }}</span></td>
+                <td><span class="badge" :class="u.enabled ? 'st-success' : 'st-failed'">{{ u.enabled ? t('lic.enabled') : t('lic.disabled') }}</span></td>
                 <td>
-                  <button class="btn xs" @click="askPassword(u)">改密</button>
+                  <button class="btn xs" @click="askPassword(u)">{{ t('lic.changePass') }}</button>
                   <!-- 唯一启用中的管理员: 降权/停用/删除会被后端拒(防锁死), 这里显式置灰
                        并给出原因 —— 之前是点了才报错, 用户以为"功能坏了" -->
                   <!-- 三角色后"点击轮换"容易点过头(admin→operator→auditor), 改成下拉直选 -->
                   <select class="input" style="width:92px;display:inline-block" :value="u.role" :disabled="locked(u)"
-                          :title="locked(u) ? '唯一启用的管理员不可降权(防止锁死), 请先创建其它管理员' : '切换角色'"
+                          :title="locked(u) ? t('lic.lockedRole') : t('lic.switchRole')"
                           @change="setRole(u, $event.target.value)">
-                    <option value="admin">管理员</option>
-                    <option value="operator">操作员</option>
-                    <option value="auditor">只读</option>
+                    <option value="admin">{{ t('lic.rAdmin') }}</option>
+                    <option value="operator">{{ t('lic.rOperator') }}</option>
+                    <option value="auditor">{{ t('lic.rAuditor') }}</option>
                   </select>
-                  <button class="btn xs" :disabled="locked(u)" :title="locked(u) ? '唯一启用的管理员不可停用(防止锁死), 请先创建其它管理员' : ''" @click="toggleEnable(u)">{{ u.enabled ? '停用' : '启用' }}</button>
-                  <button class="btn xs danger" :disabled="locked(u)" :title="locked(u) ? '唯一启用的管理员不可删除(防止锁死), 请先创建其它管理员' : ''" @click="delUser(u)">删除</button>
+                  <button class="btn xs" :disabled="locked(u)" :title="locked(u) ? t('lic.lockedDisable') : ''" @click="toggleEnable(u)">{{ u.enabled ? t('lic.disabled') : t('lic.enabled') }}</button>
+                  <button class="btn xs danger" :disabled="locked(u)" :title="locked(u) ? t('lic.lockedDelete') : ''" @click="delUser(u)">{{ t('common.del') }}</button>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else text="暂无用户" />
+        <Empty v-else :text="t('lic.noUsers')" />
         <div class="muted small" style="margin-top:6px">
-          唯一启用中的管理员只能改密(防止误操作锁死系统); 先创建/提升另一个管理员后, 对其全部操作即可用。
+          {{ t('lic.lockedNote') }}
         </div>
       </div>
 
       <!-- 登录会话 -->
       <div class="card">
-        <div class="card-title">登录会话 <span class="sub">token 已脱敏(前 8 位), 可吊销</span></div>
+        <div class="card-title">{{ t('lic.sessions') }} <span class="sub">{{ t('lic.sessionsSub') }}</span></div>
         <div class="table-wrap" v-if="sessions.length">
           <table class="table">
-            <thead><tr><th>Token(脱敏)</th><th>过期时间</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>{{ t('lic.cToken') }}</th><th>{{ t('lic.cExpires') }}</th><th>{{ t('lic.cState') }}</th><th>{{ t('lic.cOps') }}</th></tr></thead>
             <tbody>
               <tr v-for="(s, i) in sessions" :key="i">
                 <td class="mono small">{{ s.token }}</td>
                 <td class="mono small">{{ fmtDT(s.expiresAt) }}</td>
-                <td><span class="badge" :class="s.valid ? 'st-success' : 'st-failed'">{{ s.valid ? '有效' : '已过期' }}</span></td>
-                <td><button class="btn xs danger" @click="revoke(s)">吊销</button></td>
+                <td><span class="badge" :class="s.valid ? 'st-success' : 'st-failed'">{{ s.valid ? t('lic.valid') : t('lic.expired') }}</span></td>
+                <td><button class="btn xs danger" @click="revoke(s)">{{ t('lic.revoke') }}</button></td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else text="暂无会话" />
+        <Empty v-else :text="t('lic.noSessions')" />
       </div>
 
       <!-- 服务管理: "停止服务"按钮从顶栏移到这里(2026-09-21 收尾)—— 破坏性动作
            不该常驻全局顶栏, 放在授权与模型页降低误触; /api/quit 端点保留不变 -->
       <div class="card">
-        <div class="card-title">服务管理 <span class="sub">停止后进程退出, 需重新运行 exe</span></div>
+        <div class="card-title">{{ t('lic.svc') }} <span class="sub">{{ t('lic.svcSub') }}</span></div>
         <p class="muted small" style="margin:0 0 10px">
-          停止整个 Yugsight 服务(进程退出)。控制台窗口关闭后服务留在后台运行,
-          本按钮与登录页的"停止服务"链接是仅有的两个停止入口。
+          {{ t('lic.svcNote1') }}
+          {{ t('lic.svcNote2') }}
         </p>
-        <button class="btn quit" :disabled="busy" @click="quitService">停止服务</button>
+        <button class="btn quit" :disabled="busy" @click="quitService">{{ t('lic.quit') }}</button>
 
         <!-- 恢复出厂: 清空全部运行期数据 + 配置(打 dist 分发包发给他人前用) -->
         <div style="border-top:1px solid var(--border); margin:14px 0 10px"></div>
-        <div class="card-title">恢复出厂 <span class="sub">清空所有数据与配置, 不可恢复</span></div>
+        <div class="card-title">{{ t('lic.reset') }} <span class="sub">{{ t('lic.resetSub') }}</span></div>
         <p class="muted small" style="margin:0 0 10px">
-          清空 AI 配置 / 用户配置 / 审计日志 / 渗透审计 / 资产 / 扫描任务 / 全部报告,
-          并重置为出厂状态(初始账号 admin/admin123)。用于打包 dist 发给他人前清理。
+          {{ t('lic.resetNote1') }}
+          {{ t('lic.resetNote2') }}
         </p>
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin:0 0 10px; cursor:pointer">
-          <input type="checkbox" v-model="resetCleanEnv"> 同时清除外部引擎(nmap/ZAP)·探针包·日志(回收约 700MB)
+          <input type="checkbox" v-model="resetCleanEnv"> {{ t('lic.resetCleanEnv') }}
         </label>
         <div style="display:flex; gap:8px">
-          <input class="input" style="flex:1" v-model="resetConfirm" placeholder='输入"恢复出厂"以确认' @keyup.enter="doFactoryReset">
-          <button class="btn quit" :disabled="busy" @click="doFactoryReset">恢复出厂</button>
+          <input class="input" style="flex:1" v-model="resetConfirm" :placeholder="t('lic.resetWordPh', { w: t('lic.resetWord') })" @keyup.enter="doFactoryReset">
+          <button class="btn quit" :disabled="busy" @click="doFactoryReset">{{ t('lic.resetWord') }}</button>
         </div>
         <p v-if="resetErr" style="color:var(--danger,#ff6b6b); font-size:12px; margin:8px 0 0">{{ resetErr }}</p>
         <p v-if="resetOk" style="color:#34d399; font-size:12px; margin:8px 0 0">{{ resetOk }}</p>
@@ -134,15 +134,15 @@
            保存走 brand 节合并写, 立即生效无需重启; 仅 admin 可改
            (后端 adminOnly 是最终边界) -->
       <div class="card" v-if="role === 'admin'">
-        <div class="card-title">品牌自定义 <span class="sub">系统名称与页脚版权 · 保存后立即生效, 无需重启</span></div>
+        <div class="card-title">{{ t('lic.brand') }} <span class="sub">{{ t('lic.brandSub') }}</span></div>
         <div class="form-row" style="flex-direction:column; align-items:stretch">
-          <label class="muted small">系统名称 <span class="muted">(浏览器标签页标题 + 侧边栏顶部)</span></label>
+          <label class="muted small">{{ t('lic.sysName') }} <span class="muted">{{ t('lic.sysNameNote') }}</span></label>
           <input class="input" v-model="brand.system_name" maxlength="120" placeholder="Yugsight 御视" :disabled="brandSaving" />
-          <label class="muted small" style="margin-top:8px">版权信息 <span class="muted">(全局页脚主行)</span></label>
+          <label class="muted small" style="margin-top:8px">{{ t('lic.copyright') }} <span class="muted">{{ t('lic.copyrightNote') }}</span></label>
           <input class="input" v-model="brand.copyright" maxlength="120" placeholder="Copyright © 2026 Yugsight" :disabled="brandSaving" />
         </div>
         <div style="display:flex; align-items:center; gap:10px; margin-top:10px">
-          <button class="btn" :disabled="brandSaving || !brandDirty" @click="saveBrand">{{ brandSaving ? '保存中…' : '保存' }}</button>
+          <button class="btn" :disabled="brandSaving || !brandDirty" @click="saveBrand">{{ brandSaving ? t('lic.saving') : t('common.save') }}</button>
           <span class="muted small" v-if="brandMsg">{{ brandMsg }}</span>
         </div>
       </div>
@@ -151,21 +151,20 @@
            保存即热加载(无需重启); 换 IP 也无需改这里(服务器按访问 IP 自动签发证书),
            白名单只用于"限制谁能访问"。仅 admin 可改(后端 adminOnly 是最终边界) -->
       <div class="card" v-if="role === 'admin'">
-        <div class="card-title">HTTPS 访问白名单 <span class="sub">限制哪些 IP 可访问中心端 · 保存立即生效, 无需重启</span></div>
+        <div class="card-title">{{ t('lic.httpsWl') }} <span class="sub">{{ t('lic.httpsWlSub') }}</span></div>
         <p class="muted small" style="margin:0 0 10px">
-          留空 = <b>不限制</b>(任何人可访问, 默认)。添加 IP 或网段(如 <span class="mono">192.168.1.0/24</span>、<span class="mono">10.0.0.5</span>)后,
-          只放行列表内的来源, 其它 IP 在 TLS 握手阶段被拒。换 IP 无需改这里(服务器按访问 IP 自动签证书)。
+          {{ t('lic.httpsNote1') }}<b>{{ t('lic.httpsUnlimited') }}</b>{{ t('lic.httpsNote2') }}<span class="mono">192.168.1.0/24</span>{{ t('lic.httpsNote3') }}<span class="mono">10.0.0.5</span>{{ t('lic.httpsNote4') }}
         </p>
         <div class="form-row">
-          <input class="input" style="flex:1" v-model="httpsNew" placeholder="IP 或网段, 如 192.168.1.0/24" :disabled="httpsSaving" @keyup.enter="addHttpsIp" />
-          <button class="btn" :disabled="httpsSaving || !httpsNew.trim()" @click="addHttpsIp">添加</button>
+          <input class="input" style="flex:1" v-model="httpsNew" :placeholder="t('lic.phHttpsIp')" :disabled="httpsSaving" @keyup.enter="addHttpsIp" />
+          <button class="btn" :disabled="httpsSaving || !httpsNew.trim()" @click="addHttpsIp">{{ t('lic.add') }}</button>
         </div>
         <div class="form-row" style="flex-wrap:wrap; gap:6px; margin-top:8px" v-if="httpsIps.length">
-          <span class="badge" v-for="ip in httpsIps" :key="ip" style="cursor:pointer" @click="removeHttpsIp(ip)" :title="点击移除">{{ ip }} ×</span>
+          <span class="badge" v-for="ip in httpsIps" :key="ip" style="cursor:pointer" @click="removeHttpsIp(ip)" :title="t('lic.clickRemove')">{{ ip }} ×</span>
         </div>
-        <Empty v-else text="未启用(不限制任何 IP)" />
+        <Empty v-else :text="t('lic.httpsEmpty')" />
         <div style="display:flex; align-items:center; gap:10px; margin-top:10px">
-          <button class="btn" :disabled="httpsSaving" @click="saveHttps">{{ httpsSaving ? '保存中…' : '保存' }}</button>
+          <button class="btn" :disabled="httpsSaving" @click="saveHttps">{{ httpsSaving ? t('lic.saving') : t('common.save') }}</button>
           <span class="muted small" v-if="httpsMsg">{{ httpsMsg }}</span>
         </div>
       </div>
@@ -173,30 +172,30 @@
 
     <!-- 审计日志: 全量操作/登录/启动记录 + 筛选 + 分页 + 保存天数 -->
     <div class="card">
-      <div class="card-title">审计日志 <span class="sub">登录 / 操作 / 启动 全量记录 · 保存 {{ retention }} 天(0=不限) · 上限 5000 条 <span class="muted">| 渗透审计在「渗透工作台 → 渗透审计」单独留痕(仅管理员可清空, 清空动作留 penta.audit.clear 痕迹)</span></span></div>
+      <div class="card-title">{{ t('lic.audit') }} <span class="sub">{{ t('lic.auditSub', { n: retention }) }} <span class="muted">| {{ t('lic.auditPenta') }}</span></span></div>
       <div class="form-row" style="flex-wrap:wrap">
         <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 用户选项=审计
              记录里出现过的用户(与动作同口径, 不再用用户表全量) -->
         <select class="input" v-model="flt.user" style="width:130px">
-          <option value="">全部用户</option>
+          <option value="">{{ t('lic.allUsers') }}</option>
           <option v-for="u in auditUsers" :key="u" :value="u">{{ u }}</option>
         </select>
         <select class="input" v-model="flt.action" style="width:170px">
-          <option value="">全部动作</option>
+          <option value="">{{ t('pw.allActions') }}</option>
           <option v-for="a in actions" :key="a" :value="a">{{ a }}</option>
         </select>
-        <input class="input" v-model="flt.keyword" placeholder="关键字(对象/详情)" style="width:170px" @keyup.enter="applyFilter" />
-        <input class="input" type="date" v-model="flt.from" title="起始日期" />
-        <input class="input" type="date" v-model="flt.to" title="截止日期" />
-        <button class="btn" @click="applyFilter">筛选</button>
-        <button class="btn" @click="resetFilter">重置</button>
-        <span class="muted small" v-if="total > 0">共 {{ total }} 条</span>
+        <input class="input" v-model="flt.keyword" :placeholder="t('pw.phKeyword')" style="width:170px" @keyup.enter="applyFilter" />
+        <input class="input" type="date" v-model="flt.from" :title="t('lic.startDate')" />
+        <input class="input" type="date" v-model="flt.to" :title="t('lic.endDate')" />
+        <button class="btn" @click="applyFilter">{{ t('pw.filter') }}</button>
+        <button class="btn" @click="resetFilter">{{ t('common.reset') }}</button>
+        <span class="muted small" v-if="total > 0">{{ t('pw.totalItems', { n: total }) }}</span>
         <!-- 清理日志(admin 专属): 清空全部记录; 清空动作本身会留一条 audit.clear 记录 -->
-        <button class="btn danger" v-if="role === 'admin'" :disabled="busy || total === 0" @click="clearAudits">清空日志</button>
+        <button class="btn danger" v-if="role === 'admin'" :disabled="busy || total === 0" @click="clearAudits">{{ t('lic.clearLog') }}</button>
       </div>
       <div class="table-wrap" v-if="audits.length">
         <table class="table">
-          <thead><tr><th>时间</th><th>用户</th><th>动作</th><th>对象</th><th>详情</th><th>来源 IP</th><th v-if="role === 'admin'" style="width:70px">操作</th></tr></thead>
+          <thead><tr><th>{{ t('pw.cTime') }}</th><th>{{ t('common.user') }}</th><th>{{ t('pw.cAction') }}</th><th>{{ t('pw.cObject') }}</th><th>{{ t('pw.cDetail') }}</th><th>{{ t('pw.cClientIp') }}</th><th v-if="role === 'admin'" style="width:70px">{{ t('lic.cOps') }}</th></tr></thead>
           <tbody>
             <tr v-for="a in audits" :key="a.id">
               <td class="mono small">{{ fmtDT(a.createdAt) }}</td>
@@ -205,24 +204,24 @@
               <td class="small" :title="a.target">{{ a.target || '-' }}</td>
               <td class="small muted" :title="a.detail">{{ a.detail || '-' }}</td>
               <td class="mono small">{{ a.clientIp || '-' }}</td>
-              <td v-if="role === 'admin'"><button class="btn xs danger" @click="delAudit(a)">删除</button></td>
+              <td v-if="role === 'admin'"><button class="btn xs danger" @click="delAudit(a)">{{ t('common.del') }}</button></td>
             </tr>
           </tbody>
         </table>
       </div>
-      <Empty v-else text="暂无审计记录" />
+      <Empty v-else :text="t('lic.noAudits')" />
       <!-- 分页 -->
       <div class="form-row" v-if="total > pageSize" style="justify-content:flex-end">
-        <button class="btn xs" :disabled="page <= 1" @click="gotoPage(page - 1)">上一页</button>
+        <button class="btn xs" :disabled="page <= 1" @click="gotoPage(page - 1)">{{ t('al.prev') }}</button>
         <span class="muted small">{{ page }} / {{ totalPages }}</span>
-        <button class="btn xs" :disabled="page >= totalPages" @click="gotoPage(page + 1)">下一页</button>
+        <button class="btn xs" :disabled="page >= totalPages" @click="gotoPage(page + 1)">{{ t('al.next') }}</button>
       </div>
       <!-- 保存天数(admin): 保存后立即生效并裁剪一次 -->
       <div class="form-row" v-if="role === 'admin'">
-        <label class="muted small">日志保存天数:</label>
+        <label class="muted small">{{ t('lic.retention') }}</label>
         <input class="input" type="number" min="0" max="3650" v-model.number="retention" style="width:90px" />
-        <button class="btn" :disabled="busy" @click="saveRetention">保存</button>
-        <span class="muted small">0 = 不限制(仅受 5000 条上限裁剪)</span>
+        <button class="btn" :disabled="busy" @click="saveRetention">{{ t('common.save') }}</button>
+        <span class="muted small">{{ t('lic.retentionNote') }}</span>
       </div>
     </div>
     </div>
@@ -242,6 +241,7 @@ import { api } from '../api/http'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
 import { currentUser } from '../auth'
+import { t } from '../i18n'
 
 const router = useRouter()
 const route = useRoute()
@@ -302,17 +302,17 @@ async function loadBrand() {
 }
 
 async function saveBrand() {
-  if (!brand.value.system_name.trim() || !brand.value.copyright.trim()) { alert('系统名称与版权信息不能为空'); return }
+  if (!brand.value.system_name.trim() || !brand.value.copyright.trim()) { alert(t('lic.brandEmpty')); return }
   brandSaving.value = true
   brandMsg.value = ''
   try {
     const d = await v2('/brand', { method: 'POST', body: JSON.stringify(brand.value) })
     brand.value = { system_name: d.system_name, copyright: d.copyright }
     brandBase.value = { ...brand.value }
-    brandMsg.value = '已保存, 立即生效'
+    brandMsg.value = t('lic.savedNow')
     // 标签页标题同源更新(与 Layout 的 /api/info.brandName 一致)
     if (d.system_name) document.title = d.system_name
-  } catch (e) { brandMsg.value = e.message || '保存失败' }
+  } catch (e) { brandMsg.value = e.message || t('lic.saveFail') }
   finally { brandSaving.value = false }
 }
 
@@ -338,8 +338,8 @@ async function saveHttps() {
   try {
     const d = await v2('/https', { method: 'POST', body: JSON.stringify({ ips: httpsIps.value }) })
     httpsIps.value = (d && d.ips) || []
-    httpsMsg.value = httpsIps.value.length ? ('已保存: ' + httpsIps.value.length + ' 条, 立即生效') : '已保存: 白名单关闭(不限制)'
-  } catch (e) { httpsMsg.value = e.message || '保存失败' }
+    httpsMsg.value = httpsIps.value.length ? t('lic.httpsSaved', { n: httpsIps.value.length }) : t('lic.httpsSavedOff')
+  } catch (e) { httpsMsg.value = e.message || t('lic.saveFail') }
   finally { httpsSaving.value = false }
 }
 
@@ -352,8 +352,9 @@ const total = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const retention = ref(90) // 保存天数, 0 = 不限制
 
-const ROLE_LABELS = { admin: '管理员', operator: '操作员', auditor: '只读' }
-function roleLabel(r) { return ROLE_LABELS[r] || (r || '-') }
+// 角色键值化: 值存词条键, 渲染期 t() 解析
+const ROLE_LABELS = { admin: 'lic.rAdmin', operator: 'lic.rOperator', auditor: 'lic.rAuditor' }
+function roleLabel(r) { return ROLE_LABELS[r] ? t(ROLE_LABELS[r]) : (r || '-') }
 
 function locked(u) {
   // 唯一启用中的管理员: 后端拒绝对其降权/停用/删除(防锁死), 前端显式置灰
@@ -409,7 +410,7 @@ function gotoPage(p) { page.value = p; loadAudits() }
 
 // delAudit 删除单条审计记录(admin): 删掉后补一条 audit.delete 记录留痕
 async function delAudit(a) {
-  if (!confirm('删除这条审计记录?\n' + fmtDT(a.createdAt) + '  ' + (a.userId || '-') + '  ' + a.action)) return
+  if (!confirm(t('lic.delAuditConfirm', { x: fmtDT(a.createdAt) + '  ' + (a.userId || '-') + '  ' + a.action }))) return
   busy.value = true
   try {
     await v2('/audit/' + a.id, { method: 'DELETE' })
@@ -420,23 +421,23 @@ async function delAudit(a) {
 
 // clearAudits 清空全部审计日志(admin)。不可恢复, 二次确认里写清"会留一条凭据"
 async function clearAudits() {
-  if (!confirm('确认清空全部审计日志(当前 ' + total.value + ' 条)? 不可恢复。\n清空动作本身会写入一条 audit.clear 记录作为凭据。')) return
+  if (!confirm(t('lic.clearAuditsConfirm', { n: total.value }))) return
   busy.value = true
   try {
     const d = await v2('/audit', { method: 'DELETE' })
     page.value = 1
     actions.value = []
     await loadAudits()
-    alert('已清空审计日志 ' + ((d && d.deleted != null) ? d.deleted : 0) + ' 条')
+    alert(t('lic.auditsCleared', { n: (d && d.deleted != null) ? d.deleted : 0 }))
   } catch (e) { alert(e.message) } finally { busy.value = false }
 }
 
 async function saveRetention() {
-  if (retention.value < 0 || retention.value > 3650) { alert('保存天数需在 0~3650 之间(0 = 不限制)'); return }
+  if (retention.value < 0 || retention.value > 3650) { alert(t('lic.retentionRange')); return }
   busy.value = true
   try {
     await v2('/audit/config', { method: 'POST', body: JSON.stringify({ retentionDays: retention.value }) })
-    msg.value = '已保存: 审计日志保存 ' + retention.value + ' 天(0 = 不限制), 已立即生效'
+    msg.value = t('lic.retentionSaved', { n: retention.value })
   } catch (e) { alert(e.message) } finally { busy.value = false }
 }
 
@@ -460,7 +461,7 @@ async function loadAll() {
 }
 
 async function createUser() {
-  if (!newUser.value.name || newUser.value.pass.length < 6) { alert('用户名必填, 密码至少 6 位'); return }
+  if (!newUser.value.name || newUser.value.pass.length < 6) { alert(t('lic.userPassReq')); return }
   busy.value = true
   try {
     await v2('/users', { method: 'POST', body: JSON.stringify(newUser.value) })
@@ -470,9 +471,9 @@ async function createUser() {
 }
 
 async function askPassword(u) {
-  const p = prompt('为用户 ' + u.username + ' 设置新密码(至少 6 位):')
+  const p = prompt(t('lic.setPassPrompt', { x: u.username }))
   if (!p) return
-  if (p.length < 6) { alert('密码至少 6 位'); return }
+  if (p.length < 6) { alert(t('lic.passShort')); return }
   try {
     await v2('/users/' + u.username, { method: 'PUT', body: JSON.stringify({ password: p }) })
     await loadAll()
@@ -490,7 +491,7 @@ async function setRole(u, r) {
 }
 
 async function toggleEnable(u) {
-  if (u.enabled && !confirm('停用 ' + u.username + '? 该用户将无法登录且会话被踢出')) return
+  if (u.enabled && !confirm(t('lic.disableConfirm', { x: u.username }))) return
   try {
     await v2('/users/' + u.username, { method: 'PUT', body: JSON.stringify({ enabled: !u.enabled }) })
     await loadAll()
@@ -498,7 +499,7 @@ async function toggleEnable(u) {
 }
 
 async function delUser(u) {
-  if (!confirm('删除用户 ' + u.username + '?')) return
+  if (!confirm(t('lic.delUserConfirm', { x: u.username }))) return
   try {
     await v2('/users/' + u.username, { method: 'DELETE' })
     await loadAll()
@@ -506,7 +507,7 @@ async function delUser(u) {
 }
 
 async function revoke(s) {
-  if (!confirm('确认吊销会话 ' + s.token + ' ?')) return
+  if (!confirm(t('lic.revokeConfirm', { x: s.token }))) return
   try {
     await v2('/sessions/' + s.token, { method: 'DELETE' })
     await loadAll()
@@ -515,24 +516,24 @@ async function revoke(s) {
 
 // 停止整个服务(进程退出)。/api/quit 免登录; 服务停止后页面不可达, 原地提示而不是跳转。
 async function quitService() {
-  if (!confirm('确定停止 Yugsight 服务？停止后本页面将不可访问，重新双击 exe 可再启动。')) return
+  if (!confirm(t('lic.quitConfirm'))) return
   try { await api('/api/quit', { method: 'POST' }) } catch (e) { /* 服务停止瞬间连接中断属正常 */ }
   document.body.innerHTML = '<p style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#7d8db0;font-size:14px">'
-    + 'Yugsight 服务已停止。如需继续使用，重新运行 yugsight_windows_amd64.exe。</p>'
+    + t('lic.stoppedPage') + '</p>'
 }
 
 // 一键恢复出厂: 清空全部运行期数据 + 配置(打 dist 分发包发给他人前)。
 // 需输入"恢复出厂"确认; cleanEnv 勾选时额外清外部引擎/探针包/日志。
 async function doFactoryReset() {
-  if (resetConfirm.value !== '恢复出厂') { resetErr.value = '请输入"恢复出厂"以确认'; return }
-  if (!confirm('确定恢复出厂？将清空所有数据与配置(不可恢复)。' + (resetCleanEnv.value ? ' 同时清除外部引擎/探针包/日志。' : ''))) return
+  if (resetConfirm.value !== t('lic.resetWord')) { resetErr.value = t('lic.resetWordErr', { w: t('lic.resetWord') }); return }
+  if (!confirm(t('lic.resetConfirm') + (resetCleanEnv.value ? t('lic.resetCleanEnv2') : ''))) return
   busy.value = true
   resetErr.value = ''; resetOk.value = ''
   try {
     const d = await v2('/factory-reset', { method: 'POST', body: JSON.stringify({ cleanEnv: resetCleanEnv.value }) })
-    resetOk.value = '已恢复出厂：清空数据 ' + (d.cleared || 0) + ' 条。请点"停止服务"退出后再复制 dist 分发。'
+    resetOk.value = t('lic.resetDone', { n: d.cleared || 0 })
     resetConfirm.value = ''
-  } catch (e) { resetErr.value = e.message || '恢复出厂失败' }
+  } catch (e) { resetErr.value = e.message || t('lic.resetFail') }
   finally { busy.value = false }
 }
 
