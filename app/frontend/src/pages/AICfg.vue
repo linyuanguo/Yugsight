@@ -16,6 +16,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../api/http'
 import { fmtDT } from '../utils'
+import { t } from '../i18n'
 import PageHeader from '../components/PageHeader.vue'
 import AiPromptEditor from '../components/AiPromptEditor.vue'
 
@@ -87,7 +88,7 @@ async function saveBasic() {
         maxTokens: +basic.maxTokens, temperature: +basic.temperature, topP: +basic.topP
       })
     })
-    say(true, '基础参数已保存并启用(关闭状态下不发起任何 LLM 调用)')
+    say(true, t('aic.saveBasicOk'))
     await loadStatus()
   } catch (e) { say(false, e.message) }
 }
@@ -98,7 +99,7 @@ async function saveModules() {
       method: 'POST',
       body: JSON.stringify({ modules: { ...modules } })
     })
-    say(true, '模块开关已保存(关闭后业务页 AI 分析按钮置灰)')
+    say(true, t('aic.saveModulesOk'))
     await loadStatus()
   } catch (e) { say(false, e.message) }
 }
@@ -117,12 +118,12 @@ async function testConn() {
     })
     if (d.ok) {
       const samples = (d.models && d.models.length)
-        ? `；可用模型示例: ${d.models.slice(0, 5).join(', ')}${d.models.length > 5 ? '…' : ''}`
+        ? t('aic.modelSamples', { x: d.models.slice(0, 5).join(', ') + (d.models.length > 5 ? '…' : '') })
         : ''
-      testInfo.value = `连通成功${samples}`
-      if (d.modelMsg) testInfo.value += `（${d.modelMsg}）`
+      testInfo.value = t('aic.connOk', { x: samples })
+      if (d.modelMsg) testInfo.value += t('aic.modelMsgWrap', { x: d.modelMsg })
     } else {
-      testInfo.value = `连通失败: ${d.error || '未知错误'}`
+      testInfo.value = t('aic.connFail', { x: d.error || t('aic.unknownErr') })
     }
     say(!!d.ok, testInfo.value)
   } catch (e) {
@@ -168,9 +169,7 @@ async function saveAssistant() {
         model: basic.model
       })
     })
-    say(true, assistant.enabled
-      ? '小 Y 已启用(各页面右下角出现助手入口, 即时生效)'
-      : '小 Y 已关闭(助手入口全局隐藏, 问答接口返回未启用)')
+    say(true, assistant.enabled ? t('aic.assistOn') : t('aic.assistOff'))
     await Promise.all([loadAssistant(), loadStatus()])
   } catch (e) {
     say(false, e.message)
@@ -181,7 +180,7 @@ async function saveAssistant() {
 
 // 恢复默认 PROMPT: 提交空串 = 后端回退内置默认
 async function resetAssistantPrompt() {
-  if (!confirm('恢复系统提示词为内置默认? 当前自定义内容将丢弃。')) return
+  if (!confirm(t('aic.resetPromptConfirm'))) return
   assistant.prompt = ''
   assistantSaving.value = true
   try {
@@ -189,7 +188,7 @@ async function resetAssistantPrompt() {
       method: 'POST',
       body: JSON.stringify({ prompt: '' })
     })
-    say(true, '系统提示词已恢复为内置默认')
+    say(true, t('aic.resetPromptOk'))
     await loadAssistant()
   } catch (e) {
     say(false, e.message)
@@ -210,7 +209,7 @@ async function loadTemplates() {
     for (const t of d.templates || []) {
       tpls[t.key] = { ...t }
     }
-  } catch (e) { say(false, '模板加载失败: ' + e.message) }
+  } catch (e) { say(false, t('aic.tplLoadFail', { err: e.message })) }
 }
 
 async function saveTpl(key) {
@@ -221,17 +220,17 @@ async function saveTpl(key) {
       method: 'POST',
       body: JSON.stringify({ key, name: p.name, content: p.content, rag: p.rag, topK: +p.topK })
     })
-    say(true, `「${p.label}」已保存(业务页点 AI 分析时自动绑定)`)
+    say(true, t('aic.tplSaved', { x: p.label }))
   } catch (e) { say(false, e.message) } finally {
     tplBusy.value[key] = false
   }
 }
 
 async function resetTpl(key) {
-  if (!confirm(`恢复「${tpls[key].label}」为默认模板? 当前内容将丢弃。`)) return
+  if (!confirm(t('aic.tplResetConfirm', { x: tpls[key].label }))) return
   try {
     await api('/api/ai/templates/reset', { method: 'POST', body: JSON.stringify({ key }) })
-    say(true, '已恢复默认模板')
+    say(true, t('aic.tplResetOk'))
     await loadTemplates()
   } catch (e) { say(false, e.message) }
 }
@@ -241,7 +240,10 @@ const rag = reactive({ enabled: true, topK: 3, chunkSize: 800 })
 const ragDocs = ref([])
 const ragBusy = ref(false)
 const up = reactive({ name: '', category: '安全基线', content: '' })
+// 分类是落库数据值(中文存库, 与存量文档一致), 显示走词条映射, 未匹配原样
 const categories = ['安全基线', '漏洞手册', '设备资料', '运维文档', '其它']
+const CAT_KEY = { 安全基线: 'aic.cat1', 漏洞手册: 'aic.cat2', 设备资料: 'aic.cat3', 运维文档: 'aic.cat4', 其它: 'aic.cat5' }
+function aicCat(c) { return CAT_KEY[c] ? t(CAT_KEY[c]) : c }
 const searchQ = ref('')
 const searchHits = ref(null)
 const searchMode = ref('') // 检索预览回带的实际模式(vector/keyword)
@@ -275,7 +277,7 @@ async function loadRAG() {
       rr.model = d.reranker.model || ''
       rr.topN = d.reranker.topN || 5
     }
-  } catch (e) { say(false, '文档库加载失败: ' + e.message) }
+  } catch (e) { say(false, t('aic.ragLoadFail', { err: e.message })) }
 }
 
 async function saveRagCfg() {
@@ -284,7 +286,7 @@ async function saveRagCfg() {
       method: 'POST',
       body: JSON.stringify({ enabled: rag.enabled, topK: +rag.topK, chunkSize: +rag.chunkSize })
     })
-    say(true, 'RAG 参数已保存')
+    say(true, t('aic.ragSaved'))
     await loadRAG()
   } catch (e) { say(false, e.message) }
 }
@@ -301,9 +303,7 @@ async function saveEmb() {
         }
       })
     })
-    say(true, emb.enabled
-      ? 'Embedding 已启用(后台开始向量化文档, 换模型/维度自动重算)'
-      : 'Embedding 已禁用(检索走内置关键词)')
+    say(true, emb.enabled ? t('aic.embOn') : t('aic.embOff'))
     await loadRAG()
   } catch (e) { say(false, e.message) }
 }
@@ -320,7 +320,7 @@ async function saveRR() {
         }
       })
     })
-    say(true, rr.enabled ? 'Reranker 已启用(初筛后重排序)' : 'Reranker 已禁用(返回初筛结果)')
+    say(true, rr.enabled ? t('aic.rrOn') : t('aic.rrOff'))
     await loadRAG()
   } catch (e) { say(false, e.message) }
 }
@@ -328,13 +328,13 @@ async function saveRR() {
 function onFilePick(e) {
   const f = e.target.files && e.target.files[0]
   if (!f) return
-  if (f.size > 2 * 1024 * 1024) { say(false, '文档超过 2MB 上限'); return }
+  if (f.size > 2 * 1024 * 1024) { say(false, t('aic.fileTooBig')); return }
   const reader = new FileReader()
   reader.onload = () => {
     up.content = String(reader.result || '')
     if (!up.name) up.name = f.name
   }
-  reader.onerror = () => say(false, '文件读取失败')
+  reader.onerror = () => say(false, t('aic.fileReadFail'))
   reader.readAsText(f)
   e.target.value = ''
 }
@@ -346,7 +346,7 @@ async function uploadDoc() {
       method: 'POST',
       body: JSON.stringify({ name: up.name, category: up.category, content: up.content })
     })
-    say(true, '文档已上传(自动分片 + 向量化, 立即可被检索)')
+    say(true, t('aic.docUploaded'))
     up.name = ''; up.content = ''
     await loadRAG()
   } catch (e) { say(false, e.message) } finally {
@@ -362,10 +362,10 @@ async function toggleDoc(id) {
 }
 
 async function delDoc(id) {
-  if (!confirm('删除该文档? 删除后其内容不再参与 RAG 检索。')) return
+  if (!confirm(t('aic.delDocConfirm'))) return
   try {
     await api('/api/ai/rag/docs/' + id, { method: 'DELETE' })
-    say(true, '文档已删除')
+    say(true, t('aic.docDeleted'))
     await loadRAG()
   } catch (e) { say(false, e.message) }
 }
@@ -393,7 +393,7 @@ async function loadMemory() {
     mem.maxItems = c.maxItems || 20
     mem.compress = c.compress !== false
     if (c.scopes) mem.scopes = { ...c.scopes }
-  } catch (e) { say(false, '记忆库加载失败: ' + e.message) }
+  } catch (e) { say(false, t('aic.memLoadFail', { err: e.message })) }
 }
 
 // 模板里直接写 {{ '{{var}}' }} 会被 Vue 解析器在 }} 处截断(既有坑),
@@ -411,7 +411,7 @@ async function saveMem() {
         maxItems: +mem.maxItems, compress: mem.compress, scopes: { ...mem.scopes }
       })
     })
-    say(true, '记忆库配置已保存(AI 分析时自动注入 {{structured_memory}})')
+    say(true, t('aic.memSaved'))
     await loadStatus()
   } catch (e) { say(false, e.message) }
 }
@@ -419,21 +419,21 @@ async function saveMem() {
 
 <template>
   <div>
-    <PageHeader v-if="!props.embedded" title="AI 配置" desc="全局参数 / Prompt 模板 / RAG 文档库 / 结构化记忆库 —— 分析触发入口在各业务页面(抓包/扫描/弱口令/节点监控)">
+    <PageHeader v-if="!props.embedded" :title="t('aic.title')" :desc="t('aic.desc')">
       <div class="chip" :class="st && st.enabled ? 'on' : 'off'">
-        {{ st && st.enabled ? 'AI 已启用' : 'AI 未启用' }}
+        {{ st && st.enabled ? t('aic.enabled') : t('aic.disabled') }}
       </div>
       <span class="muted small mono" v-if="st && st.model">{{ st.backend }} · {{ st.model }}</span>
       <span class="muted small" v-if="msg" style="color:var(--ok,#4cb782)">{{ msg }}</span>
       <span class="muted small" v-if="err" style="color:var(--danger,#e5484d)">{{ err }}</span>
-      <button class="btn sm" @click="loadStatus">刷新</button>
+      <button class="btn sm" @click="loadStatus">{{ t('common.refresh') }}</button>
     </PageHeader>
 
     <div class="tabs" style="margin-bottom:14px">
-      <div class="tab" :class="{ active: tab === 'api' }" @click="tab = 'api'">① 接口基础配置</div>
-      <div class="tab" :class="{ active: tab === 'tpl' }" @click="tab = 'tpl'">② Prompt 模板</div>
-      <div class="tab" :class="{ active: tab === 'rag' }" @click="tab = 'rag'">③ 文档库 (RAG)</div>
-      <div class="tab" :class="{ active: tab === 'mem' }" @click="tab = 'mem'">④ 结构化记忆库</div>
+      <div class="tab" :class="{ active: tab === 'api' }" @click="tab = 'api'">{{ t('aic.tabApi') }}</div>
+      <div class="tab" :class="{ active: tab === 'tpl' }" @click="tab = 'tpl'">{{ t('aic.tabTpl') }}</div>
+      <div class="tab" :class="{ active: tab === 'rag' }" @click="tab = 'rag'">{{ t('aic.tabRag') }}</div>
+      <div class="tab" :class="{ active: tab === 'mem' }" @click="tab = 'mem'">{{ t('aic.tabMem') }}</div>
     </div>
 
     <!-- ① 接口基础配置 -->
@@ -441,43 +441,43 @@ async function saveMem() {
       <!-- 小 Y 助手(2026-09-27): 配置项自上而下 = ①总开关 ②模型基础配置 ③系统提示词(PROMPT) -->
       <div class="card">
         <div class="card-title">
-          小 Y 助手(页面问答)
-          <span class="sub">各页面右下角悬浮入口, 基于「系统 PROMPT + 当前页面数据」回答运维问题</span>
+          {{ t('aic.assistTitle') }}
+          <span class="sub">{{ t('aic.assistSub') }}</span>
           <div class="spacer"></div>
-          <span class="chip" :class="assistantEff ? 'on' : 'off'">{{ assistantEff ? '助手已启用' : '助手未启用' }}</span>
-          <label class="chk"><input type="checkbox" v-model="assistant.enabled" @change="saveAssistant"> 小 Y 总开关</label>
+          <span class="chip" :class="assistantEff ? 'on' : 'off'">{{ assistantEff ? t('aic.assistOnChip') : t('aic.assistOffChip') }}</span>
+          <label class="chk"><input type="checkbox" v-model="assistant.enabled" @change="saveAssistant"> {{ t('aic.assistToggle') }}</label>
         </div>
         <p class="muted small" style="margin:0 0 10px">
-          关闭时: 下方配置项全部置灰不可编辑, 问答接口返回「未启用」, 各页面右下角助手入口全局隐藏;
-          开启时联动启用 AI 全局开关(小 Y 依赖 LLM 调用), 关闭小 Y 不影响抓包/扫描/监控的 AI 分析。
+          {{ t('aic.assistNote1') }}
+          {{ t('aic.assistNote2') }}
         </p>
         <!-- ② AI 模型基础配置: 与下方"AI 接口基础参数"卡共用数据源(basic.*), 随"保存小 Y 配置"落盘 -->
         <div class="form-grid" :class="{ dimmed: !assistant.enabled }">
           <div class="field">
-            <label class="label">模型接口地址</label>
+            <label class="label">{{ t('aic.apiBase') }}</label>
             <input class="input mono" :disabled="!assistant.enabled" v-model.trim="basic.apiBase" placeholder="http://127.0.0.1:11434/v1">
           </div>
           <div class="field">
-            <label class="label">认证密钥(本地模型可留空)</label>
-            <input class="input mono" :type="showKey ? 'text' : 'password'" :disabled="!assistant.enabled" v-model.trim="basic.apiKey" placeholder="本地 Ollama 可留空">
-            <label class="checkbox" style="margin-top:6px"><input type="checkbox" :checked="showKey" :disabled="!assistant.enabled" @change="showKey = !showKey"> 显示密钥</label>
+            <label class="label">{{ t('aic.apiKey') }}</label>
+            <input class="input mono" :type="showKey ? 'text' : 'password'" :disabled="!assistant.enabled" v-model.trim="basic.apiKey" :placeholder="t('aic.phApiKey')">
+            <label class="checkbox" style="margin-top:6px"><input type="checkbox" :checked="showKey" :disabled="!assistant.enabled" @change="showKey = !showKey"> {{ t('aic.showKey') }}</label>
           </div>
           <div class="field">
-            <label class="label">模型名称</label>
+            <label class="label">{{ t('aic.modelName') }}</label>
             <input class="input mono" :disabled="!assistant.enabled" v-model.trim="basic.model" placeholder="qwen2.5:7b">
           </div>
         </div>
         <!-- ③ 系统提示词(PROMPT): 自定义小 Y 的人设/回答规则/输出约束/安全边界 -->
         <div style="margin-top:12px">
           <div class="form-row" style="margin-bottom:8px; align-items:center">
-            <label class="label" style="margin:0">系统提示词(PROMPT)</label>
+            <label class="label" style="margin:0">{{ t('aic.prompt') }}</label>
             <span class="muted small">
-              {{ assistantInfo && assistantInfo.hasCustomPrompt ? '当前为自定义' : '当前为内置默认' }} —— 保存后即时生效, 无需重启
+              {{ assistantInfo && assistantInfo.hasCustomPrompt ? t('aic.customNow') : t('aic.builtinNow') }} {{ t('aic.effectiveNote') }}
             </span>
             <div class="spacer"></div>
-            <button class="btn sm" :disabled="!assistant.enabled" @click="resetAssistantPrompt">恢复默认</button>
+            <button class="btn sm" :disabled="!assistant.enabled" @click="resetAssistantPrompt">{{ t('aic.resetDefault') }}</button>
             <button class="btn sm primary" :disabled="!assistant.enabled || assistantSaving" @click="saveAssistant">
-              <span class="spinner" v-if="assistantSaving"></span> 保存小 Y 配置
+              <span class="spinner" v-if="assistantSaving"></span> {{ t('aic.saveAssist') }}
             </button>
           </div>
           <AiPromptEditor v-model="assistant.prompt" :vars="[]" :disabled="!assistant.enabled" height="200px" />
@@ -486,62 +486,62 @@ async function saveMem() {
 
       <div class="card">
         <div class="card-title">
-          AI 接口基础参数
-          <span class="sub">小 Y 与全链路 AI 分析共用(地址/密钥/模型在上方小 Y 卡配置)</span>
+          {{ t('aic.basicTitle') }}
+          <span class="sub">{{ t('aic.basicSub') }}</span>
         </div>
         <div class="form-grid">
           <div class="field">
-            <label class="label">请求超时(秒)</label>
+            <label class="label">{{ t('aic.timeout') }}</label>
             <input class="input" type="number" min="5" v-model.number="basic.timeoutSec">
           </div>
           <div class="field">
-            <label class="label">最大上下文长度(输入预算, 字符)</label>
+            <label class="label">{{ t('aic.maxContext') }}</label>
             <input class="input" type="number" min="1000" step="1000" v-model.number="basic.maxContext">
           </div>
           <div class="field">
-            <label class="label">最大输出 token</label>
+            <label class="label">{{ t('aic.maxTokens') }}</label>
             <input class="input" type="number" min="256" step="256" v-model.number="basic.maxTokens">
           </div>
           <div class="field">
-            <label class="label">temperature(采样温度 0-2)</label>
+            <label class="label">{{ t('aic.temperature') }}</label>
             <input class="input" type="number" min="0" max="2" step="0.1" v-model.number="basic.temperature">
           </div>
           <div class="field">
-            <label class="label">top_p(核采样 0-1)</label>
+            <label class="label">{{ t('aic.topP') }}</label>
             <input class="input" type="number" min="0" max="1" step="0.05" v-model.number="basic.topP">
           </div>
         </div>
         <div class="form-row" style="margin-top:12px">
           <div class="spacer"></div>
           <span class="muted small" v-if="testInfo">{{ testInfo }}</span>
-          <button class="btn" :disabled="testing" @click="testConn"><span class="spinner" v-if="testing"></span> 测试连通</button>
-          <button class="btn primary" @click="saveBasic"> 保存</button>
+          <button class="btn" :disabled="testing" @click="testConn"><span class="spinner" v-if="testing"></span> {{ t('aic.testBtn') }}</button>
+          <button class="btn primary" @click="saveBasic"> {{ t('common.save') }}</button>
         </div>
         <p class="muted small" style="margin:8px 0 0">
-          「测试连通」只验证地址/密钥/模型是否可达, 不落盘; 点「保存」即写入并启用(settings.json 的 ai 节, 热生效免重启)。
+          {{ t('aic.testNote') }}
         </p>
       </div>
 
       <div class="card">
         <div class="card-title">
-          模块总开关
-          <span class="sub">关闭后对应业务页面的"AI 分析"按钮置灰不可用</span>
+          {{ t('aic.modTitle') }}
+          <span class="sub">{{ t('aic.modSub') }}</span>
         </div>
         <div class="sw-grid" style="grid-template-columns:repeat(3,1fr)">
           <label class="sw">
             <input type="checkbox" v-model="modules.capture" @change="saveModules">
-            <span>实时抓包 AI 分析</span>
-            <span class="muted small">抓包页按钮</span>
+            <span>{{ t('aic.modCapture') }}</span>
+            <span class="muted small">{{ t('aic.modCaptureSub') }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="modules.scan" @change="saveModules">
-            <span>扫描结果 AI 研判</span>
-            <span class="muted small">扫描作业 / 弱口令(共用)</span>
+            <span>{{ t('aic.modScan') }}</span>
+            <span class="muted small">{{ t('aic.modScanSub') }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="modules.monitor" @change="saveModules">
-            <span>节点监控告警 AI 分析</span>
-            <span class="muted small">节点监控页按钮</span>
+            <span>{{ t('aic.modMonitor') }}</span>
+            <span class="muted small">{{ t('aic.modMonitorSub') }}</span>
           </label>
         </div>
       </div>
@@ -550,8 +550,8 @@ async function saveMem() {
     <!-- ② Prompt 模板 -->
     <div v-if="tab === 'tpl'">
       <p class="muted small" style="margin-bottom:10px">
-        业务页点击"AI 分析"时自动绑定对应模板: 抓包 → 流量分析模板, 扫描/弱口令 → 漏洞报告模板, 节点监控 → 监控告警研判模板。
-        占位变量(编辑器内高亮, 未知变量橙色提醒):
+        {{ t('aic.tplIntro') }}
+        {{ t('aic.tplVarsNote') }}
         <span class="badge mono" v-for="v in tplVars" :key="v">{{ vbrace(v) }}</span>
       </p>
       <div class="card" v-for="p in tpls" :key="p.key" style="margin-bottom:14px">
@@ -559,18 +559,18 @@ async function saveMem() {
           {{ p.label }}
           <span class="muted small mono">{{ p.key }}</span>
           <div class="spacer"></div>
-          <label class="chk"><input type="checkbox" v-model="p.rag"> 启用 RAG 检索文档片段</label>
-          <label class="chk">RAG 条数 <input class="input" type="number" min="1" max="10" style="width:60px" v-model.number="p.topK"></label>
+          <label class="chk"><input type="checkbox" v-model="p.rag"> {{ t('aic.tplRag') }}</label>
+          <label class="chk">{{ t('aic.tplTopK') }} <input class="input" type="number" min="1" max="10" style="width:60px" v-model.number="p.topK"></label>
         </div>
         <div class="form-row" style="margin-bottom:10px">
           <div class="field" style="max-width:280px">
-            <label class="label">模板名称</label>
+            <label class="label">{{ t('aic.tplName') }}</label>
             <input class="input" v-model.trim="p.name">
           </div>
           <div class="spacer"></div>
-          <button class="btn sm" :disabled="!!tplBusy[p.key]" @click="resetTpl(p.key)">恢复默认</button>
+          <button class="btn sm" :disabled="!!tplBusy[p.key]" @click="resetTpl(p.key)">{{ t('aic.resetDefault') }}</button>
           <button class="btn sm primary" :disabled="!!tplBusy[p.key] || !p.content.trim()" @click="saveTpl(p.key)">
-            <span class="spinner" v-if="tplBusy[p.key]"></span> 保存模板
+            <span class="spinner" v-if="tplBusy[p.key]"></span> {{ t('aic.saveTpl') }}
           </button>
         </div>
         <AiPromptEditor v-model="p.content" :vars="tplVars" height="240px" />
@@ -581,166 +581,166 @@ async function saveMem() {
     <div v-if="tab === 'rag'">
       <div class="card">
         <div class="card-title">
-          知识库参数
-          <span class="sub">非结构化文档: 分片 → 向量化/关键词检索 → 重排序(可选) → 注入 LLM</span>
+          {{ t('aic.ragTitle') }}
+          <span class="sub">{{ t('aic.ragSub') }}</span>
           <div class="spacer"></div>
-          <label class="chk"><input type="checkbox" v-model="rag.enabled" @change="saveRagCfg"> 启用文档库</label>
-          <label class="chk">检索条数 TopK <input class="input" type="number" min="1" max="10" style="width:60px" v-model.number="rag.topK" @change="saveRagCfg"></label>
-          <label class="chk">分片大小 <input class="input" type="number" min="100" step="100" style="width:80px" v-model.number="rag.chunkSize" @change="saveRagCfg"></label>
+          <label class="chk"><input type="checkbox" v-model="rag.enabled" @change="saveRagCfg"> {{ t('aic.ragEnable') }}</label>
+          <label class="chk">{{ t('aic.ragTopK') }} <input class="input" type="number" min="1" max="10" style="width:60px" v-model.number="rag.topK" @change="saveRagCfg"></label>
+          <label class="chk">{{ t('aic.ragChunk') }} <input class="input" type="number" min="100" step="100" style="width:80px" v-model.number="rag.chunkSize" @change="saveRagCfg"></label>
         </div>
       </div>
 
       <div class="card">
         <div class="card-title">
-          Embedding 向量嵌入接口
-          <span class="sub">OpenAI 兼容 /embeddings; 关闭 = 检索走内置关键词(自动降级)</span>
+          {{ t('aic.embTitle') }}
+          <span class="sub">{{ t('aic.embSub') }}</span>
           <div class="spacer"></div>
-          <label class="chk"><input type="checkbox" v-model="emb.enabled" @change="saveEmb"> 启用向量检索</label>
+          <label class="chk"><input type="checkbox" v-model="emb.enabled" @change="saveEmb"> {{ t('aic.embEnable') }}</label>
         </div>
         <div class="form-grid" :class="{ dimmed: !emb.enabled }">
           <div class="field">
-            <label class="label">接口地址</label>
+            <label class="label">{{ t('aic.embApi') }}</label>
             <input class="input mono" :disabled="!emb.enabled" v-model.trim="emb.apiBase" placeholder="http://127.0.0.1:8080/v1">
           </div>
           <div class="field">
-            <label class="label">API Key(本地可留空)</label>
-            <input class="input mono" :type="embShowKey ? 'text' : 'password'" :disabled="!emb.enabled" v-model.trim="emb.apiKey" placeholder="本地模型可留空">
+            <label class="label">{{ t('aic.embKey') }}</label>
+            <input class="input mono" :type="embShowKey ? 'text' : 'password'" :disabled="!emb.enabled" v-model.trim="emb.apiKey" :placeholder="t('aic.phApiKey')">
           </div>
           <div class="field">
-            <label class="label">模型名称</label>
+            <label class="label">{{ t('aic.modelName') }}</label>
             <input class="input mono" :disabled="!emb.enabled" v-model.trim="emb.model" placeholder="bge-m3">
           </div>
           <div class="field">
-            <label class="label">批次大小</label>
+            <label class="label">{{ t('aic.embBatch') }}</label>
             <input class="input" type="number" min="1" :disabled="!emb.enabled" v-model.number="emb.batchSize">
           </div>
           <div class="field">
-            <label class="label">向量维度(与服务端一致)</label>
+            <label class="label">{{ t('aic.embDim') }}</label>
             <input class="input" type="number" min="8" :disabled="!emb.enabled" v-model.number="emb.dimension">
           </div>
         </div>
         <div class="form-row" style="margin-top:12px">
-          <label class="checkbox" style="max-width:120px"><input type="checkbox" :checked="embShowKey" :disabled="!emb.enabled" @change="embShowKey = !embShowKey"> 显示 Key</label>
+          <label class="checkbox" style="max-width:120px"><input type="checkbox" :checked="embShowKey" :disabled="!emb.enabled" @change="embShowKey = !embShowKey"> {{ t('aic.showKeyEmb') }}</label>
           <div class="spacer"></div>
-          <span class="muted small" v-if="emb.enabled && (!emb.apiBase || !emb.model)">提示: 未填接口地址/模型时, 检索会自动降级为关键词</span>
-          <button class="btn" :disabled="!emb.enabled" @click="saveEmb">保存 Embedding</button>
+          <span class="muted small" v-if="emb.enabled && (!emb.apiBase || !emb.model)">{{ t('aic.embHint') }}</span>
+          <button class="btn" :disabled="!emb.enabled" @click="saveEmb">{{ t('aic.saveEmb') }}</button>
         </div>
         <p class="muted small" style="margin:8px 0 0">
-          启用后文档将向量化并落库(换模型/维度自动重算); 未启用的组件不初始化、不占资源。检索失败自动降级关键词, 不中断分析。
+          {{ t('aic.embNote') }}
         </p>
       </div>
 
       <div class="card">
         <div class="card-title">
-          Reranker 重排序接口
-          <span class="sub">OpenAI/Jina 兼容 /rerank; 关闭 = 直接返回初筛结果(自动降级)</span>
+          {{ t('aic.rrTitle') }}
+          <span class="sub">{{ t('aic.rrSub') }}</span>
           <div class="spacer"></div>
-          <label class="chk"><input type="checkbox" v-model="rr.enabled" @change="saveRR"> 启用重排序</label>
+          <label class="chk"><input type="checkbox" v-model="rr.enabled" @change="saveRR"> {{ t('aic.rrEnable') }}</label>
         </div>
         <div class="form-grid" :class="{ dimmed: !rr.enabled }">
           <div class="field">
-            <label class="label">接口地址</label>
+            <label class="label">{{ t('aic.embApi') }}</label>
             <input class="input mono" :disabled="!rr.enabled" v-model.trim="rr.apiBase" placeholder="http://127.0.0.1:8903/v1">
           </div>
           <div class="field">
-            <label class="label">API Key</label>
-            <input class="input mono" :type="rrShowKey ? 'text' : 'password'" :disabled="!rr.enabled" v-model.trim="rr.apiKey" placeholder="本地模型可留空">
+            <label class="label">{{ t('aic.rrKey') }}</label>
+            <input class="input mono" :type="rrShowKey ? 'text' : 'password'" :disabled="!rr.enabled" v-model.trim="rr.apiKey" :placeholder="t('aic.phApiKey')">
           </div>
           <div class="field">
-            <label class="label">模型名称</label>
+            <label class="label">{{ t('aic.modelName') }}</label>
             <input class="input mono" :disabled="!rr.enabled" v-model.trim="rr.model" placeholder="bge-reranker-v2-m3">
           </div>
           <div class="field">
-            <label class="label">重排序返回数量 topN</label>
+            <label class="label">{{ t('aic.rrTopN') }}</label>
             <input class="input" type="number" min="1" max="50" :disabled="!rr.enabled" v-model.number="rr.topN">
           </div>
         </div>
         <div class="form-row" style="margin-top:12px">
-          <label class="checkbox" style="max-width:120px"><input type="checkbox" :checked="rrShowKey" :disabled="!rr.enabled" @change="rrShowKey = !rrShowKey"> 显示 Key</label>
+          <label class="checkbox" style="max-width:120px"><input type="checkbox" :checked="rrShowKey" :disabled="!rr.enabled" @change="rrShowKey = !rrShowKey"> {{ t('aic.showKeyEmb') }}</label>
           <div class="spacer"></div>
-          <button class="btn" :disabled="!rr.enabled" @click="saveRR">保存 Reranker</button>
+          <button class="btn" :disabled="!rr.enabled" @click="saveRR">{{ t('aic.saveRR') }}</button>
         </div>
         <p class="muted small" style="margin:8px 0 0">
-          对初筛候选池重打分排序; 调用失败自动回退初筛顺序, 不中断分析。
+          {{ t('aic.rrNote') }}
         </p>
       </div>
 
       <div class="card">
-        <div class="card-title">上传文档(文本类: .txt / .md / .html / .json / .yaml / .log)</div>
+        <div class="card-title">{{ t('aic.uploadTitle') }}</div>
         <div class="form-grid">
           <div class="field">
-            <label class="label">文档名称</label>
-            <input class="input" v-model.trim="up.name" placeholder="如: 等保 2.0 三级基线">
+            <label class="label">{{ t('aic.docName') }}</label>
+            <input class="input" v-model.trim="up.name" :placeholder="t('aic.phDocName')">
           </div>
           <div class="field">
-            <label class="label">分类</label>
+            <label class="label">{{ t('aic.docCat') }}</label>
             <select class="input" v-model="up.category">
-              <option v-for="c in categories" :key="c">{{ c }}</option>
+              <option v-for="c in categories" :key="c">{{ aicCat(c) }}</option>
             </select>
           </div>
         </div>
         <div class="form-row" style="margin-top:10px">
           <input type="file" class="input" accept=".txt,.md,.markdown,.html,.json,.yaml,.yml,.log,.csv" @change="onFilePick">
-          <span class="muted small">或直接在下方粘贴文本</span>
+          <span class="muted small">{{ t('aic.orPaste') }}</span>
           <div class="spacer"></div>
           <button class="btn primary" :disabled="ragBusy || !up.name || !up.content.trim()" @click="uploadDoc">
-            <span class="spinner" v-if="ragBusy"></span> 上传并分片
+            <span class="spinner" v-if="ragBusy"></span> {{ t('aic.uploadBtn') }}
           </button>
         </div>
         <textarea class="input mono" v-model="up.content" rows="5" style="margin-top:10px"
-          placeholder="粘贴文档内容…(上传时自动分片 + 向量化)"></textarea>
+          :placeholder="t('aic.phDocContent')"></textarea>
       </div>
 
       <div class="card">
         <div class="card-title">
-          文档列表
-          <span class="chip">共 {{ ragDocs.length }} 篇</span>
+          {{ t('aic.docList') }}
+          <span class="chip">{{ t('aic.docCount', { n: ragDocs.length }) }}</span>
         </div>
         <div class="table-wrap" v-if="ragDocs.length">
           <table class="table">
-            <thead><tr><th>名称</th><th>分类</th><th>分片数</th><th>大小</th><th>上传时间</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>{{ t('aic.cName') }}</th><th>{{ t('aic.cCat') }}</th><th>{{ t('aic.cChunks') }}</th><th>{{ t('aic.cSize') }}</th><th>{{ t('aic.cUploaded') }}</th><th>{{ t('aic.cState') }}</th><th>{{ t('aic.cOps') }}</th></tr></thead>
             <tbody>
               <tr v-for="d in ragDocs" :key="d.id" :class="{ 'row-off': !d.enabled }">
                 <td><b class="small">{{ d.name }}</b></td>
-                <td><span class="badge blue">{{ d.category }}</span></td>
+                <td><span class="badge blue">{{ aicCat(d.category) }}</span></td>
                 <td class="mono">{{ d.chunks }}</td>
                 <td class="muted small">{{ (d.size / 1024).toFixed(1) }} KB</td>
                 <td class="muted small">{{ fmtDT(d.createdAt) }}</td>
                 <td>
-                  <span class="chip" :class="d.enabled ? 'on' : 'off'">{{ d.enabled ? '启用' : '禁用' }}</span>
+                  <span class="chip" :class="d.enabled ? 'on' : 'off'">{{ d.enabled ? t('aic.stateOn') : t('aic.stateOff') }}</span>
                 </td>
                 <td style="white-space:nowrap">
-                  <button class="btn sm" @click="toggleDoc(d.id)">{{ d.enabled ? '禁用' : '启用' }}</button>
-                  <button class="btn sm danger" @click="delDoc(d.id)">删除</button>
+                  <button class="btn sm" @click="toggleDoc(d.id)">{{ d.enabled ? t('aic.stateOff') : t('aic.stateOn') }}</button>
+                  <button class="btn sm danger" @click="delDoc(d.id)">{{ t('common.del') }}</button>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p class="muted small" v-else>暂无文档 —— 上传安全基线 / 漏洞手册 / 设备资料 / 运维文档后, 模板开启 RAG 绑定时自动检索注入。</p>
+        <p class="muted small" v-else>{{ t('aic.noDocs') }}</p>
       </div>
 
       <div class="card">
-        <div class="card-title">检索预览(验证文档可被检索到)</div>
+        <div class="card-title">{{ t('aic.searchTitle') }}</div>
         <div class="form-row">
-          <input class="input mono" style="max-width:340px" v-model="searchQ" placeholder="如: Redis 未授权访问" @keyup.enter="doSearch">
-          <button class="btn sm" @click="doSearch" :disabled="!searchQ.trim()">检索</button>
+          <input class="input mono" style="max-width:340px" v-model="searchQ" :placeholder="t('aic.phSearch')" @keyup.enter="doSearch">
+          <button class="btn sm" @click="doSearch" :disabled="!searchQ.trim()">{{ t('aic.searchBtn') }}</button>
           <span class="muted small" v-if="searchMode">
-            当前检索模式: <b :style="{ color: searchMode === 'vector' ? 'var(--ok,#4cb782)' : 'var(--warn,#e0a53a)' }">{{ searchMode === 'vector' ? '向量检索' : '关键词(降级)' }}</b>
+            {{ t('aic.searchMode') }} <b :style="{ color: searchMode === 'vector' ? 'var(--ok,#4cb782)' : 'var(--warn,#e0a53a)' }">{{ searchMode === 'vector' ? t('aic.modeVector') : t('aic.modeKw') }}</b>
           </span>
         </div>
-        <div class="muted small" v-if="searchHits === null && searchQ">输入关键词后点"检索"。</div>
+        <div class="muted small" v-if="searchHits === null && searchQ">{{ t('aic.searchHint') }}</div>
         <div v-else-if="searchHits && searchHits.length">
           <div class="hit" v-for="(h, i) in searchHits" :key="i">
             <div class="hit-h">
               <span class="badge blue">{{ h.docName }}</span>
-              <span class="muted small mono" v-if="h.category">{{ h.category }}</span>
-              <span class="muted small mono">相似度 {{ (h.score * 100).toFixed(1) }}%</span>
+              <span class="muted small mono" v-if="h.category">{{ aicCat(h.category) }}</span>
+              <span class="muted small mono">{{ t('aic.similarity', { x: (h.score * 100).toFixed(1) }) }}</span>
             </div>
             <div class="hit-t mono">{{ h.text }}</div>
           </div>
         </div>
-        <p class="muted small" v-else-if="searchHits && !searchHits.length">无命中 —— 检查文档是否启用、关键词是否出现在文档中。</p>
+        <p class="muted small" v-else-if="searchHits && !searchHits.length">{{ t('aic.noHits') }}</p>
       </div>
     </div>
 
@@ -748,62 +748,62 @@ async function saveMem() {
     <div v-if="tab === 'mem'">
       <div class="card">
         <div class="card-title">
-          结构化记忆库
-          <span class="sub">读取平台数据库内的结构化历史记录(与 RAG 文档库严格区分)</span>
+          {{ t('aic.memTitle') }}
+          <span class="sub">{{ t('aic.memSub') }}</span>
           <div class="spacer"></div>
-          <label class="chk"><input type="checkbox" v-model="mem.enabled"> 全局总开关</label>
+          <label class="chk"><input type="checkbox" v-model="mem.enabled"> {{ t('aic.memToggle') }}</label>
         </div>
         <p class="muted small" style="margin:0 0 10px">
-          与 RAG 的区别: <b>RAG 文档库</b> 检索的是<b>上传的非结构化文档</b>(安全基线/漏洞手册/设备资料/运维文档, 向量化);
-          <b>结构化记忆库</b> 检索的是<b>平台数据库里的业务历史</b>(扫描落库的漏洞/告警事件/抓包报告/节点指标), 不额外存储、只按时间窗读取。
-          AI 分析时, 检索到的记忆自动注入 Prompt 变量 <span class="badge mono">{{ vbrace('structured_memory') }}</span>。
+          {{ t('aic.memDiff1') }} <b>{{ t('aic.ragLib') }}</b> {{ t('aic.memDiff2') }} <b>{{ t('aic.uploadDocs') }}</b> ({{ t('aic.memDiff3') }});
+          <b>{{ t('aic.memLib') }}</b> {{ t('aic.memDiff2') }} <b>{{ t('aic.bizHistory') }}</b> {{ t('aic.memDiff5') }}
+          {{ t('aic.memDiff6') }} <span class="badge mono">{{ vbrace('structured_memory') }}</span>{{ t('aic.memDiff7') }}
         </p>
         <div class="form-grid">
           <div class="field">
-            <label class="label">记忆保留时长(天)</label>
+            <label class="label">{{ t('aic.memRetain') }}</label>
             <input class="input" type="number" min="1" v-model.number="mem.retainDays">
           </div>
           <div class="field">
-            <label class="label">每范围检索条数上限</label>
+            <label class="label">{{ t('aic.memMax') }}</label>
             <input class="input" type="number" min="1" max="100" v-model.number="mem.maxItems">
           </div>
           <div class="field">
-            <label class="label">记忆压缩</label>
+            <label class="label">{{ t('aic.memCompress') }}</label>
             <div class="sw-grid" style="grid-template-columns:1fr">
               <label class="sw">
                 <input type="checkbox" v-model="mem.compress">
-                <span>单行摘要模式</span>
-                <span class="muted small">关闭 = 每条附完整内容(更详细, 更占上下文)</span>
+                <span>{{ t('aic.compressMode') }}</span>
+                <span class="muted small">{{ t('aic.compressOff') }}</span>
               </label>
             </div>
           </div>
         </div>
-        <div class="muted small" style="margin:12px 0 6px">记忆检索范围(勾选项均参与注入):</div>
+        <div class="muted small" style="margin:12px 0 6px">{{ t('aic.memScopes') }}</div>
         <div class="sw-grid" style="grid-template-columns:repeat(2,1fr)">
           <label class="sw">
             <input type="checkbox" v-model="mem.scopes.assets">
-            <span>资产历史扫描记录</span>
-            <span class="muted small">漏洞库(时间窗内, 新→旧)</span>
+            <span>{{ t('aic.scopeAssets') }}</span>
+            <span class="muted small">{{ t('aic.scopeAssetsSub') }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="mem.scopes.alerts">
-            <span>历史告警事件</span>
-            <span class="muted small">节点采集告警(级别/类型/详情)</span>
+            <span>{{ t('aic.scopeAlerts') }}</span>
+            <span class="muted small">{{ t('aic.scopeAlertsSub') }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="mem.scopes.captures">
-            <span>历史抓包分析记录</span>
-            <span class="muted small">抓包报告(含历史 AI 结论摘要)</span>
+            <span>{{ t('aic.scopeCaptures') }}</span>
+            <span class="muted small">{{ t('aic.scopeCapturesSub') }}</span>
           </label>
           <label class="sw">
             <input type="checkbox" v-model="mem.scopes.metrics">
-            <span>节点历史指标</span>
-            <span class="muted small">采集轮次(CPU/内存/时延等)</span>
+            <span>{{ t('aic.scopeMetrics') }}</span>
+            <span class="muted small">{{ t('aic.scopeMetricsSub') }}</span>
           </label>
         </div>
         <div class="form-row" style="margin-top:12px">
           <div class="spacer"></div>
-          <button class="btn primary" @click="saveMem">保存记忆库配置</button>
+          <button class="btn primary" @click="saveMem">{{ t('aic.saveMem') }}</button>
         </div>
       </div>
     </div>
