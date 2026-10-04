@@ -1,42 +1,42 @@
 <template>
   <div>
-    <PageHeader title="实时抓包分析" desc="抓包、过滤与报文十六进制详情">
-      <span class="chip" :class="running ? 'on' : 'off'">{{ running ? '抓包中' : '未抓包' }}</span>
-      <button class="btn sm" @click="loadDevices(true)"><span class="spinner" v-if="devLoading"></span> 刷新适配器</button>
+    <PageHeader :title="t('cp.title')" :desc="t('cp.desc')">
+      <span class="chip" :class="running ? 'on' : 'off'">{{ running ? t('cp.running') : t('cp.idle') }}</span>
+      <button class="btn sm" @click="loadDevices(true)"><span class="spinner" v-if="devLoading"></span> {{ t('cp.refreshDev') }}</button>
     </PageHeader>
 
     <!-- 捕获控制 -->
     <div class="card">
-      <div class="card-title">捕获控制 <span class="sub">过滤器为 BPF 语法; 默认全量采集, 细过滤在下方展示层做</span></div>
+      <div class="card-title">{{ t('cp.capCtl') }} <span class="sub">{{ t('cp.capCtlSub') }}</span></div>
       <div class="form-row">
         <div class="field">
-          <label class="label">捕获适配器</label>
+          <label class="label">{{ t('cp.fDevice') }}</label>
           <select class="select" v-model="device">
             <option v-for="d in devices" :key="d.name" :value="d.name">{{ (d.desc || d.name) + devLabel(d) }}</option>
           </select>
-          <div class="muted small" v-if="!devices.length">未枚举到适配器{{ devErr ? ': ' + devErr : ', 请先安装 Npcap' }}</div>
+          <div class="muted small" v-if="!devices.length">{{ devErr ? t('cp.noDev') + ': ' + devErr : t('cp.noDev2') }}</div>
           <div class="muted small" v-else>
-            抓不到 ping? ping <b>本机自己</b>(含本机 IP)请选回环适配器; ping 其它主机请选实际出口网卡;
-            交换网络里抓不到<b>另外两台机器之间</b>的单播流量(只能看到广播/组播与本机流量)。
+            {{ t('cp.pingNote1') }}<b>{{ t('cp.pingNote1b') }}</b>{{ t('cp.pingNote1c') }}
+            {{ t('cp.pingNote2') }}<b>{{ t('cp.pingNote2b') }}</b>{{ t('cp.pingNote2c') }}
           </div>
         </div>
         <div class="field">
-          <label class="label">BPF 过滤器(可选)</label>
+          <label class="label">{{ t('cp.fBpf') }}</label>
           <input class="input mono" v-model.trim="filter" placeholder="如 tcp port 80 / arp / icmp" @keyup.enter="start">
         </div>
       </div>
       <!-- ping 自己抓不到的根因提示: 把本机 IP 直接摆出来(用户 ping 的目标若等于它,
            流量只走回环适配器, 选物理网卡必然抓空) -->
       <div class="alert warn" v-if="localIP" style="margin-top:8px">
-        本机 IP: <b class="mono">{{ localIP }}</b> —— 如果 ping 的目标是这个 IP(本机自己),
-        流量只走<b>回环适配器 NPF_Loopback</b>(列表中已单独标出), 选物理网卡抓不到
+        {{ t('cp.localIp1') }}<b class="mono">{{ localIP }}</b>{{ t('cp.localIp2') }}
+        {{ t('cp.localIp3') }}<b>{{ t('cp.loopbackB') }}</b>{{ t('cp.localIp4') }}
       </div>
       <div class="cap-actions">
-        <button class="btn primary" :disabled="busy || running" @click="start">开始抓包</button>
-        <button class="btn" :disabled="busy || !running" @click="stop">停止</button>
+        <button class="btn primary" :disabled="busy || running" @click="start">{{ t('cp.start') }}</button>
+        <button class="btn" :disabled="busy || !running" @click="stop">{{ t('cp.stop') }}</button>
         <!-- 仅 Windows 且未装 Npcap 时给入口: 其它平台走系统 libpcap, 没有安装器可下 -->
         <button class="btn green" v-if="showInstall" :disabled="busy" @click="installNpcap">
-          <span class="spinner" v-if="installing"></span> 安装 Npcap
+          <span class="spinner" v-if="installing"></span> {{ t('cp.installNpcap') }}
         </button>
         <span class="muted small">{{ hint }}</span>
       </div>
@@ -45,52 +45,52 @@
 
     <!-- 统计 -->
     <div class="grid cols-4" style="margin-top:14px">
-      <StatCard label="总包数" :value="fmtNum(stats.total)" :sub="'速率 ' + (stats.pps || 0).toFixed(1) + '/s'" tone="blue" />
-      <StatCard label="持续时长" :value="(stats.durationSec || 0) + 's'" :sub="'环路检测 ' + (stats.loopDetect ? '开' : '关')" tone="green" />
-      <StatCard label="ARP / IPv4" :value="fmtNum(stats.arpTotal) + ' / ' + fmtNum(stats.ipv4)"
-                :sub="'ARP ' + (stats.arpPps || 0).toFixed(1) + '/s · 广播 ' + fmtNum(stats.broadcast)" tone="orange" />
-      <StatCard label="报文留存" :value="(stats.pktBuffered || 0) + '/' + (stats.pktCapacity || 2000)"
-                :sub="'解码跳过 ' + fmtNum(stats.pktUndecodable) + ' · 畸形帧 ' + fmtNum(stats.badFrames)" tone="purple" />
+      <StatCard :label="t('cp.stTotal')" :value="fmtNum(stats.total)" :sub="t('cp.rate', { x: (stats.pps || 0).toFixed(1) })" tone="blue" />
+      <StatCard :label="t('cp.stDuration')" :value="(stats.durationSec || 0) + 's'" :sub="t('cp.loopDetect', { x: stats.loopDetect ? t('cp.on') : t('cp.off') })" tone="green" />
+      <StatCard :label="t('cp.stArpIpv4')" :value="fmtNum(stats.arpTotal) + ' / ' + fmtNum(stats.ipv4)"
+                :sub="t('cp.arpSub', { x: (stats.arpPps || 0).toFixed(1), y: fmtNum(stats.broadcast) })" tone="orange" />
+      <StatCard :label="t('cp.stBuffer')" :value="(stats.pktBuffered || 0) + '/' + (stats.pktCapacity || 2000)"
+                :sub="t('cp.bufferSub', { x: fmtNum(stats.pktUndecodable), y: fmtNum(stats.badFrames) })" tone="purple" />
     </div>
 
     <!-- 报文列表(抽屉式: 标题行常驻, 表体可展开/收起; 表头冻结) -->
     <div class="card" style="margin-top:14px">
-      <div class="card-title cap-pkt-head" @click="listOpen = !listOpen" :title="listOpen ? '点击收起报文列表' : '点击展开报文列表'">
-        报文列表
-        <span class="sub">内存环形缓冲(≤2000 条), 不写本地磁盘, 停止抓包即清空; 需要留存请导出 PCAP</span>
+      <div class="card-title cap-pkt-head" @click="listOpen = !listOpen" :title="listOpen ? t('cp.listCollapse') : t('cp.listExpand')">
+        {{ t('cp.pktList') }}
+        <span class="sub">{{ t('cp.pktListSub') }}</span>
         <div class="spacer" style="flex:1"></div>
-        <span class="muted small" v-if="!listOpen">当前 {{ packets.length }} 条 · 点击展开</span>
+        <span class="muted small" v-if="!listOpen">{{ t('cp.listCount', { n: packets.length }) }}</span>
         <button class="btn sm" :disabled="!packets.length || pcapBusy"
-                :title="packets.length ? '把当前缓冲的全部报文导出为 pcap 文件(Wireshark/tcpdump 可打开)' : '还没有报文'"
+                :title="packets.length ? t('cp.exportTip') : t('cp.noPktYet')"
                 @click.stop="exportPcap">
-          <span class="spinner" v-if="pcapBusy"></span> 导出 PCAP
+          <span class="spinner" v-if="pcapBusy"></span> {{ t('cp.exportPcap') }}
         </button>
-        <button class="btn sm" @click.stop="listOpen = !listOpen">{{ listOpen ? '收起' : '展开' }}</button>
+        <button class="btn sm" @click.stop="listOpen = !listOpen">{{ listOpen ? t('cp.collapse') : t('cp.expand') }}</button>
       </div>
       <div v-show="listOpen" class="cap-pkt-body">
         <div class="cap-actions">
           <input class="input mono" style="max-width:280px" v-model="displayFilter"
-                 placeholder="通用: 192.168.1.1 port:443 proto:tcp">
+                 :placeholder="t('cp.phDisplayFilter')">
           <input class="input mono" style="max-width:190px" v-model="srcQ"
-                 placeholder="源搜索(如 192.168.1.6)">
+                 :placeholder="t('cp.phSrc')">
           <input class="input mono" style="max-width:190px" v-model="dstQ"
-                 placeholder="目的搜索">
-          <label class="checkbox"><input type="checkbox" v-model="autoScroll">自动滚动</label>
+                 :placeholder="t('cp.phDst')">
+          <label class="checkbox"><input type="checkbox" v-model="autoScroll">{{ t('cp.autoScroll') }}</label>
           <div class="spacer" style="flex:1"></div>
-          <button class="btn sm danger" @click="clearList">清空列表</button>
+          <button class="btn sm danger" @click="clearList">{{ t('cp.clearList') }}</button>
         </div>
         <!-- 经典页迁移(P1-3): 过滤示例 chips, 点击立即生效(展示层语义: 空格=与, 前缀限定字段) -->
         <div class="filter-chips">
           <span v-for="x in FILTER_EXAMPLES" :key="x.f" class="chip"
-                :class="{ on: displayFilter === x.f }" :title="x.tip"
-                @click="displayFilter = x.f">{{ x.f || '全部' }}</span>
+                :class="{ on: displayFilter === x.f }" :title="t(x.tip)"
+                @click="displayFilter = x.f">{{ x.f || t('cp.all') }}</span>
         </div>
         <div class="muted small" style="margin:8px 0">{{ listHint }}</div>
 
         <div class="table-wrap cap-pkts" ref="listBox">
           <table class="table" v-if="view.length">
             <thead>
-              <tr><th>时间</th><th>协议</th><th>源</th><th>目的</th><th>长度</th><th>摘要</th></tr>
+              <tr><th>{{ t('cp.cTime') }}</th><th>{{ t('cp.cProto') }}</th><th>{{ t('cp.cSrc') }}</th><th>{{ t('cp.cDst') }}</th><th>{{ t('cp.cLen') }}</th><th>{{ t('cp.cInfo') }}</th></tr>
             </thead>
             <tbody>
               <tr v-for="p in view" :key="p.seq" class="clickable"
@@ -113,45 +113,45 @@
     <!-- 报文详情 -->
     <div class="card" v-if="detail" style="margin-top:14px">
       <div class="card-title">
-        报文 #{{ detail.seq }} 详情
-        <span class="sub">{{ detail.time }} · {{ detail.length }} 字节</span>
-        <button class="btn xs" style="margin-left:auto" @click="detail = null">关闭</button>
+        {{ t('cp.pktDetail', { n: detail.seq }) }}
+        <span class="sub">{{ detail.time }} · {{ t('cp.bytes', { x: detail.length }) }}</span>
+        <button class="btn xs" style="margin-left:auto" @click="detail = null">{{ t('common.close') }}</button>
       </div>
       <div class="kv">
-        <div class="k">协议</div><div class="v">{{ detail.protocol || '-' }}</div>
-        <div class="k">源 MAC</div><div class="v mono">{{ detail.srcMac || '-' }}</div>
-        <div class="k">目的 MAC</div><div class="v mono">{{ detail.dstMac || '-' }}</div>
-        <div class="k">源地址</div><div class="v mono">{{ endpoint(detail.srcIp, detail.srcMac, detail.srcPort) }}</div>
-        <div class="k">目的地址</div><div class="v mono">{{ endpoint(detail.dstIp, detail.dstMac, detail.dstPort) }}</div>
+        <div class="k">{{ t('cp.kProto') }}</div><div class="v">{{ detail.protocol || '-' }}</div>
+        <div class="k">{{ t('cp.kSrcMac') }}</div><div class="v mono">{{ detail.srcMac || '-' }}</div>
+        <div class="k">{{ t('cp.kDstMac') }}</div><div class="v mono">{{ detail.dstMac || '-' }}</div>
+        <div class="k">{{ t('cp.kSrc') }}</div><div class="v mono">{{ endpoint(detail.srcIp, detail.srcMac, detail.srcPort) }}</div>
+        <div class="k">{{ t('cp.kDst') }}</div><div class="v mono">{{ endpoint(detail.dstIp, detail.dstMac, detail.dstPort) }}</div>
         <div class="k">TTL</div><div class="v mono">{{ detail.ttl || '-' }}</div>
-        <div class="k">以太类型</div><div class="v mono">{{ detail.etherType || '-' }}</div>
-        <div class="k">摘要</div><div class="v">{{ detail.info || '-' }}</div>
+        <div class="k">{{ t('cp.kEther') }}</div><div class="v mono">{{ detail.etherType || '-' }}</div>
+        <div class="k">{{ t('cp.kInfo') }}</div><div class="v">{{ detail.info || '-' }}</div>
       </div>
       <template v-if="hexRows.length">
         <div class="muted small" style="margin:12px 0 6px">
-          原始字节({{ hexBytes.length }} 字节{{ detail.length > hexBytes.length ? ', 完整帧请用 PCAP 导出' : '' }})
+          {{ t('cp.rawBytes', { x: hexBytes.length, y: detail.length > hexBytes.length ? t('cp.rawBytesMore') : '' }) }}
         </div>
         <pre class="code-block cap-hex">{{ hexText }}</pre>
       </template>
-      <div class="muted small" v-else>该报文无原始字节载荷</div>
+      <div class="muted small" v-else>{{ t('cp.noPayload') }}</div>
     </div>
 
     <!-- 经典页迁移(P1-3): 智能分析(内置引擎) + 阶段 3 AI 全链路分析 -->
     <div class="card" style="margin-top:14px">
       <div class="card-title">
-        抓包分析
+        {{ t('cp.analysis') }}
         <div class="spacer"></div>
         <button class="btn sm" :disabled="analyzing" @click="runAnalysis">
-          <span class="spinner" v-if="analyzing"></span> 智能分析(内置引擎)
+          <span class="spinner" v-if="analyzing"></span> {{ t('cp.smartAnalysis') }}
         </button>
         <!-- 阶段 3: AI 分析(模板+RAG+记忆库, 结果存报告中心)。抓包中点击 = 先停止
              抓包(会话自动存档)再分析本会话; 未启用/模块关闭时按钮自动置灰。 -->
-        <AiAnalyzeButton ref="aiBtn" module="capture" label="AI 分析" :before="aiBefore" />
+        <AiAnalyzeButton ref="aiBtn" module="capture" :label="t('cp.aiAnalyze')" :before="aiBefore" />
       </div>
       <p class="muted small" style="margin:0 0 8px">
-        AI 参数/模板/知识库在
-        <router-link to="/license?tab=ai">授权与模型 → AI 配置</router-link>
-        中管理(仅管理员); 分析结果存报告中心对应报告(原始报文 + AI 研判可同时查看)。
+        {{ t('cp.aiCfg1') }}
+        <router-link to="/license?tab=ai">{{ t('cp.aiCfgLink') }}</router-link>
+        {{ t('cp.aiCfg2') }}
       </p>
       <pre class="code-block cap-ai" v-if="analysisText">{{ analysisText }}</pre>
     </div>
@@ -159,27 +159,27 @@
     <!-- 经典页迁移(P1-3): 检测事件流(环路/风暴/ARP 漂移) + ARP 绑定表 -->
     <div class="grid cols-2" style="margin-top:14px">
       <div class="card">
-        <div class="card-title">检测事件 <span class="sub">环路 / 广播风暴 / ARP 漂移</span>
+        <div class="card-title">{{ t('cp.events') }} <span class="sub">{{ t('cp.eventsSub') }}</span>
           <div class="spacer"></div>
-          <button class="btn xs" @click="events = []">清空</button>
+          <button class="btn xs" @click="events = []">{{ t('cp.clearEv') }}</button>
         </div>
         <div class="cap-events">
-          <div v-if="!events.length" class="empty">无事件(开启环路检测后, 命中判据会实时列在这里)</div>
+          <div v-if="!events.length" class="empty">{{ t('cp.noEvents') }}</div>
           <div v-for="(e, i) in events" :key="e.seq || i" class="cap-ev">
             <span class="mono muted small">{{ e.time }}</span>
             <span class="badge" :class="e.severity === 'high' ? 'st-failed' : (e.severity === 'medium' ? 'st-pending' : 'st-success')">
-              {{ e.severity === 'high' ? '高危' : (e.severity === 'medium' ? '中危' : '低危') }}
+              {{ e.severity === 'high' ? t('sev.high') : (e.severity === 'medium' ? t('sev.medium') : t('sev.low')) }}
             </span>
             <span class="small">{{ e.title }} — {{ e.detail }}</span>
-            <div class="muted small" v-if="e.advice" style="margin-left:26px">建议: {{ e.advice }}</div>
+            <div class="muted small" v-if="e.advice" style="margin-left:26px">{{ t('cp.advice', { x: e.advice }) }}</div>
           </div>
         </div>
       </div>
       <div class="card">
-        <div class="card-title">ARP 绑定表 <span class="sub">MAC 漂移即告警</span></div>
+        <div class="card-title">{{ t('cp.arpTable') }} <span class="sub">{{ t('cp.arpSub') }}</span></div>
         <div class="table-wrap" style="max-height:280px; overflow-y:auto">
           <table class="table" v-if="bindings.length">
-            <thead><tr><th>IP</th><th>MAC</th><th>次数</th><th>最近操作</th><th>首次发现</th><th>最近发现</th><th>状态</th></tr></thead>
+            <thead><tr><th>IP</th><th>MAC</th><th>{{ t('cp.cCount') }}</th><th>{{ t('cp.cLastOp') }}</th><th>{{ t('cp.cFirst') }}</th><th>{{ t('cp.cLast') }}</th><th>{{ t('cp.cState') }}</th></tr></thead>
             <tbody>
               <tr v-for="b in bindings" :key="b.ip + b.mac">
                 <td class="mono small">{{ b.ip }}</td>
@@ -188,11 +188,11 @@
                 <td class="small">{{ b.lastOp || '-' }}</td>
                 <td class="mono small muted">{{ b.firstSeen || '-' }}</td>
                 <td class="mono small muted">{{ b.lastSeen || '-' }}</td>
-                <td><span class="badge" :class="b.flapping ? 'st-failed' : 'st-success'">{{ b.flapping ? '漂移' : '正常' }}</span></td>
+                <td><span class="badge" :class="b.flapping ? 'st-failed' : 'st-success'">{{ b.flapping ? t('cp.flapping') : t('cp.normal') }}</span></td>
               </tr>
             </tbody>
           </table>
-          <Empty v-else text="开始抓包后显示 ARP 绑定表" />
+          <Empty v-else :text="t('cp.arpEmpty')" />
         </div>
       </div>
     </div>
@@ -206,6 +206,7 @@ import Empty from '../components/Empty.vue'
 import StatCard from '../components/StatCard.vue'
 import AiAnalyzeButton from '../components/AiAnalyzeButton.vue'
 import { api } from '../api/http'
+import { t } from '../i18n'
 
 // 页面最多保留的报文条数(与后端环形缓冲同容量: 再多前端也拿不到更旧的数据)
 const CAP_PKT_MAX = 2000
@@ -252,29 +253,30 @@ const showInstall = computed(() => platform.value === 'windows' && !npcapInstall
 // 语义与 matchPkt 一致: 空格=与, 前缀限定字段。空值=不过滤。
 // (原先还有一个"协议下拉", 与这里的 chips 职能重叠 —— 两处筛选并存会让用户
 // 不知道以哪个为准, 已统一到下面的示例中。)
+// f 是过滤功能 token(matchPkt 按字面匹配, 不翻); tip 是词条键, 渲染期 t() 解析
 const FILTER_EXAMPLES = [
-  { f: '', tip: '不过滤(显示全部)' },
-  { f: 'icmp', tip: '只看 ICMP (ping / 回显)' },
-  { f: 'arp', tip: '只看 ARP' },
-  { f: 'tcp', tip: '只看 TCP' },
-  { f: 'udp', tip: '只看 UDP' },
-  { f: 'ipv6', tip: '只看 IPv6' },
-  { f: 'icmpv6', tip: '只看 ICMPv6' },
-  { f: 'igmp', tip: '只看 IGMP(组播)' },
-  { f: 'syn', tip: '只看 SYN 包(建连/扫描)' },
-  { f: 'rst', tip: '只看 RST 包(连接被拒)' },
-  { f: 'fin', tip: '只看 FIN 包(断连)' },
-  { f: '广播', tip: '只看广播帧' },
-  { f: 'port:80', tip: 'HTTP' },
-  { f: 'port:443', tip: 'HTTPS' },
-  { f: 'port:53', tip: 'DNS' },
-  { f: 'port:22', tip: 'SSH' },
-  { f: 'port:3389', tip: '远程桌面' },
-  { f: 'port:445', tip: 'SMB 文件共享' },
-  { f: 'proto:icmp', tip: '按协议字段限定 ICMP' },
-  { f: 'ip:192.168.1.1', tip: '只看涉及该 IP 的报文' },
-  { f: 'src:192.168.1.1', tip: '只看该 IP 发出的报文' },
-  { f: 'dst:192.168.1.1', tip: '只看发给该 IP 的报文' },
+  { f: '', tip: 'cp.tipAll' },
+  { f: 'icmp', tip: 'cp.tipIcmp' },
+  { f: 'arp', tip: 'cp.tipArp' },
+  { f: 'tcp', tip: 'cp.tipTcp' },
+  { f: 'udp', tip: 'cp.tipUdp' },
+  { f: 'ipv6', tip: 'cp.tipIpv6' },
+  { f: 'icmpv6', tip: 'cp.tipIcmpv6' },
+  { f: 'igmp', tip: 'cp.tipIgmp' },
+  { f: 'syn', tip: 'cp.tipSyn' },
+  { f: 'rst', tip: 'cp.tipRst' },
+  { f: 'fin', tip: 'cp.tipFin' },
+  { f: '广播', tip: 'cp.tipBcast' },
+  { f: 'port:80', tip: 'cp.tip80' },
+  { f: 'port:443', tip: 'cp.tip443' },
+  { f: 'port:53', tip: 'cp.tip53' },
+  { f: 'port:22', tip: 'cp.tip22' },
+  { f: 'port:3389', tip: 'cp.tip3389' },
+  { f: 'port:445', tip: 'cp.tip445' },
+  { f: 'proto:icmp', tip: 'cp.tipProtoIcmp' },
+  { f: 'ip:192.168.1.1', tip: 'cp.tipIp' },
+  { f: 'src:192.168.1.1', tip: 'cp.tipSrc' },
+  { f: 'dst:192.168.1.1', tip: 'cp.tipDst' },
 ]
 
 
@@ -347,17 +349,17 @@ const shown = computed(() => packets.value.filter(matchPkt))
 const view = computed(() => shown.value.slice(-VIEW_MAX))
 
 const emptyText = computed(() => {
-  if (running.value) return '等待报文...'
+  if (running.value) return t('cp.waitPackets')
   return packets.value.length
-    ? `已抓到 ${packets.value.length} 个报文, 但当前过滤条件下没有匹配项`
-    : '开始抓包后, 这里会列出每个报文的源/目的/协议与摘要'
+    ? t('cp.someFiltered', { n: packets.value.length })
+    : t('cp.emptyHint')
 })
 
 const listHint = computed(() => {
   const hidden = shown.value.length - view.value.length
-  let s = `显示 ${view.value.length}/${shown.value.length} 条`
-  if (packets.value.length > shown.value.length) s += ` (过滤自 ${packets.value.length} 条)`
-  if (hidden > 0) s += `, 已省略较早的 ${hidden} 条`
+  let s = t('cp.showing', { a: view.value.length, b: shown.value.length })
+  if (packets.value.length > shown.value.length) s += t('cp.filteredFrom', { n: packets.value.length })
+  if (hidden > 0) s += t('cp.omitted', { n: hidden })
   return s
 })
 
@@ -412,7 +414,7 @@ function clearList() {
   packets.value = []
   cursor.value = 0
   detail.value = null
-  hint.value = '列表已清空(后端仍在抓包)'
+  hint.value = t('cp.listCleared')
 }
 
 // ===== PCAP 导出 =====
@@ -438,9 +440,9 @@ async function exportPcap() {
     a.click()
     a.remove()
     URL.revokeObjectURL(a.href)
-    hint.value = '已导出 ' + name + ' (' + (blob.size / 1024).toFixed(1) + ' KB, 共 ' + packets.value.length + ' 条, 可用 Wireshark/tcpdump 打开)'
+    hint.value = t('cp.exported', { name, kb: (blob.size / 1024).toFixed(1), n: packets.value.length })
   } catch (e) {
-    hint.value = 'PCAP 导出失败: ' + e.message
+    hint.value = t('cp.exportFail', { err: e.message })
   } finally { pcapBusy.value = false }
 }
 
@@ -458,8 +460,8 @@ function devRank(d) {
 }
 function devLabel(d) {
   const s = (d.name || '') + ' ' + (d.desc || '')
-  if (LOOPBACK_DEV.test(s)) return ' (回环适配器: ping 本机自己 / 本机互访选它)'
-  if (PSEUDO_DEV.test(s)) return ' (伪适配器, 不建议抓包)'
+  if (LOOPBACK_DEV.test(s)) return t('cp.loopLabel')
+  if (PSEUDO_DEV.test(s)) return t('cp.pseudoLabel')
   return ''
 }
 
@@ -481,7 +483,7 @@ async function loadDevices(refresh) {
 async function start() {
   busy.value = true
   capErr.value = ''
-  hint.value = '正在打开适配器...'
+  hint.value = t('cp.openingDev')
   try {
     const d = await api('/api/capture/start', {
       method: 'POST',
@@ -494,8 +496,8 @@ async function start() {
     // 检测事件同理: 新会话清空旧事件, 游标归零
     events.value = []
     evtCursor = 0
-    hint.value = '正在抓包: ' + (d.device || device.value)
-      + (d.captureAll ? '(全量采集, 展示层过滤: ' + (displayFilter.value || '无') + ')' : '')
+    hint.value = t('cp.capturing', { x: d.device || device.value })
+      + (d.captureAll ? t('cp.captureAllNote', { x: displayFilter.value || t('cp.none') }) : '')
     await poll()
   } catch (e) {
     capErr.value = e.message
@@ -508,23 +510,23 @@ async function stop() {
   try {
     await api('/api/capture/stop', { method: 'POST' })
     running.value = false
-    hint.value = '已停止'
+    hint.value = t('cp.stopped')
     await pollPackets() // 补最后一批
   } catch (e) { capErr.value = e.message }
   finally { busy.value = false }
 }
 
 async function installNpcap() {
-  if (!confirm('将运行 exe 同目录的 npcap-*.exe 官方安装器, 按向导完成后需重启本程序。继续?')) return
+  if (!confirm(t('cp.installConfirm'))) return
   installing.value = true
-  hint.value = '正在安装 Npcap(最长等待 5 分钟)...'
+  hint.value = t('cp.installing')
   try {
     await api('/api/capture/install', { method: 'POST' })
-    hint.value = 'Npcap 安装完成, 正在刷新适配器...'
+    hint.value = t('cp.installDone')
     npcapInstalled.value = true
     await loadDevices(true)
   } catch (e) {
-    capErr.value = 'Npcap 安装失败: ' + e.message
+    capErr.value = t('cp.installFail', { err: e.message })
     hint.value = ''
   } finally { installing.value = false }
 }
@@ -579,8 +581,8 @@ async function runAnalysis() {
   analyzing.value = true
   try {
     const d = await api('/api/capture/analysis')
-    analysisText.value = d.text || '(无数据, 请先开始抓包)'
-  } catch (e) { analysisText.value = '分析失败: ' + e.message }
+    analysisText.value = d.text || t('cp.noData')
+  } catch (e) { analysisText.value = t('cp.analysisFail', { err: e.message }) }
   finally { analyzing.value = false }
 }
 
@@ -595,10 +597,10 @@ async function aiBefore() {
     try {
       await api('/api/capture/stop', { method: 'POST' })
       running.value = false
-      hint.value = '已停止抓包(本会话已存入报告中心), 正在 AI 分析…'
+      hint.value = t('cp.aiStopped')
       await pollPackets()
     } catch (e) {
-      throw new Error('停止抓包失败: ' + e.message)
+      throw new Error(t('cp.stopFail', { err: e.message }))
     }
   }
 }
