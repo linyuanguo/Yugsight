@@ -1,24 +1,24 @@
 <template>
   <div>
-    <PageHeader title="渗透工作台" desc="针对已知漏洞做验证渗透（扫描只发现，渗透只验证；全程审计留痕，清空操作同样留痕）">
-      <span class="chip" :class="st.enabled ? 'on' : 'off'">{{ st.enabled ? '工作台已启用' : '工作台已停用' }}</span>
-      <span class="chip">内置模板 {{ st.builtinCount || 0 }} · 自定义 {{ st.customCount || 0 }} · 任务 {{ total }}</span>
-      <button class="btn sm" @click="refreshAll"><span class="spinner" v-if="loading"></span> 刷新</button>
+    <PageHeader :title="t('pw.title')" :desc="t('pw.desc')">
+      <span class="chip" :class="st.enabled ? 'on' : 'off'">{{ st.enabled ? t('pw.on') : t('pw.off') }}</span>
+      <span class="chip">{{ t('pw.tplCount', { b: st.builtinCount || 0, c: st.customCount || 0, n: total }) }}</span>
+      <button class="btn sm" @click="refreshAll"><span class="spinner" v-if="loading"></span> {{ t('common.refresh') }}</button>
     </PageHeader>
 
     <!-- 安全声明: 常驻不可关闭。攻击性能力的边界写在最显眼处, 而不是埋在文档里 -->
     <div class="card" style="border-left:3px solid var(--danger,#e5484d); margin-bottom:12px">
-      <div class="card-title">安全声明</div>
+      <div class="card-title">{{ t('pw.statementTitle') }}</div>
       <p class="muted small" style="margin:0; line-height:1.7">{{ st.statement || statementFallback }}</p>
     </div>
 
     <div class="tabs">
-      <div class="tab" :class="{ active: tab === 'task' }" @click="tab = 'task'">渗透任务管理</div>
-      <div class="tab" :class="{ active: tab === 'run' }" @click="switchTab('run')">渗透执行控制台</div>
-      <div class="tab" :class="{ active: tab === 'result' }" @click="switchTab('result')">渗透结果管理</div>
+      <div class="tab" :class="{ active: tab === 'task' }" @click="tab = 'task'">{{ t('pw.tabTask') }}</div>
+      <div class="tab" :class="{ active: tab === 'run' }" @click="switchTab('run')">{{ t('pw.tabRun') }}</div>
+      <div class="tab" :class="{ active: tab === 'result' }" @click="switchTab('result')">{{ t('pw.tabResult') }}</div>
       <div class="tab" :class="{ active: tab === 'audit' }" @click="switchTab('audit')">
-        渗透审计
-        <span class="muted small" v-if="paTotal > 0">{{ paTotal }} 条</span>
+        {{ t('pw.tabAudit') }}
+        <span class="muted small" v-if="paTotal > 0">{{ t('pw.itemsN', { n: paTotal }) }}</span>
       </div>
     </div>
 
@@ -26,52 +26,52 @@
     <div v-if="tab === 'task'">
       <div class="card">
         <div class="card-title">
-          渗透任务列表
-          <span class="sub">按状态 / 风险等级 / 目标筛选</span>
+          {{ t('pw.taskList') }}
+          <span class="sub">{{ t('pw.taskListSub') }}</span>
           <div class="spacer"></div>
-          <button class="btn sm primary" @click="showNew = !showNew">{{ showNew ? '收起新建' : '新建任务' }}</button>
-          <button class="btn sm" @click="openImport">从漏扫管控导入</button>
+          <button class="btn sm primary" @click="showNew = !showNew">{{ showNew ? t('pw.collapseNew') : t('pw.newTask') }}</button>
+          <button class="btn sm" @click="openImport">{{ t('pw.importVuln') }}</button>
         </div>
 
         <div class="form-row" style="margin-bottom:10px">
           <!-- 2026-10-02 用户口径: 筛选选项基于当前数据里存在的 —— 状态/风险等级选项
                由后端按全量任务聚合回带(statuses/risks), 无数据的选项不出现 -->
           <div class="field" style="max-width:150px">
-            <label class="label">状态</label>
+            <label class="label">{{ t('pw.status') }}</label>
             <select class="input" v-model="filt.status">
-              <option value="">全部</option>
+              <option value="">{{ t('common.all') }}</option>
               <option v-for="s in pentaStatusOpts" :key="s.id" :value="s.id">{{ statusName(s.id) }} ({{ s.count }})</option>
             </select>
           </div>
           <div class="field" style="max-width:150px">
-            <label class="label">风险等级</label>
+            <label class="label">{{ t('pw.risk') }}</label>
             <select class="input" v-model="filt.risk">
-              <option value="">全部</option>
-              <option v-for="s in pentaRiskOpts" :key="s.id" :value="s.id">{{ RISK_CN[s.id] || s.id }} ({{ s.count }})</option>
+              <option value="">{{ t('common.all') }}</option>
+              <option v-for="s in pentaRiskOpts" :key="s.id" :value="s.id">{{ riskName(s.id) }} ({{ s.count }})</option>
             </select>
           </div>
           <div class="field" style="max-width:220px">
-            <label class="label">目标</label>
+            <label class="label">{{ t('pw.target') }}</label>
             <input class="input mono" v-model.trim="filt.target" :placeholder="phTarget">
           </div>
           <div class="spacer"></div>
-          <button class="btn sm" @click="loadTasks">查询</button>
-          <button class="btn sm" @click="resetFilter">重置</button>
+          <button class="btn sm" @click="loadTasks">{{ t('common.query') }}</button>
+          <button class="btn sm" @click="resetFilter">{{ t('common.reset') }}</button>
         </div>
 
         <!-- 新建任务(折叠区) -->
         <div v-if="showNew" class="panel-dashed">
           <div class="form-row" style="flex-wrap:wrap; align-items:flex-end; gap:10px">
             <div class="field" style="max-width:180px">
-              <label class="label">目标 IP / 主机</label>
+              <label class="label">{{ t('pw.fTarget') }}</label>
               <input class="input mono" v-model.trim="nf.target" placeholder="10.0.0.5">
             </div>
             <div class="field" style="max-width:110px">
-              <label class="label">端口</label>
+              <label class="label">{{ t('pw.fPort') }}</label>
               <input class="input mono" type="number" v-model.number="nf.port" placeholder="6379">
             </div>
             <div class="field" style="max-width:130px">
-              <label class="label">协议</label>
+              <label class="label">{{ t('pw.fProtocol') }}</label>
               <select class="input" v-model="nf.protocol">
                 <option value="tcp">tcp</option>
                 <option value="http">http</option>
@@ -80,47 +80,47 @@
               </select>
             </div>
             <div class="field" style="max-width:170px">
-              <label class="label">CVE（可选）</label>
+              <label class="label">{{ t('pw.fCve') }}</label>
               <input class="input mono" v-model.trim="nf.cve" placeholder="CVE-2022-0543">
             </div>
             <div class="field" style="max-width:220px">
-              <label class="label">漏洞标题</label>
-              <input class="input" v-model.trim="nf.title" placeholder="Redis 未授权访问">
+              <label class="label">{{ t('pw.fTitle') }}</label>
+              <input class="input" v-model.trim="nf.title" :placeholder="t('pw.phTitle')">
             </div>
             <div class="field" style="max-width:210px">
-              <label class="label">EXP 模板</label>
+              <label class="label">{{ t('pw.fTpl') }}</label>
               <select class="input" v-model="nf.templateId">
-                <option value="">未指定（执行时选择）</option>
-                <option v-for="t in allTemplates" :key="t.id" :value="t.id">{{ t.name }}（{{ t.id }}）</option>
+                <option value="">{{ t('pw.tplUnset') }}</option>
+                <option v-for="tp in allTemplates" :key="tp.id" :value="tp.id">{{ tp.name }}（{{ tp.id }}）</option>
               </select>
             </div>
             <!-- 2026-09-25 命名扫描: 关联扫描任务名(可选)。控制台"下一步渗透"会
                  预填它; 手动建任务时填了, 报告中心"按任务名生成报告"能带上该任务 -->
             <div class="field" style="max-width:190px">
-              <label class="label">关联任务名（可选）</label>
-              <input class="input" v-model.trim="nf.job" placeholder="如: 办公网 9 月巡检">
+              <label class="label">{{ t('pw.fJob') }}</label>
+              <input class="input" v-model.trim="nf.job" :placeholder="t('pw.phJob')">
             </div>
             <div class="field" style="max-width:150px">
-              <label class="label">初始风险等级</label>
+              <label class="label">{{ t('pw.fSeverity') }}</label>
               <select class="input" v-model="nf.severity">
-                <option value="">未定级</option>
-                <option value="critical">严重</option>
-                <option value="high">高危</option>
-                <option value="medium">中危</option>
-                <option value="low">低危</option>
+                <option value="">{{ t('pw.unrated') }}</option>
+                <option value="critical">{{ t('sev.critical') }}</option>
+                <option value="high">{{ t('sev.high') }}</option>
+                <option value="medium">{{ t('sev.medium') }}</option>
+                <option value="low">{{ t('sev.low') }}</option>
               </select>
             </div>
             <div class="spacer"></div>
-            <button class="btn primary" :disabled="!nf.target" @click="createTask">创建任务</button>
+            <button class="btn primary" :disabled="!nf.target" @click="createTask">{{ t('pw.createTask') }}</button>
           </div>
         </div>
 
         <!-- 批量操作条: 选中才出现, 避免"无选中时按钮可点但什么都不做" -->
         <div class="form-row" v-if="selCount" style="margin:10px 0 8px">
-          <span class="chip warn">已选 {{ selCount }} 条</span>
-          <button class="btn sm danger" @click="batchDelete">批量删除</button>
-          <button class="btn sm" @click="exportTasks">批量导出</button>
-          <button class="btn sm" @click="clearSel">取消选择</button>
+          <span class="chip warn">{{ t('pw.selN', { n: selCount }) }}</span>
+          <button class="btn sm danger" @click="batchDelete">{{ t('pw.batchDel') }}</button>
+          <button class="btn sm" @click="exportTasks">{{ t('pw.batchExport') }}</button>
+          <button class="btn sm" @click="clearSel">{{ t('pw.clearSel') }}</button>
         </div>
 
         <div class="table-wrap" v-if="tasks.length">
@@ -128,38 +128,38 @@
             <thead>
               <tr>
                 <th style="width:36px"><input type="checkbox" :checked="allChecked" @change="toggleAll"></th>
-                <th>任务</th><th style="width:150px">目标</th>
-                <th style="width:150px">CVE</th><th style="width:80px">风险</th>
-                <th style="width:80px">状态</th><th style="width:90px">验证结论</th>
-                <th style="width:150px">最近执行</th><th style="width:180px">操作</th>
+                <th>{{ t('pw.cTask') }}</th><th style="width:150px">{{ t('pw.cTarget') }}</th>
+                <th style="width:150px">CVE</th><th style="width:80px">{{ t('pw.cRisk') }}</th>
+                <th style="width:80px">{{ t('pw.cStatus') }}</th><th style="width:90px">{{ t('pw.cConclusion') }}</th>
+                <th style="width:150px">{{ t('pw.cLastRun') }}</th><th style="width:180px">{{ t('pw.cOps') }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="t in tasks" :key="t.id">
-                <td><input type="checkbox" v-model="checked[t.id]"></td>
+              <tr v-for="tk in tasks" :key="tk.id">
+                <td><input type="checkbox" v-model="checked[tk.id]"></td>
                 <td>
-                  <div>{{ t.title || '渗透验证' }}</div>
-                  <div class="muted small mono">{{ t.id }}</div>
+                  <div>{{ tk.title || t('pw.defaultTitle') }}</div>
+                  <div class="muted small mono">{{ tk.id }}</div>
                 </td>
-                <td class="mono">{{ t.target }}<span class="muted">:{{ t.port || '-' }}</span></td>
-                <td class="mono small">{{ t.cve || '-' }}</td>
-                <td><SevTag :sev="t.riskLevel || 'info'" /></td>
-                <td><span class="badge">{{ statusName(t.status) }}</span></td>
+                <td class="mono">{{ tk.target }}<span class="muted">:{{ tk.port || '-' }}</span></td>
+                <td class="mono small">{{ tk.cve || '-' }}</td>
+                <td><SevTag :sev="tk.riskLevel || 'info'" /></td>
+                <td><span class="badge">{{ statusName(tk.status) }}</span></td>
                 <td>
-                  <span v-if="t.exploitability" class="badge" :style="expStyle(t.exploitability)">{{ expName(t.exploitability) }}</span>
-                  <span v-else class="muted small">未验证</span>
+                  <span v-if="tk.exploitability" class="badge" :style="expStyle(tk.exploitability)">{{ expName(tk.exploitability) }}</span>
+                  <span v-else class="muted small">{{ t('pw.unverified') }}</span>
                 </td>
-                <td class="mono small muted">{{ t.finishedAt ? fmtDT(t.finishedAt) : '-' }}</td>
+                <td class="mono small muted">{{ tk.finishedAt ? fmtDT(tk.finishedAt) : '-' }}</td>
                 <td>
-                  <button class="btn xs" @click="gotoRun(t)">执行</button>
-                  <button class="btn xs" @click="gotoResult(t)">结果</button>
-                  <button class="btn xs danger" @click="delTask(t)">删除</button>
+                  <button class="btn xs" @click="gotoRun(tk)">{{ t('pw.runBtn') }}</button>
+                  <button class="btn xs" @click="gotoResult(tk)">{{ t('pw.resultBtn') }}</button>
+                  <button class="btn xs danger" @click="delTask(tk)">{{ t('common.del') }}</button>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else :text="tasksLoaded ? '没有符合条件的渗透任务，可从漏扫管控导入漏洞' : '加载中…'" />
+        <Empty v-else :text="tasksLoaded ? t('pw.emptyTasks') : t('common.loading')" />
         <div class="err-line" style="color:var(--danger,#e5484d)">{{ listErr }}</div>
       </div>
     </div>
@@ -169,98 +169,98 @@
       <div class="penta-grid">
         <div>
           <div class="card">
-            <div class="card-title">选择任务<span class="sub">仅对已登记漏洞执行验证</span></div>
+            <div class="card-title">{{ t('pw.pickTask') }}<span class="sub">{{ t('pw.pickTaskSub') }}</span></div>
             <select class="input mono" v-model="runTaskId">
-              <option value="">请选择渗透任务</option>
+              <option value="">{{ t('pw.phPickTask') }}</option>
               <option v-for="t in tasks" :key="t.id" :value="t.id">
                 {{ t.target }}:{{ t.port || '-' }} · {{ t.title || t.cve || t.id }}
               </option>
             </select>
             <div v-if="curTask" class="kv-list" style="margin-top:10px">
-              <div><span class="k">目标</span><span class="v mono">{{ curTask.target }}:{{ curTask.port || '-' }}（{{ curTask.protocol || 'tcp' }}）</span></div>
-              <div><span class="k">对象</span><span class="v">{{ curTask.title || '-' }}</span></div>
+              <div><span class="k">{{ t('pw.target') }}</span><span class="v mono">{{ curTask.target }}:{{ curTask.port || '-' }}（{{ curTask.protocol || 'tcp' }}）</span></div>
+              <div><span class="k">{{ t('pw.kvObject') }}</span><span class="v">{{ curTask.title || '-' }}</span></div>
               <div><span class="k">CVE</span><span class="v mono">{{ curTask.cve || '-' }}</span></div>
-              <div><span class="k">来源</span><span class="v">{{ curTask.source === 'vuln' ? '漏扫管控导入' : '手动创建' }}</span></div>
+              <div><span class="k">{{ t('pw.kvSource') }}</span><span class="v">{{ curTask.source === 'vuln' ? t('pw.srcVuln') : t('pw.srcManual') }}</span></div>
             </div>
           </div>
 
           <!-- EXP 模板库 -->
           <div class="card">
             <div class="card-title">
-              EXP 模板库
-              <span class="sub">内置 {{ (tpls.builtin || []).length }} · 自定义 {{ (tpls.custom || []).length }}</span>
+              {{ t('pw.tplLib') }}
+              <span class="sub">{{ t('pw.tplLibCount', { b: (tpls.builtin || []).length, c: (tpls.custom || []).length }) }}</span>
               <div class="spacer"></div>
-              <button class="btn xs" @click="showTplImport = true">导入自定义</button>
+              <button class="btn xs" @click="showTplImport = true">{{ t('pw.importTpl') }}</button>
             </div>
             <div class="form-row" style="margin-bottom:8px">
-              <input class="input" v-model.trim="tplQ" placeholder="搜索名称 / ID / CVE">
+              <input class="input" v-model.trim="tplQ" :placeholder="t('pw.phTplSearch')">
               <div class="spacer"></div>
               <select class="input" style="max-width:140px" v-model="tplTag">
-                <option value="">全部标签</option>
+                <option value="">{{ t('pw.allTags') }}</option>
                 <option v-for="g in (tpls.tags || [])" :key="g" :value="g">{{ g }}</option>
               </select>
             </div>
             <div class="tpl-list">
               <div
-                class="tpl-item" v-for="t in filteredTpls" :key="t.id"
-                :class="{ active: runTplId === t.id }" @click="pickTpl(t)"
+                class="tpl-item" v-for="tp in filteredTpls" :key="tp.id"
+                :class="{ active: runTplId === tp.id }" @click="pickTpl(tp)"
               >
                 <div class="tpl-head">
-                  <b>{{ t.name }}</b>
-                  <span class="badge blue mono">{{ t.id }}</span>
-                  <span class="badge" v-if="t.builtIn">内置</span>
-                  <span class="badge warn" v-else>自定义</span>
+                  <b>{{ tp.name }}</b>
+                  <span class="badge blue mono">{{ tp.id }}</span>
+                  <span class="badge" v-if="tp.builtIn">{{ t('pw.builtin') }}</span>
+                  <span class="badge warn" v-else>{{ t('pw.custom') }}</span>
                 </div>
-                <div class="muted small" v-if="t.desc">{{ t.desc }}</div>
+                <div class="muted small" v-if="tp.desc">{{ tp.desc }}</div>
                 <div class="tpl-meta">
-                  <span class="badge blue mono" v-if="t.cve">{{ t.cve }}</span>
-                  <span class="badge" v-for="g in (t.tags || [])" :key="g">{{ g }}</span>
-                  <span class="muted small">{{ (t.steps || []).length }} 步</span>
+                  <span class="badge blue mono" v-if="tp.cve">{{ tp.cve }}</span>
+                  <span class="badge" v-for="g in (tp.tags || [])" :key="g">{{ g }}</span>
+                  <span class="muted small">{{ t('pw.stepsN', { n: (tp.steps || []).length }) }}</span>
                 </div>
                 <!-- 选中后展开"即将执行什么": 执行前必须让用户看见具体动作, 不是黑盒点按钮 -->
-                <div v-if="runTplId === t.id && (t.steps || []).length" class="tpl-steps">
-                  <div class="mono small" v-for="(s, i) in t.steps" :key="i">
+                <div v-if="runTplId === tp.id && (tp.steps || []).length" class="tpl-steps">
+                  <div class="mono small" v-for="(s, i) in tp.steps" :key="i">
                     {{ i + 1 }}. [{{ s.type }}] {{ s.name }}{{ s.path ? ' ' + s.path : '' }}{{ s.service ? ' ' + s.service : '' }}
                   </div>
-                  <div class="muted small" v-if="t.note">说明：{{ t.note }}</div>
+                  <div class="muted small" v-if="tp.note">{{ t('pw.note', { x: tp.note }) }}</div>
                 </div>
               </div>
-              <Empty v-if="!filteredTpls.length" text="没有匹配的 EXP 模板" />
+              <Empty v-if="!filteredTpls.length" :text="t('pw.emptyTpls')" />
             </div>
           </div>
         </div>
 
         <div>
           <div class="card">
-            <div class="card-title">执行参数</div>
+            <div class="card-title">{{ t('pw.runParams') }}</div>
             <div v-if="wpStep" class="form-row" style="flex-wrap:wrap; gap:10px">
               <div class="field" style="max-width:130px">
-                <label class="label">服务</label>
+                <label class="label">{{ t('pw.fService') }}</label>
                 <input class="input mono" disabled :value="wpStep.service || '-'">
               </div>
               <div class="field" style="max-width:150px">
-                <label class="label">账号</label>
+                <label class="label">{{ t('pw.fUser') }}</label>
                 <input class="input mono" v-model.trim="wpUser" placeholder="admin">
               </div>
               <div class="field" style="max-width:100%">
-                <label class="label">候选口令（每行一个，上限 10 个；这是凭据验证场景，不是爆破）</label>
+                <label class="label">{{ t('pw.fPasswords') }}</label>
                 <textarea class="input mono" rows="3" v-model="wpPasswords"></textarea>
               </div>
             </div>
             <div v-else class="muted small" style="margin-bottom:8px">
-              当前模板无弱口令步骤。选择含 weakpass 步骤的模板后，可在此指定账号与候选口令执行登录验证。
+              {{ t('pw.noWpStep') }}
             </div>
 
             <!-- 逐次授权确认: 不写进 localStorage, 刷新即失效 —— 攻击动作不能"一次勾选永久有效" -->
             <label class="ack-line" :class="{ on: ack }">
               <input type="checkbox" v-model="ack">
-              <span>我确认已获得该目标的书面授权（每次执行均需勾选，授权态不留存）</span>
+              <span>{{ t('pw.ackText') }}</span>
             </label>
 
             <div class="form-row">
               <div class="spacer"></div>
               <button class="btn danger" :disabled="running || !runTaskId || !runTplId" @click="execTask">
-                {{ running ? '执行中…' : '执行验证' }}
+                {{ running ? t('pw.running') : t('pw.execVerify') }}
               </button>
             </div>
             <div class="err-line" style="color:var(--danger,#e5484d)">{{ runErr }}</div>
@@ -268,10 +268,10 @@
 
           <div class="card">
             <div class="card-title">
-              实时执行回显
-              <span class="chip warn" v-if="running">执行中</span>
+              {{ t('pw.liveLog') }}
+              <span class="chip warn" v-if="running">{{ t('pw.chipRunning') }}</span>
               <span class="chip" :class="outcome && outcome.ok ? 'on' : 'warn'" v-else-if="outcome">
-                {{ outcome.ok ? '已完成' : '未获得结论' }}
+                {{ outcome.ok ? t('pw.done') : t('pw.noConclusion') }}
               </span>
               <div class="spacer"></div>
               <!-- 2026-09-25 起移除"复制日志"按钮: 内网 IP(http 非安全上下文)下
@@ -284,7 +284,7 @@
                 <div class="step-row" v-for="(s, i) in outcome.steps" :key="i">
                   <span class="badge" :class="s.hit ? 'badge-ok' : ''">{{ s.name }}</span>
                   <span class="muted small mono">{{ s.type }}</span>
-                  <span class="badge" :class="s.hit ? 'badge-ok' : ''">{{ s.hit ? '命中' : '未命中' }}</span>
+                  <span class="badge" :class="s.hit ? 'badge-ok' : ''">{{ s.hit ? t('pw.hit') : t('pw.miss') }}</span>
                   <span class="mono small muted">{{ s.durationMs }}ms</span>
                   <div class="small" v-if="s.hit && s.risk" style="width:100%; color:var(--warn,#d97706)">{{ s.risk }}</div>
                 </div>
@@ -300,81 +300,81 @@
     <div v-if="tab === 'result'">
       <div class="card">
         <div class="card-title">
-          渗透结果管理
-          <span class="sub">可利用性结论 · 风险定级修正 · 证据留存 · 一键回传漏扫管控</span>
+          {{ t('pw.tabResult') }}
+          <span class="sub">{{ t('pw.resultSub') }}</span>
           <div class="spacer"></div>
-          <span class="chip">已验证 {{ verifiedCount }} / {{ resultTasks.length }}</span>
+          <span class="chip">{{ t('pw.verifiedN', { a: verifiedCount, b: resultTasks.length }) }}</span>
         </div>
 
         <div class="table-wrap" v-if="resultTasks.length">
           <table class="table">
             <thead>
               <tr>
-                <th>目标 / 对象</th><th style="width:130px">验证结论</th><th style="width:140px">风险定级修正</th>
-                <th>摘要（写入报告）</th><th style="width:120px">回传</th><th style="width:170px">操作</th>
+                <th>{{ t('pw.cTargetObject') }}</th><th style="width:130px">{{ t('pw.cConclusion') }}</th><th style="width:140px">{{ t('pw.cRiskAdj') }}</th>
+                <th>{{ t('pw.cSummary') }}</th><th style="width:120px">{{ t('pw.cFeedback') }}</th><th style="width:170px">{{ t('pw.cOps') }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="t in resultTasks" :key="t.id">
+              <tr v-for="rt in resultTasks" :key="rt.id">
                 <td>
-                  <div>{{ t.title || '渗透验证' }}</div>
-                  <div class="muted small mono">{{ t.target }}:{{ t.port || '-' }}{{ t.cve ? ' · ' + t.cve : '' }}</div>
+                  <div>{{ rt.title || t('pw.defaultTitle') }}</div>
+                  <div class="muted small mono">{{ rt.target }}:{{ rt.port || '-' }}{{ rt.cve ? ' · ' + rt.cve : '' }}</div>
                 </td>
                 <td>
-                  <select class="input" v-model="edit[t.id].exploitability">
-                    <option value="exploitable">可利用</option>
-                    <option value="partial">部分利用</option>
-                    <option value="not_exploitable">不可利用</option>
+                  <select class="input" v-model="edit[rt.id].exploitability">
+                    <option value="exploitable">{{ t('pw.expExploitable') }}</option>
+                    <option value="partial">{{ t('pw.expPartial') }}</option>
+                    <option value="not_exploitable">{{ t('pw.expNo') }}</option>
                   </select>
                 </td>
                 <td>
-                  <select class="input" v-model="edit[t.id].riskLevel">
-                    <option value="">保持扫描定级</option>
-                    <option value="critical">严重</option>
-                    <option value="high">高危</option>
-                    <option value="medium">中危</option>
-                    <option value="low">低危</option>
-                    <option value="info">信息</option>
+                  <select class="input" v-model="edit[rt.id].riskLevel">
+                    <option value="">{{ t('pw.keepRisk') }}</option>
+                    <option value="critical">{{ t('sev.critical') }}</option>
+                    <option value="high">{{ t('sev.high') }}</option>
+                    <option value="medium">{{ t('sev.medium') }}</option>
+                    <option value="low">{{ t('sev.low') }}</option>
+                    <option value="info">{{ t('sev.info') }}</option>
                   </select>
                 </td>
                 <td>
-                  <input class="input" v-model="edit[t.id].summary" placeholder="验证摘要（命中现象 / 判定依据）">
+                  <input class="input" v-model="edit[rt.id].summary" :placeholder="t('pw.phSummary')">
                 </td>
                 <td>
-                  <span class="badge badge-ok" v-if="t.feedbackAt">已回传</span>
-                  <span class="muted small" v-else-if="!t.vulnId">无关联漏洞</span>
-                  <span class="muted small" v-else>待回传</span>
-                  <div class="muted small mono" v-if="t.feedbackAt">{{ fmtDT(t.feedbackAt) }}</div>
+                  <span class="badge badge-ok" v-if="rt.feedbackAt">{{ t('pw.feedbackDone') }}</span>
+                  <span class="muted small" v-else-if="!rt.vulnId">{{ t('pw.noVuln') }}</span>
+                  <span class="muted small" v-else>{{ t('pw.feedbackPending') }}</span>
+                  <div class="muted small mono" v-if="rt.feedbackAt">{{ fmtDT(rt.feedbackAt) }}</div>
                 </td>
                 <td>
-                  <button class="btn xs" @click="saveResult(t)">保存</button>
-                  <button class="btn xs primary" :disabled="!t.vulnId" @click="feedback(t)">回传</button>
-                  <button class="btn xs" @click="toggleEvidence(t.id)">{{ expanded[t.id] ? '收起证据' : '证据' }}</button>
+                  <button class="btn xs" @click="saveResult(rt)">{{ t('common.save') }}</button>
+                  <button class="btn xs primary" :disabled="!rt.vulnId" @click="feedback(rt)">{{ t('pw.feedback') }}</button>
+                  <button class="btn xs" @click="toggleEvidence(rt.id)">{{ expanded[rt.id] ? t('pw.evidenceHide') : t('pw.evidence') }}</button>
                 </td>
               </tr>
-              <tr v-if="expanded[t.id]">
+              <tr v-if="expanded[rt.id]">
                 <td colspan="6" style="background:rgba(255,255,255,.02)">
-                  <div v-if="(t.evidence || []).length">
-                    <div class="muted small" style="margin-bottom:6px">命令与响应留存（同步写入审计）：</div>
-                    <div class="ev-block" v-for="(s, i) in t.evidence" :key="i">
+                  <div v-if="(rt.evidence || []).length">
+                    <div class="muted small" style="margin-bottom:6px">{{ t('pw.evidenceNote') }}</div>
+                    <div class="ev-block" v-for="(s, i) in rt.evidence" :key="i">
                       <div class="ev-head">
                         <span class="badge" :class="s.hit ? 'badge-ok' : ''">{{ s.name }}</span>
-                        <span class="muted small mono">{{ s.type }} · {{ s.durationMs }}ms · {{ s.hit ? '命中' : '未命中' }}</span>
+                        <span class="muted small mono">{{ s.type }} · {{ s.durationMs }}ms · {{ s.hit ? t('pw.hit') : t('pw.miss') }}</span>
                       </div>
                       <pre class="ev-body">{{ s.evidence || '-' }}</pre>
                     </div>
                   </div>
-                  <div v-else class="muted small">暂无步骤证据（任务尚未执行，或执行未产出证据）</div>
-                  <div v-if="t.runLog" class="ev-block" style="margin-top:8px">
-                    <div class="ev-head"><span class="badge blue">执行日志</span></div>
-                    <pre class="ev-body">{{ t.runLog }}</pre>
+                  <div v-else class="muted small">{{ t('pw.noEvidence') }}</div>
+                  <div v-if="rt.runLog" class="ev-block" style="margin-top:8px">
+                    <div class="ev-head"><span class="badge blue">{{ t('pw.runLog') }}</span></div>
+                    <pre class="ev-body">{{ rt.runLog }}</pre>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else text="暂无可管理的渗透结果（执行验证后在此修正定级并回传）" />
+        <Empty v-else :text="t('pw.emptyResults')" />
         <div class="err-line" style="color:var(--danger,#e5484d)">{{ resErr }}</div>
       </div>
     </div>
@@ -387,31 +387,31 @@
     <div v-if="tab === 'audit'">
       <div class="card">
         <div class="card-title">
-          渗透审计
-          <span class="sub">创建 / 导入 / 执行 / 每步探测 / 结果保存 / 回传 全量记录 · 清空操作本身留痕（合规留痕）</span>
+          {{ t('pw.tabAudit') }}
+          <span class="sub">{{ t('pw.auditSub') }}</span>
           <div class="spacer"></div>
-          <span class="chip" v-if="paTotal > 0">共 {{ paTotal }} 条</span>
+          <span class="chip" v-if="paTotal > 0">{{ t('pw.totalItems', { n: paTotal }) }}</span>
           <button class="btn xs danger" :disabled="!paTotal" @click="openClearAudit"
-                  :title="paTotal ? '清空全部渗透审计(输入“清空”确认)' : '没有可清空的记录'">清空审计</button>
+                  :title="paTotal ? t('pw.clearAuditTip', { w: t('pw.clearWord') }) : t('pw.clearAuditEmpty')">{{ t('pw.clearAudit') }}</button>
         </div>
 
         <div class="form-row" style="flex-wrap:wrap">
           <select class="input" v-model="paFlt.action" style="width:180px">
-            <option value="">全部动作</option>
+            <option value="">{{ t('pw.allActions') }}</option>
             <option v-for="a in paActions" :key="a" :value="a">{{ a }}</option>
           </select>
-          <input class="input" v-model.trim="paFlt.keyword" placeholder="关键字（对象 / 详情）" style="width:200px" />
+          <input class="input" v-model.trim="paFlt.keyword" :placeholder="t('pw.phKeyword')" style="width:200px" />
           <input class="input" type="date" v-model="paFlt.from" style="width:140px" />
           <input class="input" type="date" v-model="paFlt.to" style="width:140px" />
-          <button class="btn" @click="paApplyFilter">筛选</button>
-          <button class="btn" @click="paResetFilter">重置</button>
+          <button class="btn" @click="paApplyFilter">{{ t('pw.filter') }}</button>
+          <button class="btn" @click="paResetFilter">{{ t('common.reset') }}</button>
         </div>
 
         <div class="table-wrap" v-if="pentaAudits.length">
           <table class="table">
             <thead>
               <tr>
-                <th>时间</th><th>用户</th><th>动作</th><th>对象</th><th>详情</th><th>来源 IP</th>
+                <th>{{ t('pw.cTime') }}</th><th>{{ t('common.user') }}</th><th>{{ t('pw.cAction') }}</th><th>{{ t('pw.cObject') }}</th><th>{{ t('pw.cDetail') }}</th><th>{{ t('pw.cClientIp') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -426,28 +426,28 @@
             </tbody>
           </table>
         </div>
-        <Empty v-else text="暂无渗透审计记录（执行渗透验证后自动写入）" />
+        <Empty v-else :text="t('pw.emptyAudit')" />
 
         <!-- 分页 -->
         <div class="form-row" v-if="paTotal > PA_SIZE" style="justify-content:flex-end">
-          <button class="btn xs" :disabled="paPage <= 1" @click="paGotoPage(paPage - 1)">上一页</button>
+          <button class="btn xs" :disabled="paPage <= 1" @click="paGotoPage(paPage - 1)">{{ t('al.prev') }}</button>
           <span class="muted small">{{ paPage }} / {{ paTotalPages }}</span>
-          <button class="btn xs" :disabled="paPage >= paTotalPages" @click="paGotoPage(paPage + 1)">下一页</button>
+          <button class="btn xs" :disabled="paPage >= paTotalPages" @click="paGotoPage(paPage + 1)">{{ t('al.next') }}</button>
         </div>
       </div>
     </div>
 
     <!-- 从漏扫管控导入 -->
-    <Modal v-if="showImport" title="从漏扫管控导入漏洞" width="860px" @close="showImport = false">
+    <Modal v-if="showImport" :title="t('pw.importTitle')" width="860px" @close="showImport = false">
       <div class="form-row" style="margin-bottom:8px">
-        <input class="input" v-model.trim="vulnQ" placeholder="按 IP / CVE / 标题过滤漏洞">
+        <input class="input" v-model.trim="vulnQ" :placeholder="t('pw.phVulnFilter')">
         <div class="spacer"></div>
-        <span class="chip">已选 {{ Object.values(vulnSel).filter(Boolean).length }} 条</span>
+        <span class="chip">{{ t('pw.selN', { n: Object.values(vulnSel).filter(Boolean).length }) }}</span>
       </div>
       <div class="table-wrap" style="max-height:420px; overflow:auto">
         <table class="table">
           <thead>
-            <tr><th style="width:36px"></th><th>漏洞</th><th style="width:130px">资产</th><th style="width:70px">端口</th><th style="width:80px">等级</th><th style="width:90px">已验证</th></tr>
+            <tr><th style="width:36px"></th><th>{{ t('pw.cVuln') }}</th><th style="width:130px">{{ t('pw.cAsset') }}</th><th style="width:70px">{{ t('pw.cPort') }}</th><th style="width:80px">{{ t('pw.cSev') }}</th><th style="width:90px">{{ t('pw.cVerified') }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="v in filteredVulns" :key="v.id">
@@ -461,7 +461,7 @@
               <td><SevTag :sev="v.severity" /></td>
               <td>
                 <span v-if="v.pentaResult" class="badge" :style="expStyle(v.pentaResult)">{{ expName(v.pentaResult) }}</span>
-                <span v-else class="muted small">未验证</span>
+                <span v-else class="muted small">{{ t('pw.unverified') }}</span>
               </td>
             </tr>
           </tbody>
@@ -469,44 +469,43 @@
       </div>
       <template #footer>
         <div class="spacer"></div>
-        <button class="btn sm" @click="showImport = false">取消</button>
+        <button class="btn sm" @click="showImport = false">{{ t('common.cancel') }}</button>
         <button class="btn sm primary" :disabled="importing" @click="doImport">
-          {{ importing ? '导入中…' : '导入到渗透工作台' }}
+          {{ importing ? t('pw.importing') : t('pw.importBtn') }}
         </button>
       </template>
     </Modal>
 
     <!-- 导入自定义 EXP -->
-    <Modal v-if="showTplImport" title="导入自定义 EXP 模板" width="720px" @close="showTplImport = false">
+    <Modal v-if="showTplImport" :title="t('pw.tplImportTitle')" width="720px" @close="showTplImport = false">
       <p class="muted small" style="margin-top:0">
-        支持 YAML / JSON 文本粘贴导入。步骤类型仅允许 http / tcp / weakpass / external ——
-        不允许携带任意命令，服务端会对 ID、步骤类型与口令数量做校验，不合规直接拒绝。
+        {{ t('pw.tplImportNote') }}
       </p>
       <textarea class="input mono" rows="16" spellcheck="false" v-model="tplText" :placeholder="phTpl"></textarea>
       <div class="err-line" style="color:var(--danger,#e5484d)">{{ tplErr }}</div>
       <template #footer>
         <div class="spacer"></div>
-        <button class="btn sm" @click="showTplImport = false">取消</button>
-        <button class="btn sm primary" :disabled="!tplText.trim()" @click="doImportTpl">导入</button>
+        <button class="btn sm" @click="showTplImport = false">{{ t('common.cancel') }}</button>
+        <button class="btn sm primary" :disabled="!tplText.trim()" @click="doImportTpl">{{ t('pw.import') }}</button>
       </template>
     </Modal>
 
     <!-- 清空渗透审计: 输入"清空"确认(与"清空全部漏洞"同口径)。
          清空后列表只剩后端写的 penta.audit.clear 痕迹(清空动作本身可审计) -->
-    <Modal v-if="showClearAudit" title="清空渗透审计" width="480px" @close="showClearAudit = false">
+    <Modal v-if="showClearAudit" :title="t('pw.clearAuditTitle')" width="480px" @close="showClearAudit = false">
       <p class="muted small" style="margin:0 0 12px">
-        将删除全部渗透审计记录(仅管理员可操作)。清空后后端会保留一条
-        <b class="mono">penta.audit.clear</b> 痕迹(谁、何时、清了几条), 清空动作本身可审计。
+        {{ t('pw.clearAuditNote1') }}
+        <b class="mono">penta.audit.clear</b> {{ t('pw.clearAuditNote2') }}
       </p>
       <div class="field">
-        <label class="lbl">输入 <b>清空</b> 确认</label>
-        <input class="input" v-model.trim="clearAuditWord" placeholder="清空" />
+        <label class="lbl">{{ t('pw.clearWordPre') }} <b>{{ t('pw.clearWord') }}</b> {{ t('pw.clearWordPost') }}</label>
+        <input class="input" v-model.trim="clearAuditWord" :placeholder="t('pw.clearWord')" />
       </div>
       <template #footer>
         <div class="spacer"></div>
-        <button class="btn sm" @click="showClearAudit = false">取消</button>
-        <button class="btn sm danger" :disabled="clearAuditWord !== '清空' || clearAuditBusy" @click="doClearAudit">
-          {{ clearAuditBusy ? '清空中…' : '清空' }}
+        <button class="btn sm" @click="showClearAudit = false">{{ t('common.cancel') }}</button>
+        <button class="btn sm danger" :disabled="clearAuditWord !== t('pw.clearWord') || clearAuditBusy" @click="doClearAudit">
+          {{ clearAuditBusy ? t('pw.clearing') : t('pw.clearWord') }}
         </button>
       </template>
     </Modal>
@@ -522,35 +521,37 @@ import Modal from '../components/Modal.vue'
 import SevTag from '../components/SevTag.vue'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
+import { t } from '../i18n'
 
 const route = useRoute()
 
 // 文案常量: Vue 模板里出现字面量占位符会被当插值解析(编译报
 // "Unterminated string constant"), 所有示例文本一律经 JS 常量传 :placeholder。
 const phTarget = '10.0.0.5'
-const phTpl = [
+// 示例模板文本走 i18n: 用 computed 保证切换语言后 placeholder 跟随更新
+const phTpl = computed(() => [
   'id: my-check',
-  'name: 自定义验证模板',
+  'name: ' + t('pw.tplExName'),
   'cve: CVE-2025-0001',
   'tags: [http, custom]',
-  'desc: 示例: 验证管理后台是否可直接访问',
+  'desc: ' + t('pw.tplExDesc'),
   'steps:',
-  '  - name: 访问后台路径',
+  '  - name: ' + t('pw.tplExStep1'),
   '    type: http',
   '    path: /admin/login',
   '    expectStatus: 200',
   '    expectBody: "login|password"',
-  '  - name: 取 Banner 判断版本',
+  '  - name: ' + t('pw.tplExStep2'),
   '    type: tcp',
   '    send: "PING\\r\\n"',
   '    expect: "\\\\+PONG"'
-].join('\n')
+].join('\n'))
 
 // 服务名 -> 中文(弱口令检测页深链过来时用于生成任务标题)
 const serviceNames = { redis: 'Redis', mysql: 'MySQL', ftp: 'FTP', telnet: 'Telnet', ssh: 'SSH', vnc: 'VNC', rdp: 'RDP', smb: 'SMB' }
 
-// statementFallback 后端未返回声明文案时的兜底(与后端 pentaStatement 同口径)。
-const statementFallback = '本模块仅可用于验证自己拥有或已获书面授权的目标系统。所有渗透命令全程写入审计日志，审计记录仅管理员可清空，且清空操作本身同样留痕；未经授权对他人系统实施渗透可能违反《中华人民共和国网络安全法》及相关法律法规。'
+// statementFallback 后端未返回声明文案时的兜底(与后端 pentaStatement 同口径, 走 i18n)。
+const statementFallback = computed(() => t('pw.statementFallback'))
 
 const tab = ref('task')
 const loading = ref(false)
@@ -604,7 +605,7 @@ const curTpl = computed(() => allTemplates.value.find((t) => t.id === runTplId.v
 const wpStep = computed(() => ((curTpl.value && curTpl.value.steps) || []).find((s) => s.type === 'weakpass') || null)
 const allChecked = computed(() => tasks.value.length > 0 && tasks.value.every((t) => checked[t.id]))
 const selCount = computed(() => Object.values(checked).filter(Boolean).length)
-const logText = computed(() => lines.value.join('\n') || '执行输出将实时显示在这里…')
+const logText = computed(() => lines.value.join('\n') || t('pw.logEmpty'))
 const verifiedCount = computed(() => resultTasks.value.filter((t) => t.exploitability).length)
 
 // ===== 渗透审计(独立表 penta_audit) =====
@@ -664,7 +665,7 @@ function openClearAudit() {
   showClearAudit.value = true
 }
 async function doClearAudit() {
-  if (clearAuditWord.value !== '清空') return
+  if (clearAuditWord.value !== t('pw.clearWord')) return
   clearAuditBusy.value = true
   try {
     const d = await v2('/penta/audit', { method: 'DELETE' })
@@ -673,7 +674,7 @@ async function doClearAudit() {
     paPage.value = 1
     await loadPentaAudit()
     loadPentaAuditActions()
-    alert('已清空 ' + ((d && d.deleted) || 0) + ' 条记录（清空动作本身留痕 penta.audit.clear）')
+    alert(t('pw.auditCleared', { n: (d && d.deleted) || 0 }))
   } catch (e) {
     alert(e.message)
   } finally {
@@ -697,11 +698,14 @@ const filteredVulns = computed(() => {
 })
 
 // ===== 通用判别 =====
+// 状态/利用结论键值化: 返回词条经 t() 解析(未知值原样显示)
 function statusName(s) {
-  return { pending: '待执行', running: '执行中', done: '完成', failed: '失败' }[s] || s || '待执行'
+  const k = { pending: 'pw.stPending', running: 'pw.stRunning', done: 'pw.stDone', failed: 'pw.stFailed' }[s]
+  return k ? t(k) : (s || t('pw.stPending'))
 }
 function expName(e) {
-  return { exploitable: '可利用', partial: '部分利用', not_exploitable: '不可利用' }[e] || e || '-'
+  const k = { exploitable: 'pw.expExploitable', partial: 'pw.expPartial', not_exploitable: 'pw.expNo' }[e]
+  return k ? t(k) : (e || '-')
 }
 // 利用结论按颜色区分: 红=确认可利用(需立即处置), 橙=部分利用, 灰=不可利用
 function expStyle(e) {
@@ -716,7 +720,8 @@ async function loadStatus() {
 }
 
 // 2026-10-02: 状态/风险等级筛选选项 = 后端全量聚合回带(只含真实存在的值)
-const RISK_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+const RISK_CN = { critical: 'sev.critical', high: 'sev.high', medium: 'sev.medium', low: 'sev.low', info: 'sev.info' }
+function riskName(id) { return RISK_CN[id] ? t(RISK_CN[id]) : id }
 const pentaStatusOpts = ref([])
 const pentaRiskOpts = ref([])
 async function loadTasks() {
@@ -742,7 +747,7 @@ async function loadTasks() {
       loadTasks()
     }
   } catch (e) {
-    listErr.value = '任务列表加载失败: ' + e.message
+    listErr.value = t('pw.loadTasksFail', { err: e.message })
   } finally {
     loading.value = false
     tasksLoaded.value = true
@@ -768,7 +773,7 @@ async function loadResultTasks() {
       }
     }
   } catch (e) {
-    resErr.value = '渗透结果加载失败: ' + e.message
+    resErr.value = t('pw.loadResultsFail', { err: e.message })
   }
 }
 
@@ -814,16 +819,16 @@ async function createTask() {
     // 保持预填避免用户每台手填一遍
     await Promise.all([loadTasks(), loadResultTasks()])
   } catch (e) {
-    listErr.value = '创建失败: ' + e.message
+    listErr.value = t('pw.createFail', { err: e.message })
   }
 }
 
-async function delTask(t) {
-  if (!confirm(`确认删除渗透任务 ${t.id}（${t.target}）？证据将一并删除，审计留痕不受影响。`)) return
+async function delTask(tk) {
+  if (!confirm(t('pw.delTaskConfirm', { id: tk.id, target: tk.target }))) return
   try {
-    await v2('/penta/tasks/' + encodeURIComponent(t.id), { method: 'DELETE' })
+    await v2('/penta/tasks/' + encodeURIComponent(tk.id), { method: 'DELETE' })
     await Promise.all([loadTasks(), loadResultTasks()])
-  } catch (e) { listErr.value = '删除失败: ' + e.message }
+  } catch (e) { listErr.value = t('pw.delFail', { err: e.message }) }
 }
 
 function toggleAll(e) {
@@ -837,14 +842,14 @@ function clearSel() {
 async function batchDelete() {
   const ids = Object.keys(checked).filter((k) => checked[k])
   if (!ids.length) return
-  if (!confirm(`确认批量删除 ${ids.length} 条渗透任务？执行中的任务会被跳过。`)) return
+  if (!confirm(t('pw.batchDelConfirm', { n: ids.length }))) return
   try {
     const d = await v2('/penta/tasks/batch', { method: 'POST', body: { ids } })
     listErr.value = ''
     clearSel()
     await Promise.all([loadTasks(), loadResultTasks()])
-    if (d && d.deleted < ids.length) listErr.value = `实际删除 ${d.deleted} 条（执行中的任务已跳过）`
-  } catch (e) { listErr.value = '批量删除失败: ' + e.message }
+    if (d && d.deleted < ids.length) listErr.value = t('pw.batchDelDone', { n: d.deleted })
+  } catch (e) { listErr.value = t('pw.batchDelFail', { err: e.message }) }
 }
 
 // 导出走原始 fetch 拿 blob: 服务端返回附件而非 Resp 信封, 走 v2() 会被当 JSON 解析失败
@@ -865,7 +870,7 @@ async function exportTasks() {
     a.download = 'penta_tasks_' + new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '') + '.json'
     a.click()
     URL.revokeObjectURL(url)
-  } catch (e) { listErr.value = '导出失败: ' + e.message }
+  } catch (e) { listErr.value = t('pw.exportFail', { err: e.message }) }
 }
 
 // ===== 从漏扫管控导入 =====
@@ -876,7 +881,7 @@ async function openImport() {
     vulns.value = d.list || []
   } catch (e) {
     vulns.value = []
-    listErr.value = '漏洞列表加载失败: ' + e.message
+    listErr.value = t('pw.loadVulnsFail', { err: e.message })
   }
   showImport.value = true
 }
@@ -892,10 +897,10 @@ async function doImport() {
     await Promise.all([loadTasks(), loadResultTasks()])
     listErr.value = ''
     if (d && (d.skipped || d.missing)) {
-      listErr.value = `导入完成：新建 ${d.created} 条，跳过已导入 ${d.skipped} 条，不存在 ${d.missing} 条`
+      listErr.value = t('pw.importDone', { c: d.created, s: d.skipped, m: d.missing })
     }
   } catch (e) {
-    listErr.value = '导入失败: ' + e.message
+    listErr.value = t('pw.importFail', { err: e.message })
   } finally {
     importing.value = false
   }
@@ -938,33 +943,33 @@ function handleSSE(chunk) {
   let payload = null
   try { payload = JSON.parse(dataLines.join('\n')) } catch (e) { return }
   if (evt === 'penta.start') {
-    lines.value.push('任务: ' + (payload.taskId || '-') + '  模板: ' + (payload.template || '-'))
-    lines.value.push('目标: ' + payload.target + ':' + (payload.port || '-'))
+    lines.value.push(t('pw.logTask', { id: payload.taskId || '-', tpl: payload.template || '-' }))
+    lines.value.push(t('pw.logTarget', { x: payload.target + ':' + (payload.port || '-') }))
   } else if (evt === 'penta.line') {
     lines.value.push(payload.line || '')
   } else if (evt === 'penta.step') {
     // 步骤事件两阶段: start = 开始探测(让用户看得见"在做什么"), done = 结论
     if (payload.phase === 'start') {
-      lines.value.push('> 执行步骤 [' + payload.name + '] ' + payload.type)
+      lines.value.push(t('pw.logStepStart', { name: payload.name, type: payload.type }))
     } else {
-      const tail = payload.err ? '  错误: ' + payload.err : ''
-      lines.value.push('  <- ' + payload.name + ' ' + (payload.hit ? '命中' : '未命中') + ' (' + payload.durationMs + 'ms)' + tail)
+      const tail = payload.err ? t('pw.logErr', { err: payload.err }) : ''
+      lines.value.push('  <- ' + payload.name + ' ' + (payload.hit ? t('pw.hit') : t('pw.miss')) + ' (' + payload.durationMs + 'ms)' + tail)
       if (payload.output) lines.value.push(String(payload.output).split('\n').slice(0, 6).join('\n'))
     }
   } else if (evt === 'penta.done') {
     outcome.value = payload
     lines.value.push('')
-    lines.value.push('结论: ' + (payload.exploitability ? expName(payload.exploitability) : '未获得结论（目标不可达或全部步骤失败）'))
-    lines.value.push('摘要: ' + (payload.summary || '-'))
+    lines.value.push(t('pw.logConclusion', { r: payload.exploitability ? expName(payload.exploitability) : t('pw.noConclusionDetail') }))
+    lines.value.push(t('pw.logSummary', { s: payload.summary || '-' }))
   }
   scrollLog()
 }
 
 async function execTask() {
   runErr.value = ''
-  if (!runTaskId.value) { runErr.value = '请先选择渗透任务'; return }
-  if (!runTplId.value) { runErr.value = '请选择 EXP 模板'; return }
-  if (!ack.value) { runErr.value = '请先勾选授权确认'; return }
+  if (!runTaskId.value) { runErr.value = t('pw.errPickTask'); return }
+  if (!runTplId.value) { runErr.value = t('pw.errPickTpl'); return }
+  if (!ack.value) { runErr.value = t('pw.errAck'); return }
   running.value = true
   lines.value = []
   outcome.value = null
@@ -1001,7 +1006,7 @@ async function execTask() {
       }
     }
   } catch (e) {
-    runErr.value = '执行失败: ' + e.message
+    runErr.value = t('pw.execFail', { err: e.message })
   } finally {
     sseAbort = null
     running.value = false
@@ -1032,7 +1037,7 @@ async function saveResult(t) {
     resErr.value = ''
     await Promise.all([loadTasks(), loadResultTasks()])
   } catch (err) {
-    resErr.value = '保存失败: ' + err.message
+    resErr.value = t('pw.saveFail', { err: err.message })
   }
 }
 
@@ -1042,7 +1047,7 @@ async function feedback(t) {
     resErr.value = ''
     await Promise.all([loadTasks(), loadResultTasks()])
   } catch (e) {
-    resErr.value = '回传失败: ' + e.message
+    resErr.value = t('pw.feedbackFail', { err: e.message })
   }
 }
 
@@ -1055,7 +1060,7 @@ async function doImportTpl() {
     tplText.value = ''
     await Promise.all([loadTemplates(), loadStatus()])
   } catch (e) {
-    tplErr.value = '导入失败: ' + e.message
+    tplErr.value = t('pw.importFail', { err: e.message })
   }
 }
 
@@ -1083,7 +1088,7 @@ function applyQuery() {
     nf.port = parseInt(seg[1], 10) || 0
     nf.protocol = 'tcp'
     nf.templateId = 'weakpass-verify'
-    nf.title = '弱口令验证 ' + (seg[2] ? serviceNames[seg[2]] || seg[2] : nf.target)
+    nf.title = t('pw.wpVerifyTitle', { x: seg[2] ? serviceNames[seg[2]] || seg[2] : nf.target })
     nf.severity = 'high'
     tab.value = 'task'
     showNew.value = true
