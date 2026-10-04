@@ -68,6 +68,10 @@ func agentInstallTemplate() (string, error) {
 //
 // 渲染失败(模板缺失且内嵌也读不到)时降级为纯文本指引: 页面坏了不该让用户完全
 // 拿不到部署方法(规则 4: 失败降级不崩溃)。
+// 语言(2026-10-04): 模板中英双语同页, 语言选择由页面 JS 完成 —— 读与 Vue UI 共用
+// 的 localStorage 键 yugsight_lang(界面英文则本页自动英文, 裸 URL 同样跟随),
+// 右上角切换按钮写回同一键; ?lang= 仅作无本地记忆时的初始兜底。
+// 服务端不再按参数选模板。
 func hAgentInstall(w http.ResponseWriter, r *http.Request) {
 	tpl, err := loadAgentInstallTemplate()
 	if err != nil {
@@ -278,7 +282,11 @@ func agentPlatformButtons(hostOS, hostArch string) string {
 		if ok {
 			href = fmt.Sprintf("/api/v2/probe/agent/download?os=%s&arch=%s", p.OS, p.Arch)
 		} else {
-			title = ` title="该平台安装包尚未产出, 请在中心端补包(探针管理页有按钮/命令)"`
+			// 双语 title: 服务端同时注入中英(初始 title=中文, JS 禁用时也有提示),
+			// data-title-zh/en 供页面切语言时替换(模板双语同页, 见 agent_install.html)
+			title = ` title="该平台安装包尚未产出, 请在中心端补包(探针管理页有按钮/命令)"` +
+				` data-title-zh="该平台安装包尚未产出, 请在中心端补包(探针管理页有按钮/命令)"` +
+				` data-title-en="Package for this platform is not produced yet; build it on the center (button/command on the probe page)"`
 		}
 		sub := p.OS + "/" + p.Arch
 		if size != "" {

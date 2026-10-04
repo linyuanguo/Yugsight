@@ -109,7 +109,8 @@
             <label>{{ t('rp.probeNode') }}
               <select class="select" v-model="form.f.probeNode">
                 <option value="">{{ t('rp.allNodes') }}</option>
-                <option v-for="n in options.nodes" :key="n.id" :value="n.id">{{ n.name }}</option>
+                <!-- 中心本地(id=local)节点名后端写死中文, 展示层按 UI 语言翻译 -->
+                <option v-for="n in options.nodes" :key="n.id" :value="n.id">{{ (n.id === 'local' || !n.id) ? t('rp.localNode') : n.name }}</option>
               </select>
             </label>
             <label class="chk"><input type="checkbox" v-model="form.f.onlyEvidence"> {{ t('rp.onlyEvidence') }}</label>

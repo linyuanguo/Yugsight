@@ -58,7 +58,7 @@
           <tbody>
             <tr v-for="tg in targets" :key="tg.id">
               <td><span class="dot" :class="tg.online ? 'on' : 'off'"></span></td>
-              <td><div>{{ tg.name || tg.addr }}</div><div class="muted small mono" v-if="tg.lastErr">{{ tg.lastErr }}</div></td>
+              <td><div><span v-if="tg.source === 'center'">{{ t('nm.centerSelf') }}</span><span v-else>{{ tg.name || tg.addr }}</span></div><div class="muted small mono" v-if="tg.lastErr">{{ tg.lastErr }}</div></td>
               <td class="mono small">{{ tg.addr || '-' }}</td>
               <!-- MAC 来自 SNMP ifPhysAddress(首个 up 接口); 设备不支持时显示 '-' -->
               <td class="mono small">{{ tg.mac || '-' }}</td>
@@ -94,7 +94,7 @@
       </div>
       <div class="field">
         <label class="lbl">{{ t('nm.addr') }} <span class="req">*</span></label>
-        <input class="input" v-model="form.addr" placeholder="192.168.1.1 或 192.168.1.1:161" />
+        <input class="input" v-model="form.addr" :placeholder="t('nm.addrPh')" />
       </div>
       <div class="field">
         <label class="lbl">{{ t('nm.snmpVer') }}</label>

@@ -126,7 +126,7 @@ func TestAnalyzeFullPipeline(t *testing.T) {
 		t.Fatalf("RAG 参考段缺失: %s", cap.user)
 	}
 	// 结果字段
-	if res.RAGHits != 1 || res.MemoryItems != 1 || res.Template != TplLabel(TplCapture) {
+	if res.RAGHits != 1 || res.MemoryItems != 1 || res.Template != TplLabel(TplCapture, "zh") {
 		t.Fatalf("结果字段: hits=%d mem=%d tpl=%s", res.RAGHits, res.MemoryItems, res.Template)
 	}
 	var data map[string]any

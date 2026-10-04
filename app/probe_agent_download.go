@@ -503,13 +503,35 @@ func hAgentDownload(w http.ResponseWriter, r *http.Request) {
 func hAgentGuide(w http.ResponseWriter, r *http.Request) {
 	addr := agentAdvertiseAddr()
 	if addr == "" {
-		addr = "<中心端IP>:8600"
+		if r.URL.Query().Get("lang") == "en" {
+			addr = "<center IP>:8600"
+		} else {
+			addr = "<中心端IP>:8600"
+		}
 	}
 	token := probeCfg.Center.Token
 	if token == "" {
-		token = "<节点密钥, 见 probe.json 的 center.token>"
+		if r.URL.Query().Get("lang") == "en" {
+			token = "<node token, see center.token in probe.json>"
+		} else {
+			token = "<节点密钥, 见 probe.json 的 center.token>"
+		}
 	}
+	en := r.URL.Query().Get("lang") == "en"
+	repoDir := agentDownloadDir()
 	var b strings.Builder
+	if en {
+		writeGuideEN(&b, addr, token, repoDir)
+	} else {
+		writeGuideCN(&b, addr, token, repoDir)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(b.String()))
+}
+
+// writeGuideCN 中文部署指引(既有口径, 原样保留)。
+func writeGuideCN(b *strings.Builder, addr, token, repoDir string) {
 	b.WriteString(appName + " 探针(agent)部署指引\n")
 	b.WriteString(strings.Repeat("=", 48) + "\n\n")
 	b.WriteString("1) 在中心端本机(或用户浏览器所在机器)下载对应平台的 agent:\n")
@@ -520,7 +542,6 @@ func hAgentGuide(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("   (连不上中心端时会再次弹窗: 可选 5/30/自定义分钟后再提醒, 或退出探针)。\n\n")
 	b.WriteString("3) Linux / macOS: 命令行启动(拷贝后在该目录执行):\n")
 	b.WriteString("   yugsight-agent -center " + addr + " -token " + token + "\n")
-	repoDir := agentDownloadDir()
 	b.WriteString("   当前 agent 包查找目录: " + repoDir + "\n\n")
 	b.WriteString("   也可用 probe.json(与 agent 同目录), client 段示例:\n")
 	b.WriteString("   {\"client\":{\"enabled\":true,\"centerAddr\":\"" + addr + "\",\"token\":\"" + token + "\"}}\n\n")
@@ -539,9 +560,49 @@ func hAgentGuide(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("  进程、删除 C:\\YugsightAgent 目录、删除注册表项\n")
 	b.WriteString("  HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\YugsightAgent。\n")
 	b.WriteString("- 探针日志: 与 agent 同目录的 yugsight-agent.log(Windows 安装后在 C:\\YugsightAgent 下)。\n")
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(b.String()))
+}
+
+// writeGuideEN 英文部署指引(与中文版口径一致, 2026-10-04 i18n: ?lang=en)。
+func writeGuideEN(b *strings.Builder, addr, token, repoDir string) {
+	b.WriteString(appName + " probe (agent) deployment guide\n")
+	b.WriteString(strings.Repeat("=", 48) + "\n\n")
+	b.WriteString("1) On the center machine (or the machine whose browser you use), download the\n")
+	b.WriteString("   agent for the matching platform:\n")
+	b.WriteString("   " + appName + " Web -> Probes -> Download probe\n")
+	b.WriteString("   Or directly: /api/v2/probe/agent/download?os=<windows|linux|darwin>&arch=<amd64|arm64>\n\n")
+	b.WriteString("2) Windows: copy the downloaded yugsight-agent.exe to the target machine and\n")
+	b.WriteString("   double-click it — it installs to C:\\YugsightAgent, registers auto-start,\n")
+	b.WriteString("   and you follow the dialog to enter the center address\n")
+	b.WriteString("   (if it cannot reach the center, the dialog reappears: remind in 5/30/custom\n")
+	b.WriteString("   minutes, or quit the probe).\n\n")
+	b.WriteString("3) Linux / macOS: start from the command line (run in that directory after copying):\n")
+	b.WriteString("   yugsight-agent -center " + addr + " -token " + token + "\n")
+	b.WriteString("   Current agent package directory: " + repoDir + "\n\n")
+	b.WriteString("   Or use probe.json (same directory as the agent), client section example:\n")
+	b.WriteString("   {\"client\":{\"enabled\":true,\"centerAddr\":\"" + addr + "\",\"token\":\"" + token + "\"}}\n\n")
+	b.WriteString("4) The probe makes a single outbound TCP connection to the center and listens\n")
+	b.WriteString("   on no port; make sure the scanned machine can reach the center " + addr + "\n")
+	b.WriteString("   (firewall allows the outbound connection).\n\n")
+	b.WriteString("5) Back on the Web probe management page, the node should be online within\n")
+	b.WriteString("   seconds (online/offline refreshes every 5s).\n\n")
+	b.WriteString("FAQ:\n")
+	b.WriteString("- \"Center address not configured\": probe.json not found or the address is empty;\n")
+	b.WriteString("  specify it explicitly with -center.\n")
+	b.WriteString("- \"Wrong token\": center.token in the center's probe.json must match -token.\n")
+	b.WriteString("- Center address changed (IP changed due to network switch/VPN): the probe does\n")
+	b.WriteString("  not switch automatically; just re-run the one-click install command (the address\n")
+	b.WriteString("  updates to the current IP automatically, the old service address is overwritten,\n")
+	b.WriteString("  auto-start is preserved, no file needs to be edited).\n")
+	b.WriteString("  For a manual deployment (no systemd), re-run the start command with the new address.\n")
+	b.WriteString("- JSON saved by Windows Notepad with a BOM is also recognized (tolerance built in),\n")
+	b.WriteString("  but command-line arguments are recommended.\n")
+	b.WriteString("- Uninstall on Windows: double-click \"Uninstall probe.exe\" under C:\\YugsightAgent\n")
+	b.WriteString("  (auto-stops the probe + removes auto-start + removes the install directory);\n")
+	b.WriteString("  or manually: end the yugsight-agent process, delete the C:\\YugsightAgent\n")
+	b.WriteString("  directory, and delete the registry key\n")
+	b.WriteString("  HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\YugsightAgent.\n")
+	b.WriteString("- Probe log: yugsight-agent.log in the same directory as the agent (after a\n")
+	b.WriteString("  Windows install it lives under C:\\YugsightAgent).\n")
 }
 
 // ===== 辅助 =====

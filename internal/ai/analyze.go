@@ -33,6 +33,7 @@ type Input struct {
 	Summary string          // 列表摘要(拼 RAG 查询词用)
 	Target  string          // 目标/标题(拼 RAG 查询词用)
 	Now     time.Time       // 分析时间(缺省 = 当前时间)
+	Lang    string          // UI 语言(2026-10-04 i18n): 未自定义模板与 LLM 输出语言跟随它; "en"=英文, 其余=中文
 }
 
 // Result 分析结果(装配层回写 raw_reports 的 ai 三字段)。
@@ -75,11 +76,33 @@ func defaultChat(ctx context.Context, basic BasicConfig, system, user string) (s
 }
 
 // 系统级固定边界(不可被 Prompt 模板覆盖 —— 安全红线):
-// 只解读、不判定新漏洞、不生成 POC/攻击命令、只基于给定数据、中文。
-const aiSystemPrompt = `你是 Yugsight(御视) 安全运维分析助手。严格边界:
+// 只解读、不判定新漏洞、不生成 POC/攻击命令、只基于给定数据。
+// 输出语言跟随 UI 语言(2026-10-04 i18n, 用户拍板: prompt 与输出都随语言)。
+const aiSystemPromptZh = `你是 Yugsight(御视) 安全运维分析助手。严格边界:
 1) 只对给定数据做解读研判, 不生成/执行任何 POC、探测或攻击命令;
 2) 结论只基于给定数据(原始数据/参考文档/历史记忆), 不臆测未提供的信息;
 3) 中文、专业, 结论先行: 先用一句话明确"是否存在问题"。存在问题时按结构详细展开(威胁概述 / 逐条发现含等级·依据·影响 / 处置建议), 体现专业研判深度; 无问题则一句话明确"未发现显著问题", 不空泛凑字数。`
+
+const aiSystemPromptEn = `You are the Yugsight security operations analysis assistant. Strict boundaries:
+1) Only interpret and assess the given data; never generate or execute any POC, probe or attack command;
+2) Conclusions must be based only on the given data (raw data / reference documents / historical memory); do not speculate about information not provided;
+3) Professional, English, conclusion first: start with a one-sentence answer to "does a problem exist". If a problem exists, expand in a structured way (threat overview / findings with level, basis and impact / remediation) to show the depth of the assessment; if not, state clearly in one sentence "no significant problem found" — do not pad the word count.`
+
+// aiSystemPromptFor 按 UI 语言返回系统级边界提示(en → 英文版)。
+func aiSystemPromptFor(lang string) string {
+	if strings.EqualFold(lang, "en") {
+		return aiSystemPromptEn
+	}
+	return aiSystemPromptZh
+}
+
+// ragHeading RAG 参考文档段的标题(跟随模板语言)。
+func ragHeading(lang string) string {
+	if strings.EqualFold(lang, "en") {
+		return "\n\n=== Reference documents (RAG knowledge base results, background reference only) ==="
+	}
+	return "\n\n=== 参考文档(RAG 知识库检索结果, 仅作背景参考) ==="
+}
 
 // Analyze 执行一次完整分析(配置 → 变量 → RAG → 记忆 → LLM)。
 func Analyze(ctx context.Context, in Input) (*Result, error) {
@@ -97,7 +120,8 @@ func Analyze(ctx context.Context, in Input) (*Result, error) {
 	if !cfg.ModuleEnabled(key) {
 		return nil, fmt.Errorf("该模块的 AI 分析已被管理员关闭(AI 配置页 → 模块总开关)")
 	}
-	tpl, err := cfg.Prompt(key)
+	// lang: 未自定义模板按 UI 语言返回默认版本, 自定义模板原样使用
+	tpl, err := cfg.Prompt(key, in.Lang)
 	if err != nil {
 		return nil, err
 	}
@@ -137,14 +161,14 @@ func Analyze(ctx context.Context, in Input) (*Result, error) {
 		}
 	}
 
-	user := Render(tpl.Content, vars)
+	user := Render(tpl.Content, vars, in.Lang)
 	if strings.TrimSpace(ragText) != "" {
-		user += "\n\n=== 参考文档(RAG 知识库检索结果, 仅作背景参考) ===" + ragText
+		user += ragHeading(in.Lang) + ragText
 	}
 
 	// ---- LLM 调用 ----
 	t0 := time.Now()
-	out, err := chat(ctx, cfg.BasicConfig, aiSystemPrompt, user)
+	out, err := chat(ctx, cfg.BasicConfig, aiSystemPromptFor(in.Lang), user)
 	elapsed := time.Since(t0).Milliseconds()
 	if err != nil {
 		return nil, err

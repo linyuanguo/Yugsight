@@ -254,6 +254,75 @@ func TestAgentInstallPageRenders(t *testing.T) {
 	}
 }
 
+// TestAgentInstallBilingualPage 落地页中英双语同页(2026-10-04): 语言由页面 JS
+// 读与 Vue UI 共用的 localStorage 键 yugsight_lang 决定(裸 URL 自动跟随界面语言),
+// 右上角切换按钮写回同一键。守住的契约:
+//  1. 中英两段内容都在(缺一段=某语言界面下点进来整页另一语言, 用户已实测报障);
+//  2. 语言状态键必须是 yugsight_lang(与前端 i18n 持久化键同源, 写错=不跟随 UI);
+//  3. 地址/密钥/平台按钮/双语 title 注入不回归。
+func TestAgentInstallBilingualPage(t *testing.T) {
+	withAgentDir(t)
+	prevToken := probeCfg.Center.Token
+	prevListen := probeCfg.Center.Listen
+	probeCfg.Center.Listen = "192.168.5.20:8600"
+	probeCfg.Center.Token = "TESTTOKEN123"
+	t.Cleanup(func() {
+		probeCfg.Center.Listen = prevListen
+		probeCfg.Center.Token = prevToken
+	})
+
+	srv := agentTestServer(t)
+	w := doAgentReq(t, srv, "/api/v2/probe/agent/install")
+	if w.Code != http.StatusOK {
+		t.Fatalf("安装页 HTTP %d: %s", w.Code, w.Body.String())
+	}
+	page := w.Body.String()
+	for _, want := range []string{
+		`data-lang="zh"`, `data-lang="en"`, // 双语段都在
+		"yugsight_lang",                    // 与 Vue UI 共用语言键(跟随界面的核心)
+		"langToggle",                       // 右上角切换按钮
+		"192.168.5.20:8600",                // 地址注入
+		"TESTTOKEN123",                     // 密钥注入
+		"-center", "-token",                // 可复制命令
+		"下载探针", "Probe Install",         // 两种语言的内容标记
+		`data-title-zh=`, `data-title-en=`, // 未分发平台的双语置灰原因
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("安装页缺少关键内容 %q", want)
+		}
+	}
+	// 六个平台按钮都在(双语段各一份, Contains 满足即可)
+	for _, p := range agentPlatforms {
+		if !strings.Contains(page, "data-os=\""+p.OS+"\" data-arch=\""+p.Arch+"\"") {
+			t.Errorf("安装页缺少平台按钮 %s/%s", p.OS, p.Arch)
+		}
+	}
+}
+
+// TestAgentGuideEnglish ?lang=en 返回英文纯文本指引(与中文版同接口, 语言由参数选)。
+func TestAgentGuideEnglish(t *testing.T) {
+	withAgentDir(t)
+	srv := agentTestServer(t)
+	w := doAgentReq(t, srv, "/api/v2/probe/agent/guide?lang=en")
+	if w.Code != http.StatusOK {
+		t.Fatalf("指引(?lang=en) HTTP %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{"deployment guide", "yugsight-agent", "deployment"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("英文指引缺少关键内容 %q", want)
+		}
+	}
+	if strings.Contains(body, "部署指引") {
+		t.Error("?lang=en 的指引不应是中文")
+	}
+	// 不带参数保持中文(手工分享链接的既有行为)
+	g := doAgentReq(t, srv, "/api/v2/probe/agent/guide")
+	if !strings.Contains(g.Body.String(), "部署指引") {
+		t.Error("不带 lang 参数的指引应保持中文(既有行为)")
+	}
+}
+
 // TestAgentInstallEscapesToken 地址/密钥来自配置文件, 必须 HTML 转义 ——
 // 未转义会破坏页面结构(甚至形成注入面)。
 func TestAgentInstallEscapesToken(t *testing.T) {

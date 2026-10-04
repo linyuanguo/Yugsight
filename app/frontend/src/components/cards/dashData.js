@@ -78,9 +78,10 @@ export const LAYER_BY_TYPE = {
   router: 1, coresw: 1, firewall: 2, aggsw: 2,
   probe: 3, server: 3, terminal: 3, unknowndevice: 3,
 }
+// 2026-10-04 i18n: 值存 i18n 词条键(screen.type*), 消费方 t() 解析; TYPE_OPTIONS 的 t 即词条键
 export const TYPE_CN = {
-  router: '路由器', coresw: '核心交换机', aggsw: '汇聚交换机', firewall: '防火墙',
-  probe: '探针', server: '服务器', terminal: '终端', unknowndevice: '未识别设备',
+  router: 'screen.typeRouter', coresw: 'screen.typeCoreSw', aggsw: 'screen.typeAggSw', firewall: 'screen.typeFirewall',
+  probe: 'screen.typeProbe', server: 'screen.typeServer', terminal: 'screen.typeTerminal', unknowndevice: 'screen.typeUnknown',
 }
 export const TYPE_OPTIONS = Object.keys(TYPE_CN).map(v => ({ v, t: TYPE_CN[v] }))
 export function layerForType(t) { return LAYER_BY_TYPE[t] || 3 }
@@ -157,29 +158,30 @@ async function loadNetworkDevices() {
     const r = await v2('/monitor/status')
     monTargets = (r && r.targets) || []
   } catch (e) { monTargets = [] } // 该路失败只降级
-  for (const t of monTargets) {
-    const ip = t.addr ? String(t.addr).split(':')[0] : ''
+  for (const tg of monTargets) {
+    const ip = tg.addr ? String(tg.addr).split(':')[0] : ''
     if (ip && existingIp0.has(ip)) continue // 与探针同 IP 不重复(装机即纳管)
     existingIp0.add(ip)
-    const memPct = t.memTotal ? Math.round((t.memUsed / t.memTotal) * 100) : 0
+    const memPct = tg.memTotal ? Math.round((tg.memUsed / tg.memTotal) * 100) : 0
     // 2026-10-01: 内置"中心端(本机)"(source=center)是主机不是交换机 —— 类型/层
     // 按主机算, 否则拓扑把它画成核心交换机(图标与层级都错)。
-    const isCenter = t.source === 'center'
+    const isCenter = tg.source === 'center'
     out.push({
-      deviceId: 'M_' + t.id, source: 'monitor', isMonitor: true,
-      name: t.name || t.addr, type: isCenter ? 'server' : 'coresw', ip, ips: ip ? [ip] : [],
-      mac: t.mac || '', cpu: Math.round(t.cpuLoad || 0), memory: memPct,
+      deviceId: 'M_' + tg.id, source: 'monitor', isMonitor: true,
+      // 中心端(本机)名是后端硬编码中文, 显示走词条随语言; 其余目标用真实名称
+      name: isCenter ? t('nm.centerSelf') : (tg.name || tg.addr), type: isCenter ? 'server' : 'coresw', ip, ips: ip ? [ip] : [],
+      mac: tg.mac || '', cpu: Math.round(tg.cpuLoad || 0), memory: memPct,
       // 2026-09-30: 该端接口真实上下行速率(SNMP 两帧差分, 后端 monitor/status 回带)——
       // 拓扑手动链路(端点常是 M_* 监控设备)的线上速率展示靠它, 无数据为 0=不画光点
-      inRateBps: t.inRateBps || 0, outRateBps: t.outRateBps || 0,
+      inRateBps: tg.inRateBps || 0, outRateBps: tg.outRateBps || 0,
       // 2026-10-02: 中心端(本机)网卡端口清单(后端 centerMonitorView 按探针同一实现
       // 回带, 全量无 top5 截断)——拓扑"中心端节点选网口"靠它。普通 SNMP 目标 status
       // 里的 ifaces 只有 TOP5(全量走 /samples 的 snmpPorts 路径), 不能塞这里, 否则
       // 交换机端口下拉会从 113 口缩水成 5 口。
       ifaces: isCenter
-        ? (t.ifaces || []).map(f => ({ name: f.name, state: f.up ? 'up' : '', inBps: f.inRate || 0, outBps: f.outRate || 0, speed: f.speed || 0 }))
+        ? (tg.ifaces || []).map(f => ({ name: f.name, state: f.up ? 'up' : '', inBps: f.inRate || 0, outBps: f.outRate || 0, speed: f.speed || 0 }))
         : [],
-      status: statusOfProbe(!!t.online, Math.round(t.cpuLoad || 0), memPct),
+      status: statusOfProbe(!!tg.online, Math.round(tg.cpuLoad || 0), memPct),
       layer: isCenter ? 3 : 1,   // 中心端=主机层(3), SNMP 网络设备=核心层(1)
     })
   }

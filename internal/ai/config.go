@@ -18,6 +18,7 @@ package ai
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"yugsight/internal/scanner"
@@ -31,7 +32,19 @@ const (
 )
 
 // TplLabel 模板键的中文展示名。
-func TplLabel(k string) string {
+// TplLabel 模板键的展示名(UI)。lang="en" 返回英文名, 其余返回中文。
+func TplLabel(k, lang string) string {
+	if strings.EqualFold(lang, "en") {
+		switch k {
+		case TplCapture:
+			return "Traffic Analysis Template"
+		case TplScan:
+			return "Vulnerability Report Template"
+		case TplMonitor:
+			return "Monitoring Alert Assessment Template"
+		}
+		return k
+	}
 	switch k {
 	case TplCapture:
 		return "流量分析模板"
@@ -259,10 +272,13 @@ func DefaultConfig() *Config {
 			MaxConcurrency: defMaxConc,
 		},
 		Modules: ModuleSwitches{Capture: true, Scan: true, Monitor: true},
+		// 2026-10-04 i18n: 首次生成配置文件中固化为中文版(lang 未知时默认中文,
+		// 与前端语言默认 zh 一致); 运行期 Prompt(key, lang) 会对"未自定义"内容
+		// 按请求语言返回对应默认版本, 这里只是磁盘初始值。
 		Prompts: map[string]*PromptTemplate{
-			TplCapture: {Name: TplLabel(TplCapture), Content: DefaultPrompt(TplCapture), RAG: true, TopK: defTopK},
-			TplScan:    {Name: TplLabel(TplScan), Content: DefaultPrompt(TplScan), RAG: true, TopK: defTopK},
-			TplMonitor: {Name: TplLabel(TplMonitor), Content: DefaultPrompt(TplMonitor), RAG: true, TopK: defTopK},
+			TplCapture: {Name: TplLabel(TplCapture, "zh"), Content: DefaultPrompt(TplCapture, "zh"), RAG: true, TopK: defTopK},
+			TplScan:    {Name: TplLabel(TplScan, "zh"), Content: DefaultPrompt(TplScan, "zh"), RAG: true, TopK: defTopK},
+			TplMonitor: {Name: TplLabel(TplMonitor, "zh"), Content: DefaultPrompt(TplMonitor, "zh"), RAG: true, TopK: defTopK},
 		},
 		RAG: RAGConfig{Enabled: true, TopK: defTopK, ChunkSize: defChunkSize, MaxChunks: defMaxChunks, MaxDocs: defMaxDocs},
 		Memory: MemoryConfig{
@@ -365,10 +381,22 @@ func (c *Config) normalize() {
 }
 
 // Prompt 取某模板(不存在 = 报错, 调用方按模块键取不会走到这里)。
-func (c *Config) Prompt(key string) (*PromptTemplate, error) {
+// Prompt 取某键当前生效模板。
+//
+// 语言口径(2026-10-04 i18n): 存储内容与内置默认一致(中文版或英文版)视为
+// "未自定义" → 按 lang 返回对应语言默认(跟随 UI 语言); 用户自定义过
+// (内容与两版默认都不同) → 原样返回存储值 —— 用户数据不自动翻译。
+func (c *Config) Prompt(key string, lang string) (*PromptTemplate, error) {
 	p, ok := c.Prompts[key]
-	if !ok || p == nil || p.Content == "" {
+	if !ok || p == nil {
 		return nil, fmt.Errorf("Prompt 模板不存在: %s", key)
+	}
+	content := strings.TrimSpace(p.Content)
+	if content == "" || content == strings.TrimSpace(DefaultPrompt(key, "zh")) || content == strings.TrimSpace(DefaultPrompt(key, "en")) {
+		cp := *p
+		cp.Content = DefaultPrompt(key, lang)
+		cp.Name = TplLabel(key, lang)
+		return &cp, nil
 	}
 	return p, nil
 }

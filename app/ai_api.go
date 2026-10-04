@@ -436,21 +436,24 @@ func handleAIConfigSave(w http.ResponseWriter, r *http.Request) {
 
 // ===== Prompt 模板 =====
 
-// handleAITemplates GET /api/ai/templates
+// handleAITemplates GET /api/ai/templates?lang=
+// 2026-10-04 i18n: 未自定义的模板按 lang 回对应语言默认(与运行期分析同口径),
+// 用户自定义内容原样回显。
 func handleAITemplates(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	lang := r.URL.Query().Get("lang")
 	cfg := ai.CurrentConfig()
 	out := make([]map[string]any, 0, len(cfg.Prompts))
 	for _, k := range []string{ai.TplCapture, ai.TplScan, ai.TplMonitor} {
-		p, ok := cfg.Prompts[k]
-		if !ok || p == nil {
+		p, err := cfg.Prompt(k, lang)
+		if err != nil || p == nil {
 			continue
 		}
 		out = append(out, map[string]any{
-			"key": k, "label": ai.TplLabel(k),
+			"key": k, "label": ai.TplLabel(k, lang),
 			"name": p.Name, "content": p.Content, "rag": p.RAG, "topK": p.TopK,
 		})
 	}
@@ -470,6 +473,7 @@ func handleAITemplateSave(w http.ResponseWriter, r *http.Request) {
 		Name    string  `json:"name"`
 		RAG     *bool   `json:"rag"`
 		TopK    *int    `json:"topK"`
+		Lang    string  `json:"lang"`
 	}
 	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
@@ -480,7 +484,7 @@ func handleAITemplateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := ai.CurrentConfig()
-	prev, err := cfg.Prompt(req.Key)
+	prev, err := cfg.Prompt(req.Key, req.Lang)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -515,14 +519,16 @@ func handleAITemplateSave(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"saved": true, "key": req.Key})
 }
 
-// handleAITemplateReset POST /api/ai/templates/reset {key}
+// handleAITemplateReset POST /api/ai/templates/reset {key, lang}
+// 2026-10-04 i18n: 恢复默认按当前 UI 语言写入对应语言版本。
 func handleAITemplateReset(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
-		Key string `json:"key"`
+		Key  string `json:"key"`
+		Lang string `json:"lang"`
 	}
 	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
@@ -534,7 +540,7 @@ func handleAITemplateReset(w http.ResponseWriter, r *http.Request) {
 	}
 	def := ai.DefaultConfig().Prompts[req.Key]
 	p := &ai.PromptTemplate{
-		Name: def.Name, Content: def.Content, RAG: def.RAG, TopK: def.TopK,
+		Name: ai.TplLabel(req.Key, req.Lang), Content: ai.DefaultPrompt(req.Key, req.Lang), RAG: def.RAG, TopK: def.TopK,
 	}
 	if err := updateAIPrompt(req.Key, p); err != nil {
 		jsonErr(w, http.StatusInternalServerError, "恢复失败: "+err.Error())
@@ -1068,6 +1074,7 @@ func handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ReportID string `json:"reportId"`
 		Module   string `json:"module"`
+		Lang     string `json:"lang"` // 2026-10-04 i18n: UI 语言(未自定义模板与 LLM 输出语言跟随它)
 	}
 	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
@@ -1138,6 +1145,7 @@ func handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 		Assets:  rr.Assets,
 		Summary: rr.Summary,
 		Target:  strings.TrimSpace(rr.Title + " " + rr.Target),
+		Lang:    req.Lang,
 	})
 	if err != nil {
 		// LLM 失败不写报告(半截结果落库比没有更糟 —— 用户会当结论看)

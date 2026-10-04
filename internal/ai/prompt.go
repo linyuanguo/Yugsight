@@ -81,8 +81,79 @@ const defaultPromptMonitor = `你是资深运维与基础设施安全专家。�
 历史告警与指标(结构化记忆):
 {{structured_memory}}`
 
+// 2026-10-04 i18n: 英文版本(结构/变量与中文版一一对应)。用户 UI 切英文后,
+// 未自定义的默认模板与 LLM 输出语言都跟随英文(用户拍板口径)。
+const defaultPromptCaptureEn = `You are a senior network traffic security analyst. Based on the following Yugsight packet-capture data, provide a professional assessment:
+
+[Output requirements]
+1. Conclusion first: state in one sentence whether an anomaly/risk exists (yes/no).
+2. If an anomaly/risk exists, expand in a structured way (show professionalism):
+   - Threat overview: 1-2 sentences summarizing the nature of the threat (port scan / data exfiltration / malicious protocol / DoS, etc.) and the overall risk level (critical/high/medium/low).
+   - Findings: list each suspicious traffic point, each with [suspicious behavior / basis (5-tuple, protocol, packet characteristics) / risk level / potential impact].
+   - Attack-chain correlation: when multiple flows point to the same attack chain (e.g. scan -> brute force -> exfiltration), explain the correlation.
+   - Remediation: concrete mitigation/blocking measures (block source IPs, tighten ACLs, investigate hosts, etc.).
+3. If no anomaly is found, state clearly "no significant anomaly found" and use one sentence to describe the traffic scope covered (protocols / time range).
+
+Analysis time: {{time}}
+Asset info: {{asset_info}}
+Packet-capture data (desensitized):
+{{raw_data}}
+Historical reference (structured memory):
+{{structured_memory}}`
+
+const defaultPromptScanEn = `You are a senior vulnerability assessment and security expert. Based on the following Yugsight scan results, provide a professional assessment:
+
+[Output requirements]
+1. Conclusion first: state in one sentence whether a risk exists (yes/no) and the overall risk posture (critical/high/medium/low).
+2. If there is risk, expand in a structured way (show professionalism):
+   - Risk overview: 1-2 sentences summarizing the vulnerability distribution (level composition, affected assets, exploitability).
+   - Key vulnerabilities: list from highest to lowest risk, each with [vulnerability / affected assets / level / risk description (how it could be exploited, impact scope) / fix key points].
+   - Priority remediation: point out the 1-3 items most needing a fix first and the reasons (e.g. remotely exploitable without authentication, data-leak risk).
+   - Fix recommendations: concrete suggestions such as version upgrades / config hardening / compensating controls.
+3. If no risk is found, state clearly "no significant risk found" and use one sentence to describe the assets and vulnerability surface covered.
+
+Analysis time: {{time}}
+Asset info: {{asset_info}}
+Scan results (vulnerability list):
+{{scan_result}}
+Raw data (desensitized):
+{{raw_data}}
+Historical reference (structured memory):
+{{structured_memory}}`
+
+const defaultPromptMonitorEn = `You are a senior operations and infrastructure security expert. Based on the following Yugsight node monitoring data (metrics/alerts), provide a professional assessment:
+
+[Output requirements]
+1. Conclusion first: state in one sentence whether an anomaly exists (yes/no) and the overall health (normal / at risk / critical).
+2. If there is an anomaly, expand in a structured way (show professionalism):
+   - Anomaly overview: 1-2 sentences summarizing the nature of the anomaly (performance bottleneck / service outage / resource exhaustion / security alert, etc.) and its severity.
+   - Anomalies: list each anomalous metric/alert, each with [device / metric or alert / current value and threshold / root-cause analysis / impact scope].
+   - Correlation: when multiple anomalies point to the same root cause (e.g. disk full -> service failure), explain the causal chain.
+   - Remediation: concrete investigate / mitigate / recover measures (in priority order).
+3. If no anomaly is found, state clearly "no significant anomaly found" and use one sentence to describe the devices and metrics covered.
+
+Analysis time: {{time}}
+Device metrics:
+{{metric_data}}
+Raw data (desensitized):
+{{raw_data}}
+Historical alerts and metrics (structured memory):
+{{structured_memory}}`
+
 // DefaultPrompt 某模板键的预设内容(恢复默认用)。
-func DefaultPrompt(key string) string {
+// lang: "en" 返回英文版, 其余(zh/空/未知)返回中文版。
+func DefaultPrompt(key, lang string) string {
+	if strings.EqualFold(lang, "en") {
+		switch key {
+		case TplCapture:
+			return defaultPromptCaptureEn
+		case TplScan:
+			return defaultPromptScanEn
+		case TplMonitor:
+			return defaultPromptMonitorEn
+		}
+		return ""
+	}
 	switch key {
 	case TplCapture:
 		return defaultPromptCapture
@@ -97,10 +168,16 @@ func DefaultPrompt(key string) string {
 // Render 把模板里的 {{var}} 替换为 vars 中的值。
 //
 // 口径:
-//   - 已知变量: 有值 → 替换; 无值 → 替换为 "无"(显式"无"比留空好,
+//   - 已知变量: 有值 → 替换; 无值 → 替换为"无"/"N/A"(显式占位比留空好,
 //     LLM 看到"资产信息: 无"能明确知道是空数据而不是被截断);
 //   - 未知变量: 原样保留(见文件头注释)。
-func Render(content string, vars map[string]string) string {
+//
+// lang: 空值占位文案跟随模板语言(en → "N/A")。
+func Render(content string, vars map[string]string, lang string) string {
+	empty := "无"
+	if strings.EqualFold(lang, "en") {
+		empty = "N/A"
+	}
 	known := make(map[string]bool, len(PromptVars))
 	for _, v := range PromptVars {
 		known[v] = true
@@ -125,7 +202,7 @@ func Render(content string, vars map[string]string) string {
 			if v, ok := vars[token]; ok {
 				b.WriteString(v)
 			} else {
-				b.WriteString("无")
+				b.WriteString(empty)
 			}
 		} else {
 			b.WriteString("{{" + token + "}}")

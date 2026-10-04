@@ -23,6 +23,7 @@ import { useRoute } from 'vue-router'
 import { api } from '../api/http'
 import { collectContext, quickQuestions } from '../assistant/context'
 import { md } from '../assistant/md'
+import { locale } from '../i18n'
 
 const route = useRoute()
 
@@ -104,7 +105,8 @@ async function send(q) {
         pageName: ctx.pageName,
         query: ctx.query,
         params: ctx.params,
-        data: ctx.data
+        data: ctx.data,
+        lang: locale.value // 2026-10-04 i18n: 未自定义 prompt 与回答语言跟随 UI 语言
       })
     })
     if (!r.ok || !r.body) {

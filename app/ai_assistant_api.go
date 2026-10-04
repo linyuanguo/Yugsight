@@ -109,7 +109,15 @@ func assistantUser(r *http.Request) string {
 // 落地方式: ①+② 拼进 system 消息(上下文约束"只基于页面数据回答"属于全局
 // 规则, 放 system 比放 user 约束力强), ③ 作为 user 消息。
 // 页面数据先 JSON 序列化再脱敏(可能含口令/令牌类字段), 超限截断。
-func buildAssistantMessages(prompt string, pageType, pageName string, data any, question string) (system, user string) {
+// buildAssistantMessages 组装小 Y 的 LLM 请求消息。
+//
+// 顺序(任务书): 1.系统 PROMPT 2.页面上下文数据 3.用户当前提问。
+// 落地方式: ①+② 拼进 system 消息(上下文约束"只基于页面数据回答"属于全局
+// 规则, 放 system 比放 user 约束力强), ③ 作为 user 消息。
+// 页面数据先 JSON 序列化再脱敏(可能含口令/令牌类字段), 超限截断。
+// lang(2026-10-04 i18n): 上下文拼装说明文字跟随 UI 语言(与 prompt 语言一致,
+// 否则英文 prompt 里夹中文约束会引导模型输出语言漂移)。
+func buildAssistantMessages(prompt string, pageType, pageName string, data any, question, lang string) (system, user string) {
 	system = prompt
 	if data == nil {
 		return system, question
@@ -119,16 +127,25 @@ func buildAssistantMessages(prompt string, pageType, pageName string, data any, 
 		return system, question // 数据不可序列化 = 无上下文, 不阻断问答
 	}
 	dataJSON := scanner.DesensitizeRaw(string(b), assistantCtxMaxBytes)
-	label := "未识别页面"
+	label := "unrecognized page"
+	if !strings.EqualFold(lang, "en") {
+		label = "未识别页面"
+	}
 	if pageType != "" {
 		label = pageType
 		if pageName != "" {
 			label = pageName + "(" + pageType + ")"
 		}
 	}
-	system += "\n\n## 当前页面上下文\n用户当前所在页面: " + label +
-		"\n页面数据(JSON, 已脱敏):\n" + dataJSON +
-		"\n\n请严格只基于以上页面数据回答; 数据中没有的信息, 明确告知\"当前页面数据中未包含该信息\", 不要编造。"
+	if !strings.EqualFold(lang, "en") {
+		system += "\n\n## 当前页面上下文\n用户当前所在页面: " + label +
+			"\n页面数据(JSON, 已脱敏):\n" + dataJSON +
+			"\n\n请严格只基于以上页面数据回答; 数据中没有的信息, 明确告知\"当前页面数据中未包含该信息\", 不要编造。"
+		return system, question
+	}
+	system += "\n\n## Current page context\nUser's current page: " + label +
+		"\nPage data (JSON, desensitized):\n" + dataJSON +
+		"\n\nAnswer strictly based only on the page data above; for information not present in the data, state clearly that it is not included in the current page data — do not fabricate."
 	return system, question
 }
 
@@ -152,6 +169,8 @@ func handleAssistantStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// 2026-10-04 i18n: 未自定义 prompt 按 UI 语言回对应版本(AI 配置页回显用)
+	lang := r.URL.Query().Get("lang")
 	cfg := ai.CurrentConfig()
 	jsonOK(w, map[string]any{
 		// enabled = 小 Y 开关; aiEnabled = AI 全局开关;
@@ -161,8 +180,8 @@ func handleAssistantStatus(w http.ResponseWriter, r *http.Request) {
 		"effective":       cfg.Enabled && cfg.Assistant.Enabled,
 		"backend":         cfg.Backend,
 		"model":           cfg.Model,
-		"prompt":          cfg.AssistantPrompt(),
-		"defaultPrompt":   ai.DefaultAssistantPrompt(),
+		"prompt":          cfg.AssistantPrompt(lang),
+		"defaultPrompt":   ai.DefaultAssistantPrompt(lang),
 		"hasCustomPrompt": strings.TrimSpace(cfg.Assistant.Prompt) != "",
 	})
 }
@@ -288,6 +307,7 @@ func handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		PageType string `json:"pageType"`
 		PageName string `json:"pageName"`
 		Data     any    `json:"data"`
+		Lang     string `json:"lang"` // 2026-10-04 i18n: UI 语言(未自定义 prompt 与回答语言跟随它)
 	}
 	if err := decodeAIBody(r, &req); err != nil {
 		jsonErr(w, http.StatusBadRequest, "请求格式错误")
@@ -311,7 +331,7 @@ func handleAssistantChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	system, user := buildAssistantMessages(cfg.AssistantPrompt(), pageType, pageName, data, question)
+	system, user := buildAssistantMessages(cfg.AssistantPrompt(req.Lang), pageType, pageName, data, question, req.Lang)
 
 	// 模型适配层: 复用既有 LLM 统一调用封装(OpenAI 兼容协议; backend=ollama
 	// 即本地模型扩展位) —— 不写第二套 HTTP 调用路径。配置每次实时读取,

@@ -16,7 +16,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../api/http'
 import { fmtDT } from '../utils'
-import { t } from '../i18n'
+import { t, locale } from '../i18n'
 import PageHeader from '../components/PageHeader.vue'
 import AiPromptEditor from '../components/AiPromptEditor.vue'
 
@@ -146,7 +146,7 @@ const assistantEff = computed(() => !!(assistantInfo.value && assistantInfo.valu
 
 async function loadAssistant() {
   try {
-    const d = await api('/api/v1/ai/assistant')
+    const d = await api('/api/v1/ai/assistant?lang=' + locale.value)
     assistant.enabled = !!d.enabled
     assistant.prompt = d.prompt || ''
     assistantInfo.value = d
@@ -204,7 +204,7 @@ const tplBusy = ref({})
 
 async function loadTemplates() {
   try {
-    const d = await api('/api/ai/templates')
+    const d = await api('/api/ai/templates?lang=' + locale.value)
     tplVars.value = d.vars || []
     for (const t of d.templates || []) {
       tpls[t.key] = { ...t }
@@ -218,7 +218,7 @@ async function saveTpl(key) {
   try {
     await api('/api/ai/templates', {
       method: 'POST',
-      body: JSON.stringify({ key, name: p.name, content: p.content, rag: p.rag, topK: +p.topK })
+      body: JSON.stringify({ key, name: p.name, content: p.content, rag: p.rag, topK: +p.topK, lang: locale.value })
     })
     say(true, t('aic.tplSaved', { x: p.label }))
   } catch (e) { say(false, e.message) } finally {
@@ -229,7 +229,7 @@ async function saveTpl(key) {
 async function resetTpl(key) {
   if (!confirm(t('aic.tplResetConfirm', { x: tpls[key].label }))) return
   try {
-    await api('/api/ai/templates/reset', { method: 'POST', body: JSON.stringify({ key }) })
+    await api('/api/ai/templates/reset', { method: 'POST', body: JSON.stringify({ key, lang: locale.value }) })
     say(true, t('aic.tplResetOk'))
     await loadTemplates()
   } catch (e) { say(false, e.message) }

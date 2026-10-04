@@ -18,7 +18,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 		t.Fatal("模块开关默认应全开(受全局 enabled 约束, 默认关时零调用)")
 	}
 	for _, k := range []string{TplCapture, TplScan, TplMonitor} {
-		p, err := cfg.Prompt(k)
+		p, err := cfg.Prompt(k, "zh")
 		if err != nil || p.Content == "" {
 			t.Fatalf("默认模板缺失: %s err=%v", k, err)
 		}

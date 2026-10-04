@@ -698,7 +698,7 @@ import Modal from '../components/Modal.vue'
 import AiAnalyzeButton from '../components/AiAnalyzeButton.vue'
 import { api, v2 } from '../api/http'
 import { isAdmin } from '../auth'
-import { t } from '../i18n'
+import { t, locale } from '../i18n'
 import { SEV_NAME, copyText } from '../utils'
 import { SCAN_TYPES, typeToKind } from '../utils/scanTypes'
 import { setPageData } from '../assistant/context'
@@ -1035,7 +1035,8 @@ async function exportReport() {
 function defaultJobName() {
   const d = new Date()
   const p = n => String(n).padStart(2, '0')
-  return '扫描-' + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes())
+  const pre = locale.value === 'en' ? 'Scan-' : '扫描-' // 默认任务名随 UI 语言(用户可改)
+  return pre + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes())
 }
 
 const form = reactive({
@@ -1531,7 +1532,7 @@ setPageData('console', () => ({
       type: t.type || '',
       target: t.target || '',
       status: t.status || '',
-      node: t.node || '中心本地'
+      node: t.node || t('console.queueNodeLocal')
     }))
   }
 }))

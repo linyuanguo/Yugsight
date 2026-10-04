@@ -9,7 +9,7 @@
     <!-- 安全声明: 常驻不可关闭。攻击性能力的边界写在最显眼处, 而不是埋在文档里 -->
     <div class="card" style="border-left:3px solid var(--danger,#e5484d); margin-bottom:12px">
       <div class="card-title">{{ t('pw.statementTitle') }}</div>
-      <p class="muted small" style="margin:0; line-height:1.7">{{ st.statement || statementFallback }}</p>
+      <p class="muted small" style="margin:0; line-height:1.7">{{ statement }}</p>
     </div>
 
     <div class="tabs">
@@ -550,8 +550,10 @@ const phTpl = computed(() => [
 // 服务名 -> 中文(弱口令检测页深链过来时用于生成任务标题)
 const serviceNames = { redis: 'Redis', mysql: 'MySQL', ftp: 'FTP', telnet: 'Telnet', ssh: 'SSH', vnc: 'VNC', rdp: 'RDP', smb: 'SMB' }
 
-// statementFallback 后端未返回声明文案时的兜底(与后端 pentaStatement 同口径, 走 i18n)。
-const statementFallback = computed(() => t('pw.statementFallback'))
+// statement 安全声明文案以 i18n 为唯一展示源(随 UI 语言切换)。
+// 后端 pentaStatement 是审计日志写入口径, 界面不显示后端值 —— 否则切英文后
+// 这段常驻声明永远是中文(st.statement 恒非空, 原 || 兜底逻辑走不到)。
+const statement = computed(() => t('pw.statementFallback'))
 
 const tab = ref('task')
 const loading = ref(false)

@@ -101,7 +101,8 @@
           <tbody>
             <tr v-for="n in schedNodes" :key="n.id">
               <td>
-                <div class="small">{{ n.name || (n.kind === 'local' ? t('pb.kLocal') : n.id) }}</div>
+                <!-- 中心本地节点名由后端写死中文, 展示层按 UI 语言翻译(内置值随语言, 探针名=用户数据不翻译) -->
+                <div class="small">{{ n.kind === 'local' ? t('pb.kLocal') : (n.name || n.id) }}</div>
                 <div class="muted small mono">{{ n.id }}</div>
               </td>
               <td class="small">{{ t(NODE_KIND[n.kind] || n.kind || '-') }}</td>
@@ -453,7 +454,7 @@ import Modal from '../components/Modal.vue'
 import { v2 } from '../api/http'
 import { fmtDT } from '../utils'
 import { setPageData } from '../assistant/context'
-import { t } from '../i18n'
+import { t, locale } from '../i18n'
 
 // 任务类型/状态值存 i18n 词条键, 模板渲染处 t() 解析(2026-10-04 i18n 批次 8)
 const TASK_KIND = { port: 'pb.kPort', ip: 'pb.kIp', web: 'pb.kWeb', host: 'pb.kHost', image: 'pb.kImage', arp: 'pb.kArp' }
@@ -764,8 +765,11 @@ function downloadAgent(p) {
   window.open('/api/v2/probe/agent/download?os=' + p.os + '&arch=' + p.arch, '_blank')
 }
 
+// 落地页是服务端渲染的独立 HTML(不走 Vue i18n), 但页面 JS 读与 UI 共用的
+// localStorage 键 yugsight_lang —— 界面英文时打开(裸 URL)自动英文, 页内右上角
+// 按钮也可切换并写回该键, 无需前端带参。
 function openGuide() {
-  window.open('/api/v2/probe/agent/guide', '_blank')
+  window.open('/api/v2/probe/agent/guide?lang=' + locale.value, '_blank')
 }
 
 // 可视化安装页: 服务端渲染的 HTML(含中心端地址与节点密钥的现成命令)。

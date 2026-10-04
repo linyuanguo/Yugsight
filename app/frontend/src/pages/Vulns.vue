@@ -1,10 +1,10 @@
 <template>
   <div>
-    <PageHeader title="漏洞管理" desc="全部漏洞记录 · 漏扫管控(白名单/误报/置信度)"></PageHeader>
+    <PageHeader :title="t('vn.title')" :desc="t('vn.desc')"></PageHeader>
 
     <div class="tabs" style="margin-bottom:14px">
-      <div class="tab" :class="{ active: tab === 'list' }" @click="setTab('list')">漏洞列表 ({{ total }})</div>
-      <div class="tab" :class="{ active: tab === 'control' }" @click="setTab('control')">漏扫管控</div>
+      <div class="tab" :class="{ active: tab === 'list' }" @click="setTab('list')">{{ t('vn.tabList') }} ({{ total }})</div>
+      <div class="tab" :class="{ active: tab === 'control' }" @click="setTab('control')">{{ t('vn.tabControl') }}</div>
     </div>
 
     <div class="card" v-if="tab === 'list'">
@@ -13,29 +13,29 @@
              /vulns/options 按全量漏洞库聚合(列表是分页接口, 当前页取不全); 删光
              某类数据后选项消失, 后期有了再出现 -->
         <select class="select" v-model="f.severity">
-          <option value="">全部等级</option>
-          <option v-for="s in vulnOpts.severities" :key="s" :value="s">{{ SEV_CN[s] || s }}</option>
+          <option value="">{{ t('vn.allSev') }}</option>
+          <option v-for="s in vulnOpts.severities" :key="s" :value="s">{{ sevName(s) }}</option>
         </select>
         <!-- 两态口径: 开放(含历史 new/duplicate) / 已修复; 重复命中见"最后命中"列 -->
         <select class="select" v-model="f.status">
-          <option value="">全部状态</option>
-          <option v-for="s in vulnOpts.statuses" :key="s.id" :value="s.id">{{ s.id === 'fixed' ? '已修复' : '开放' }} ({{ s.count }})</option>
+          <option value="">{{ t('vn.allStatus') }}</option>
+          <option v-for="s in vulnOpts.statuses" :key="s.id" :value="s.id">{{ s.id === 'fixed' ? t('vn.stFixed') : t('vn.stOpen') }} ({{ s.count }})</option>
         </select>
-        <input class="input mono" v-model.trim="f.cve" placeholder="CVE 编号" @keyup.enter="reload">
-        <input class="input mono" v-model.trim="f.ip" placeholder="资产 IP" @keyup.enter="reload">
-        <input class="input" v-model.trim="f.title" placeholder="标题关键字" @keyup.enter="reload">
-        <button class="btn sm" @click="reload">查询</button>
+        <input class="input mono" v-model.trim="f.cve" :placeholder="t('vn.cvePh')" @keyup.enter="reload">
+        <input class="input mono" v-model.trim="f.ip" :placeholder="t('vn.ipPh')" @keyup.enter="reload">
+        <input class="input" v-model.trim="f.title" :placeholder="t('vn.titlePh')" @keyup.enter="reload">
+        <button class="btn sm" @click="reload">{{ t('common.query') }}</button>
         <!-- 旧按钮名叫"清空", 与下面的"清空全部漏洞"混在一起被当成"清库没反应" -->
-        <button class="btn sm" @click="resetF" title="清空筛选条件并回到第 1 页">重置筛选</button>
+        <button class="btn sm" @click="resetF" :title="t('vn.resetFilterTitle')">{{ t('vn.resetFilter') }}</button>
         <div class="spacer"></div>
-        <span class="muted small">共 {{ total }} 条</span>
+        <span class="muted small">{{ t('vn.total', { n: total }) }}</span>
         <!-- 阶段 5 联动: 选中漏洞 -> 渗透工作台做验证渗透(仅管理员)。
              operator/auditor 不给入口: 渗透是攻击性能力, 权限边界比本页写操作更严 -->
-        <span class="chip warn" v-if="selCount">已选 {{ selCount }} 条</span>
+        <span class="chip warn" v-if="selCount">{{ t('vn.selCount', { n: selCount }) }}</span>
         <button class="btn sm primary" v-if="admin && selCount" @click="sendToPenta"
-                title="把选中的漏洞作为已知漏洞导入渗透工作台执行验证(全程审计)">发送到渗透工作台</button>
-        <button class="btn sm danger" v-if="canWrite" :disabled="total === 0" title="删除本库全部漏洞记录(资产/任务/白名单不受影响, 操作记审计)"
-                @click="openClear">清空全部漏洞</button>
+                :title="t('vn.sendPentaTitle')">{{ t('vn.sendPenta') }}</button>
+        <button class="btn sm danger" v-if="canWrite" :disabled="total === 0" :title="t('vn.clearAllTitle')"
+                @click="openClear">{{ t('vn.clearAll') }}</button>
       </div>
 
       <!-- 发送失败留在当前页, 提示必须可见(跳转成功则整页切走, 用不到) -->
@@ -46,8 +46,8 @@
           <thead>
             <tr>
               <th style="width:36px"><input type="checkbox" :checked="allChecked" @change="toggleAll"></th>
-              <th>等级</th><th>标题</th><th>CVE</th><th>资产</th><th>端口</th>
-              <th>置信度</th><th>状态</th><th>来源</th><th>发现时间</th><th>最后命中</th><th style="width:96px">渗透验证</th>
+              <th>{{ t('vn.thSev') }}</th><th>{{ t('vn.thTitle') }}</th><th>CVE</th><th>{{ t('vn.thAsset') }}</th><th>{{ t('vn.thPort') }}</th>
+              <th>{{ t('vn.thConf') }}</th><th>{{ t('vn.thStatus') }}</th><th>{{ t('vn.thSource') }}</th><th>{{ t('vn.thFound') }}</th><th>{{ t('vn.thLastHit') }}</th><th style="width:96px">{{ t('vn.thPenta') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -57,7 +57,7 @@
               <td><SevTag :sev="v.severity" /></td>
               <td>
                 <b style="font-size:12.5px">{{ v.title }}</b>
-                <span class="badge" v-if="v.falsePositive" style="color:var(--muted); border-style:dashed; margin-left:6px" :title="v.fpNote || '人工标记误报'">误报</span>
+                <span class="badge" v-if="v.falsePositive" style="color:var(--muted); border-style:dashed; margin-left:6px" :title="v.fpNote || t('vn.fpManual')">{{ t('vn.fp') }}</span>
               </td>
               <td class="mono small">{{ v.cve || '-' }}</td>
               <td class="mono small">{{ v.assetIp }}</td>
@@ -66,27 +66,27 @@
               <td>
                 <StatusTag :status="vulnStatus(v.status)" />
                 <span class="muted small" v-if="v.lastSeenAt && v.foundAt && v.lastSeenAt !== v.foundAt"
-                      :title="'重复命中, 最近一次: ' + fmtDT(v.lastSeenAt)">· 重</span>
+                      :title="t('vn.dup', { time: fmtDT(v.lastSeenAt) })">{{ t('vn.dupMark') }}</span>
               </td>
               <td class="small muted">{{ v.source || '-' }}</td>
               <td class="muted small mono">{{ fmtDT(v.foundAt) }}</td>
-              <td class="muted small mono" :title="v.lastSeenAt && v.lastSeenAt !== v.foundAt ? '重复命中' : ''">{{ fmtDT(v.lastSeenAt) }}</td>
+              <td class="muted small mono" :title="v.lastSeenAt && v.lastSeenAt !== v.foundAt ? t('vn.dupShort') : ''">{{ fmtDT(v.lastSeenAt) }}</td>
               <td>
                 <span class="badge" v-if="v.pentaResult" :style="expStyle(v.pentaResult)"
-                      :title="'渗透任务 ' + (v.pentaTaskId || '-') + ' 已回传'">{{ expName(v.pentaResult) }}</span>
-                <span class="muted small" v-else>未验证</span>
+                      :title="t('vn.pentaTaskTitle', { id: v.pentaTaskId || '-' })">{{ expName(v.pentaResult) }}</span>
+                <span class="muted small" v-else>{{ t('vn.unverified') }}</span>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <Empty v-else :text="hasFilter ? '无匹配漏洞' : '暂无漏洞记录(扫描结果经回传通道写入本库)'" />
+      <Empty v-else :text="hasFilter ? t('vn.noMatch') : t('vn.none')" />
 
       <div class="pager" v-if="total > page * size">
-        <span>第 {{ page }} 页</span>
+        <span>{{ t('vn.page', { n: page }) }}</span>
         <div class="spacer"></div>
-        <button class="btn xs" :disabled="page <= 1" @click="page--; load()">上一页</button>
-        <button class="btn xs" :disabled="page * size >= total" @click="page++; load()">下一页</button>
+        <button class="btn xs" :disabled="page <= 1" @click="page--; load()">{{ t('al.prev') }}</button>
+        <button class="btn xs" :disabled="page * size >= total" @click="page++; load()">{{ t('al.next') }}</button>
       </div>
     </div>
 
@@ -94,19 +94,19 @@
     <Whitelist v-if="tab === 'control'" embedded />
 
     <!-- 清空全部漏洞: 不可逆, 要求输入确认词(与"删一条"的 confirm 区分开) -->
-    <Modal v-if="showClear" title="清空全部漏洞" width="460px" @close="closeClear">
+    <Modal v-if="showClear" :title="t('vn.clearTitle')" width="460px" @close="closeClear">
       <div class="alert warn" style="margin-bottom:12px">
-        将删除本库全部 <b>{{ total }}</b> 条漏洞记录, 不可恢复。
-        资产台账、扫描任务、白名单与误报规则都不受影响; 本次操作会写入审计日志。
+        {{ t('vn.clearHint1', { n: total }) }}
+        {{ t('vn.clearHint2') }}
       </div>
       <div class="field">
-        <label class="label">请输入"清空"以确认</label>
-        <input class="input" v-model.trim="clearWord" placeholder="清空" @keyup.enter="doClear">
+        <label class="label">{{ t('vn.clearInput') }}</label>
+        <input class="input" v-model.trim="clearWord" :placeholder="t('vn.clearWord')" @keyup.enter="doClear">
       </div>
       <div class="login-err" style="text-align:left">{{ clearErr }}</div>
       <template #footer>
-        <button class="btn" @click="closeClear">取消</button>
-        <button class="btn danger" :disabled="clearWord !== '清空' || clearing" @click="doClear">确认清空</button>
+        <button class="btn" @click="closeClear">{{ t('common.cancel') }}</button>
+        <button class="btn danger" :disabled="clearWord !== t('vn.clearWord') || clearing" @click="doClear">{{ t('vn.clearConfirm') }}</button>
       </template>
     </Modal>
   </div>
@@ -125,6 +125,7 @@ import Empty from '../components/Empty.vue'
 import { v2, api } from '../api/http'
 import { fmtDT, vulnStatus } from '../utils'
 import { isAdmin } from '../auth'
+import { t } from '../i18n'
 
 const router = useRouter()
 const route = useRoute()
@@ -185,8 +186,9 @@ function toggleAll(e) {
   for (const v of list.value) sel[v.id] = on
 }
 // 渗透验证结论文案与配色(与渗透工作台同口径, 便于用户跨页对齐认知)
+const EXP_KEY = { exploitable: 'vn.expExploitable', partial: 'vn.expPartial', not_exploitable: 'vn.expNot' }
 function expName(s) {
-  return { exploitable: '可利用', partial: '部分利用', not_exploitable: '不可利用' }[s] || s || '-'
+  return EXP_KEY[s] ? t(EXP_KEY[s]) : (s || '-')
 }
 function expStyle(s) {
   if (s === 'exploitable') return { color: '#fff', background: 'var(--danger,#e5484d)', borderColor: 'transparent' }
@@ -203,10 +205,10 @@ async function sendToPenta() {
     // 跳转后再提示: 目标页面会自动带上这批任务, 提示只是补一句"已导入"
     router.push('/penta')
     if (d && (d.skipped || d.missing)) {
-      sendMsg.value = `已导入 ${d.created} 条，跳过旧任务 ${d.skipped} 条，不存在 ${d.missing} 条`
+      sendMsg.value = t('vn.imported', { created: d.created, skipped: d.skipped, missing: d.missing })
     }
   } catch (e) {
-    sendMsg.value = '发送到渗透工作台失败: ' + e.message
+    sendMsg.value = t('vn.sendFail', { err: e.message })
   }
 }
 
@@ -220,7 +222,8 @@ const f = reactive({ severity: '', status: '', cve: '', ip: '', title: '' })
 const canWrite = ref(false)
 
 // 2026-10-02: 等级/状态筛选选项 = 全量漏洞库聚合(后端 /vulns/options), 只含存在的值
-const SEV_CN = { critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' }
+const SEV_KEY = { critical: 'sev.critical', high: 'sev.high', medium: 'sev.medium', low: 'sev.low', info: 'sev.info' }
+function sevName(s) { return SEV_KEY[s] ? t(SEV_KEY[s]) : (s || '') }
 const vulnOpts = ref({ severities: [], statuses: [] })
 async function loadVulnOpts() {
   try {
@@ -278,7 +281,7 @@ function openClear() {
 function closeClear() { showClear.value = false }
 
 async function doClear() {
-  if (clearWord.value !== '清空' || clearing.value) return
+  if (clearWord.value !== t('vn.clearWord') || clearing.value) return
   clearing.value = true
   clearErr.value = ''
   try {
@@ -287,7 +290,7 @@ async function doClear() {
     page.value = 1
     await load()
     loadVulnOpts()   // 清库后刷新筛选选项(等级/状态全没了要同步消失)
-    alert('已清空 ' + ((d && d.deleted != null) ? d.deleted : 0) + ' 条漏洞记录')
+    alert(t('vn.cleared', { n: (d && d.deleted != null) ? d.deleted : 0 }))
   } catch (e) {
     clearErr.value = e.message
   } finally { clearing.value = false }

@@ -1,20 +1,20 @@
 <template>
   <div>
-    <PageHeader title="弱口令检测" desc="限速认证尝试 redis/mysql/ftp/telnet(全程审计)">
+    <PageHeader :title="t('wp.title')" :desc="t('wp.desc')">
       <span class="chip" :class="st && st.enabled ? 'on' : 'off'">
-        {{ st && st.enabled ? '检测已启用' : '检测未启用' }}
+        {{ st && st.enabled ? t('wp.on') : t('wp.off') }}
       </span>
-      <button class="btn sm" @click="loadStatus"><span class="spinner" v-if="loading"></span> 刷新</button>
+      <button class="btn sm" @click="loadStatus"><span class="spinner" v-if="loading"></span> {{ t('wp.refresh') }}</button>
     </PageHeader>
 
     <!-- 顶层 Tab: 检测任务(原有功能) + 字典管理(新增) -->
     <!-- 注意: 外层用 view 状态, 内层"结果/审计"仍用 tab —— 二者是不同维度,
          共用一个变量会导致点内层 Tab 时整个任务区被 v-if 隐藏(已踩过的坑)。 -->
     <div class="tabs">
-      <div class="tab" :class="{ active: view === 'task' }" @click="view = 'task'">检测任务</div>
+      <div class="tab" :class="{ active: view === 'task' }" @click="view = 'task'">{{ t('wp.tabTask') }}</div>
       <div class="tab" :class="{ active: view === 'dict' }" @click="switchToDict">
-        字典管理
-        <span class="muted small" v-if="dictTotal > 0">内置 {{ dictStats.builtin }} · 自定义 {{ dictStats.custom }}</span>
+        {{ t('wp.tabDict') }}
+        <span class="muted small" v-if="dictTotal > 0">{{ t('wp.dictBuiltIn', { n: dictStats.builtin }) }} · {{ t('wp.dictCustom', { n: dictStats.custom }) }}</span>
       </div>
     </div>
 
@@ -22,10 +22,9 @@
     <template v-if="view === 'task'">
       <!-- 未启用: 给出可操作的启用方法, 而不是让用户对空页面猜原因 -->
       <div class="card" v-if="st && !st.enabled">
-        <Empty text="弱口令检测未启用" />
+        <Empty :text="t('wp.notEnabled')" />
         <p class="muted small" style="text-align:center; margin-top:8px">
-          在 exe 同目录 settings.json 增加 authcheck 节(如 { "enabled": true, "targets": ["192.168.0.0/16"] })后重启服务。
-          targets 为 CIDR 白名单, 为空时所有请求都会被拒绝。
+          {{ t('wp.notEnabledHint') }}
         </p>
       </div>
 
@@ -33,21 +32,21 @@
         <!-- 运行配置 -->
         <div class="card">
           <div class="card-title">
-            运行配置
-            <span class="sub">settings.json 的 authcheck 节, 修改后需重启服务</span>
+            {{ t('wp.runCfg') }}
+            <span class="sub">{{ t('wp.runCfgSub') }}</span>
             <div class="spacer"></div>
-            <span class="chip">内置字典 {{ st.dictSize }} 条</span>
-            <span class="chip" v-if="dictTotal > 0">自定义 {{ dictStats.custom }} 条</span>
-            <span class="chip">限速 {{ st.rate }}/s · 上限 {{ st.maxTry }} · 超时 {{ st.timeoutMs }}ms</span>
+            <span class="chip">{{ t('wp.dictSize', { n: st.dictSize }) }}</span>
+            <span class="chip" v-if="dictTotal > 0">{{ t('wp.customCount', { n: dictStats.custom }) }}</span>
+            <span class="chip">{{ t('wp.rate', { rate: st.rate, max: st.maxTry, ms: st.timeoutMs }) }}</span>
           </div>
-          <div class="muted small" style="margin-bottom:6px">目标白名单(CIDR / 单 IP):</div>
+          <div class="muted small" style="margin-bottom:6px">{{ t('wp.wlLabel') }}</div>
           <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px">
-            <span class="badge blue mono" v-for="t in (st.targets || [])" :key="t">
-              {{ t }}
-              <b v-if="admin" @click="removeTarget(t)" title="移除该白名单条目"
+            <span class="badge blue mono" v-for="tg in (st.targets || [])" :key="tg">
+              {{ tg }}
+              <b v-if="admin" @click="removeTarget(tg)" :title="t('wp.wlRemove')"
                  style="cursor:pointer; margin-left:4px; color:var(--danger,#e5484d)">×</b>
             </span>
-            <span class="muted small" v-if="!(st.targets || []).length">未配置(接口将拒绝执行)</span>
+            <span class="muted small" v-if="!(st.targets || []).length">{{ t('wp.wlNone') }}</span>
           </div>
           <!-- 白名单增删(仅 admin): 改白名单=改爆破攻击面, 与字典编辑同一权限口径。
                后端整体替换语义: 提交"当前列表 ± 本次改动"的完整列表, 立即写
@@ -55,20 +54,20 @@
           <div class="form-row" v-if="admin" style="margin-bottom:4px">
             <div class="field" style="max-width:340px; flex:1">
               <input class="input mono" v-model.trim="newTarget"
-                     placeholder="添加白名单: 192.168.1.10 或 192.168.1.0/24"
+                     :placeholder="t('wp.wlAddPh')"
                      :disabled="wlBusy" @keyup.enter="addTarget">
             </div>
             <button class="btn sm" :disabled="!newTarget || wlBusy" @click="addTarget">
-              <span class="spinner" v-if="wlBusy"></span> 添加
+              <span class="spinner" v-if="wlBusy"></span> {{ t('wp.add') }}
             </button>
-            <span class="muted small">增删立即写入 settings.json 并热生效(免重启)</span>
+            <span class="muted small">{{ t('wp.wlHot') }}</span>
           </div>
-          <div class="muted small" v-else style="margin-bottom:4px">仅管理员可增删白名单, 当前只读</div>
+          <div class="muted small" v-else style="margin-bottom:4px">{{ t('wp.wlAdminOnly') }}</div>
           <!-- 只列支持的协议。st.unsupported(目前是 mssql)刻意不展示: 用户要求
                "不支持的就不显示" —— 列出来只会让人以为"能填但被拒", 反而要去点。
                用户真的填了不支持的协议时, 结果表里仍会有「协议不支持」的明确反馈,
                提示责任由数据行承担, 不靠这里的清单预告。 -->
-          <div class="muted small" style="margin-bottom:6px">支持协议:</div>
+          <div class="muted small" style="margin-bottom:6px">{{ t('wp.supported') }}</div>
           <div style="display:flex; flex-wrap:wrap; gap:6px">
             <span class="badge" v-for="p in (st.supported || [])" :key="p">{{ p }}</span>
           </div>
@@ -77,8 +76,8 @@
         <!-- 发起检测 -->
         <div class="card">
           <div class="card-title">
-            发起检测
-            <span class="sub">每行一个目标 host:port[:service[:user]] · service 留空按端口推断 · 单次上限 200</span>
+            {{ t('wp.startTitle') }}
+            <span class="sub">{{ t('wp.startSub') }}</span>
           </div>
           <textarea
             class="input mono"
@@ -90,23 +89,23 @@
           ></textarea>
           <div class="form-row" style="margin-top:10px">
             <div class="field" style="max-width:220px">
-              <label class="label">覆盖用户名(可选)</label>
-              <input class="input mono" v-model.trim="user" placeholder="留空用目标自带的 user" :disabled="running">
+              <label class="label">{{ t('wp.userLabel') }}</label>
+              <input class="input mono" v-model.trim="user" :placeholder="t('wp.userPh')" :disabled="running">
             </div>
             <div class="field" style="max-width:280px">
               <label class="label" style="display:flex; align-items:center; gap:6px; cursor:pointer">
                 <input type="checkbox" v-model="builtinOnly" :disabled="running" style="width:15px; height:15px">
-                仅使用内置字典
-                <span class="muted small">(默认用「内置 + 自定义」全量, 勾选后忽略自定义条目)</span>
+                {{ t('wp.builtinOnly') }}
+                <span class="muted small">{{ t('wp.builtinOnlyHint') }}</span>
               </label>
             </div>
             <div class="spacer"></div>
             <!-- 2026-09-25 命名扫描: 控制台"下一步弱口令"带任务名时显示关联, 本批次
                  结果按它打进原始报告(报告中心按任务名分类) -->
-            <span class="chip blue" v-if="jobName" title="本批次结果将按此任务名分类到原始报告(报告中心按任务名生成/分类)">关联任务: {{ jobName }}</span>
-            <span class="chip" :class="parsed.length ? 'on' : 'warn'">解析到 {{ parsed.length }} 个目标</span>
-            <button class="btn primary" v-if="!running" :disabled="!parsed.length" @click="start">启动检测</button>
-            <button class="btn danger" v-else @click="stop">停止检测</button>
+            <span class="chip blue" v-if="jobName" :title="t('wp.jobNameTitle')">{{ t('wp.jobName', { name: jobName }) }}</span>
+            <span class="chip" :class="parsed.length ? 'on' : 'warn'">{{ t('wp.parsed', { n: parsed.length }) }}</span>
+            <button class="btn primary" v-if="!running" :disabled="!parsed.length" @click="start">{{ t('wp.start') }}</button>
+            <button class="btn danger" v-else @click="stop">{{ t('wp.stop') }}</button>
           </div>
           <div class="muted small err-line" style="color:var(--danger,#e5484d)">{{ err }}</div>
         </div>
@@ -114,61 +113,61 @@
         <!-- 最近批次 -->
         <div class="card" v-if="run">
           <div class="card-title">
-            最近批次
-            <span class="chip" v-if="run.finished && run.stopped" style="color:var(--warning,#f0b429)">已中止</span>
-            <span class="chip" :class="run.finished ? 'on' : 'warn'">{{ run.finished ? '已结束' : '执行中' }}</span>
+            {{ t('wp.lastBatch') }}
+            <span class="chip" v-if="run.finished && run.stopped" style="color:var(--warning,#f0b429)">{{ t('wp.stopped') }}</span>
+            <span class="chip" :class="run.finished ? 'on' : 'warn'">{{ run.finished ? t('wp.finished') : t('wp.running') }}</span>
             <div class="spacer"></div>
             <span class="mono small muted">{{ run.id }}</span>
-            <span class="muted small">· 开始 {{ fmtDT(run.startedAt) }}</span>
+            <span class="muted small">{{ t('wp.startedAt', { time: fmtDT(run.startedAt) }) }}</span>
             <!-- 阶段 3: AI 研判 —— 批次结束后结果自动存档为原始报告,
                  后端按 module=weakpass 取 10 分钟内最新一份分析(复用 scan 模块开关) -->
-            <AiAnalyzeButton v-if="run.finished" module="weakpass" label="AI 研判" />
+            <AiAnalyzeButton v-if="run.finished" module="weakpass" :label="t('wp.aiLabel')" />
           </div>
           <div class="muted small" v-if="run.summary" style="margin-bottom:8px">{{ run.summary }}</div>
 
           <div class="tabs">
-            <div class="tab" :class="{ active: tab === 'res' }" @click="tab = 'res'">结果 ({{ (run.results || []).length }})</div>
-            <div class="tab" :class="{ active: tab === 'aud' }" @click="tab = 'aud'">审计明细 ({{ (run.audit || []).length }})</div>
+            <div class="tab" :class="{ active: tab === 'res' }" @click="tab = 'res'">{{ t('wp.resTab') }} ({{ (run.results || []).length }})</div>
+            <div class="tab" :class="{ active: tab === 'aud' }" @click="tab = 'aud'">{{ t('wp.audTab') }} ({{ (run.audit || []).length }})</div>
           </div>
 
           <div v-if="tab === 'res'">
             <div class="table-wrap" v-if="(run.results || []).length">
               <table class="table">
                 <thead>
-                  <tr><th>目标</th><th>服务</th><th>结论</th><th>口令</th><th>尝试次数</th><th>结束原因</th><th>错误</th><th style="width:90px">联动</th></tr>
+                  <tr><th>{{ t('wp.thTarget') }}</th><th>{{ t('wp.thService') }}</th><th>{{ t('wp.thConclusion') }}</th><th>{{ t('wp.thPass') }}</th><th>{{ t('wp.thAttempts') }}</th><th>{{ t('wp.thEndReason') }}</th><th>{{ t('wp.thError') }}</th><th style="width:90px">{{ t('wp.thLink') }}</th></tr>
                 </thead>
                 <tbody>
                   <tr v-for="(r, i) in run.results" :key="i">
                     <td class="mono">{{ r.host }}<span class="muted">:{{ r.port }}</span></td>
                     <td><span class="badge blue">{{ r.service }}</span></td>
                     <td>
-                      <span class="badge" style="color:#fff;background:var(--danger,#e5484d);border-color:transparent" v-if="r.ok && r.emptyPass">空口令/免认证</span>
-                      <span class="badge" style="color:#fff;background:var(--danger,#e5484d);border-color:transparent" v-else-if="r.ok">弱口令</span>
-                      <span class="badge" style="color:var(--muted)" v-else-if="r.unsupported">协议不支持</span>
-                      <span class="badge" style="color:var(--muted)" v-else>未命中</span>
+                      <span class="badge" style="color:#fff;background:var(--danger,#e5484d);border-color:transparent" v-if="r.ok && r.emptyPass">{{ t('wp.emptyPass') }}</span>
+                      <span class="badge" style="color:#fff;background:var(--danger,#e5484d);border-color:transparent" v-else-if="r.ok">{{ t('wp.weak') }}</span>
+                      <span class="badge" style="color:var(--muted)" v-else-if="r.unsupported">{{ t('wp.unsupported') }}</span>
+                      <span class="badge" style="color:var(--muted)" v-else>{{ t('wp.miss') }}</span>
                     </td>
-                    <td class="mono">{{ r.ok ? (r.password || '(空)') : '-' }}</td>
+                    <td class="mono">{{ r.ok ? (r.password || t('wp.emptyPwd')) : '-' }}</td>
                     <td class="mono">{{ r.attempts }}</td>
                     <td class="mono small muted">{{ r.stopped || '-' }}</td>
                     <td class="small muted">{{ r.error || '-' }}</td>
                     <!-- 阶段 5 联动: 把这条服务的目标/端口/服务带去渗透工作台做凭据验证
                          (渗透是攻击性能力, 仅管理员有入口) -->
                     <td>
-                      <button class="btn xs" v-if="admin" @click="toPenta(r)">验证</button>
+                      <button class="btn xs" v-if="admin" @click="toPenta(r)">{{ t('wp.verify') }}</button>
                       <span class="muted small" v-else>-</span>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <Empty v-else text="本批次暂无结果(执行中或尚未产生)" />
+            <Empty v-else :text="t('wp.noResult')" />
           </div>
 
           <div v-else>
             <div class="table-wrap" v-if="(run.audit || []).length">
               <table class="table">
                 <thead>
-                  <tr><th>时间</th><th>目标</th><th>服务</th><th>用户</th><th>口令</th><th>结果</th><th>错误</th></tr>
+                  <tr><th>{{ t('wp.thTime') }}</th><th>{{ t('wp.thTarget') }}</th><th>{{ t('wp.thService') }}</th><th>{{ t('wp.thUser') }}</th><th>{{ t('wp.thPass') }}</th><th>{{ t('wp.thResult') }}</th><th>{{ t('wp.thError') }}</th></tr>
                 </thead>
                 <tbody>
                   <tr v-for="(a, i) in run.audit" :key="i">
@@ -178,15 +177,15 @@
                     <td class="mono">{{ a.user || '-' }}</td>
                     <td class="mono">{{ a.ok ? a.password : '-' }}</td>
                     <td>
-                      <span class="badge" style="color:#fff;background:var(--danger,#e5484d);border-color:transparent" v-if="a.ok">命中</span>
-                      <span class="badge" style="color:var(--muted)" v-else>未命中</span>
+                      <span class="badge" style="color:#fff;background:var(--danger,#e5484d);border-color:transparent" v-if="a.ok">{{ t('wp.hit') }}</span>
+                      <span class="badge" style="color:var(--muted)" v-else>{{ t('wp.miss') }}</span>
                     </td>
                     <td class="small muted">{{ a.err || '-' }}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <Empty v-else text="本批次暂无审计记录" />
+            <Empty v-else :text="t('wp.noAudit')" />
           </div>
         </div>
       </template>
@@ -197,24 +196,24 @@
       <!-- 操作栏 -->
       <div class="card">
         <div class="card-title">
-          字典管理
-          <span class="sub">弱口令爆破目标库: 内置 349 条常用弱口令 + 页面自定义, 执行任务时自动全量加载</span>
+          {{ t('wp.dictTitle') }}
+          <span class="sub">{{ t('wp.dictSub') }}</span>
           <div class="spacer"></div>
-          <span class="chip" :class="dictStats.builtin > 0 ? 'on' : 'warn'">内置 {{ dictStats.builtin }}</span>
-          <span class="chip" :class="dictStats.custom > 0 ? 'blue' : ''">自定义 {{ dictStats.custom }}</span>
+          <span class="chip" :class="dictStats.builtin > 0 ? 'on' : 'warn'">{{ t('wp.dictBuiltIn', { n: dictStats.builtin }) }}</span>
+          <span class="chip" :class="dictStats.custom > 0 ? 'blue' : ''">{{ t('wp.dictCustom', { n: dictStats.custom }) }}</span>
         </div>
         <div class="form-row" style="margin-top:4px">
           <div class="field" style="max-width:260px; flex:1">
-            <label class="label">搜索口令(模糊)</label>
-            <input class="input mono" v-model="dictQ" placeholder="输入关键字过滤" @keyup.enter="dictPage = 1; loadDict()">
+            <label class="label">{{ t('wp.dictSearch') }}</label>
+            <input class="input mono" v-model="dictQ" :placeholder="t('wp.dictSearchPh')" @keyup.enter="dictPage = 1; loadDict()">
           </div>
           <div class="spacer"></div>
-          <button class="btn" v-if="admin" @click="openAdd">新增弱口令</button>
+          <button class="btn" v-if="admin" @click="openAdd">{{ t('wp.addWeak') }}</button>
           <button class="btn" v-if="admin" :disabled="!dictSelected.length" @click="batchDelete">
-            批量删除{{ dictSelected.length ? ` (${dictSelected.length})` : '' }}
+            {{ t('wp.batchDel') }}{{ dictSelected.length ? ` (${dictSelected.length})` : '' }}
           </button>
-          <button class="btn danger" v-if="admin" @click="openReset">重置默认字典</button>
-          <span class="muted small" v-if="!admin">仅管理员可编辑 / 重置, 当前只读</span>
+          <button class="btn danger" v-if="admin" @click="openReset">{{ t('wp.resetDict') }}</button>
+          <span class="muted small" v-if="!admin">{{ t('wp.dictAdminOnly') }}</span>
         </div>
         <div class="muted small err-line" style="color:var(--danger,#e5484d)">{{ dictErr }}</div>
       </div>
@@ -225,78 +224,77 @@
           <table class="table">
             <thead>
               <tr>
-                <th style="width:36px"><input type="checkbox" v-if="admin" :checked="allCustomSelected" :indeterminate.prop="someCustomSelected" @change="toggleAllCustom" title="全选自定义条目"></th>
-                <th style="width:56px">序号</th>
-                <th>弱口令内容</th>
-                <th style="width:90px">类型</th>
-                <th style="width:160px">创建时间</th>
-                <th style="width:80px">操作</th>
+                <th style="width:36px"><input type="checkbox" v-if="admin" :checked="allCustomSelected" :indeterminate.prop="someCustomSelected" @change="toggleAllCustom" :title="t('wp.selAllCustom')"></th>
+                <th style="width:56px">{{ t('wp.thSeq') }}</th>
+                <th>{{ t('wp.thContent') }}</th>
+                <th style="width:90px">{{ t('wp.thType') }}</th>
+                <th style="width:160px">{{ t('wp.thCreate') }}</th>
+                <th style="width:80px">{{ t('wp.thOp') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(it, i) in dictItems" :key="it.id">
                 <td>
-                  <input type="checkbox" v-if="admin && it.type === 'custom'" :checked="dictSelected.includes(it.id)" @change="toggleSelect(it.id)" title="自定义条目可删除">
+                  <input type="checkbox" v-if="admin && it.type === 'custom'" :checked="dictSelected.includes(it.id)" @change="toggleSelect(it.id)" :title="t('wp.customDeletable')">
                 </td>
                 <td class="mono muted small">{{ (dictPage - 1) * dictSize + i + 1 }}</td>
                 <td class="mono">{{ it.password }}</td>
                 <td>
-                  <span class="badge" :class="it.type === 'custom' ? 'blue' : ''">{{ it.type === 'custom' ? '自定义' : '内置' }}</span>
+                  <span class="badge" :class="it.type === 'custom' ? 'blue' : ''">{{ it.type === 'custom' ? t('wp.custom') : t('wp.builtin') }}</span>
                 </td>
                 <td class="mono small muted">{{ fmtDT(it.createTime) }}</td>
                 <td>
-                  <button class="btn xs danger" v-if="admin && it.type === 'custom'" @click="removeOne(it)">删除</button>
+                  <button class="btn xs danger" v-if="admin && it.type === 'custom'" @click="removeOne(it)">{{ t('common.del') }}</button>
                   <span class="muted small" v-else>-</span>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <Empty v-else :text="dictQ ? '无匹配口令' : '字典为空(重置可恢复内置 349 条)'" />
+        <Empty v-else :text="dictQ ? t('wp.noMatch') : t('wp.dictEmpty')" />
 
         <div class="pager" v-if="dictTotal > dictPage * dictSize">
-          <span>第 {{ dictPage }} 页 · 共 {{ dictTotal }} 条</span>
+          <span>{{ t('wp.page', { n: dictPage, t: dictTotal }) }}</span>
           <div class="spacer"></div>
-          <button class="btn xs" :disabled="dictPage <= 1" @click="dictPage--; loadDict()">上一页</button>
-          <button class="btn xs" :disabled="dictPage * dictSize >= dictTotal" @click="dictPage++; loadDict()">下一页</button>
+          <button class="btn xs" :disabled="dictPage <= 1" @click="dictPage--; loadDict()">{{ t('al.prev') }}</button>
+          <button class="btn xs" :disabled="dictPage * dictSize >= dictTotal" @click="dictPage++; loadDict()">{{ t('al.next') }}</button>
         </div>
       </div>
     </template>
 
     <!-- 新增弱口令弹窗(单条 / 批量, 每行一个) -->
-    <Modal v-if="showAdd" title="新增弱口令" width="480px" @close="showAdd = false">
+    <Modal v-if="showAdd" :title="t('wp.addTitle')" width="480px" @close="showAdd = false">
       <div class="alert info" style="margin-bottom:12px">
-        每行一个口令, 支持一次粘贴多条。已存在的口令会被自动跳过(响应中列明), 新增条目为「自定义」类型, 可随时删除或重置。
+        {{ t('wp.addHint') }}
       </div>
       <div class="field">
-        <label class="label">口令列表(每行一个, 上限 500 条)</label>
+        <label class="label">{{ t('wp.addList') }}</label>
         <textarea class="input mono" v-model="addText" rows="8" spellcheck="false" placeholder="mySecret1&#10;P@ssw0rd2024&#10;admin888"></textarea>
       </div>
-      <div class="muted small" style="margin-top:6px">解析到 {{ addLines.length }} 条</div>
+      <div class="muted small" style="margin-top:6px">{{ t('wp.parsedN', { n: addLines.length }) }}</div>
       <div class="login-err" style="text-align:left">{{ addErr }}</div>
       <template #footer>
-        <button class="btn" @click="showAdd = false">取消</button>
+        <button class="btn" @click="showAdd = false">{{ t('common.cancel') }}</button>
         <button class="btn primary" :disabled="!addLines.length || adding" @click="doAdd">
-          <span class="spinner" v-if="adding"></span> 添加
+          <span class="spinner" v-if="adding"></span> {{ t('wp.add') }}
         </button>
       </template>
     </Modal>
 
     <!-- 重置确认弹窗(破坏性动作, 要求输入确认词) -->
-    <Modal v-if="showReset" title="重置为默认字典" width="460px" @close="showReset = false">
+    <Modal v-if="showReset" :title="t('wp.resetTitle')" width="460px" @close="showReset = false">
       <div class="alert warn" style="margin-bottom:12px">
-        将删除全部 <b>{{ dictStats.custom }}</b> 条自定义条目, 恢复内置 <b>349</b> 条常用弱口令。
-        此操作不可恢复, 且会写入审计日志。
+        {{ t('wp.resetHint', { custom: dictStats.custom }) }}
       </div>
       <div class="field">
-        <label class="label">请输入"重置"以确认</label>
-        <input class="input" v-model.trim="resetWord" placeholder="重置" @keyup.enter="doReset">
+        <label class="label">{{ t('wp.resetInput') }}</label>
+        <input class="input" v-model.trim="resetWord" :placeholder="t('wp.resetWord')" @keyup.enter="doReset">
       </div>
       <div class="login-err" style="text-align:left">{{ resetErr }}</div>
       <template #footer>
-        <button class="btn" @click="showReset = false">取消</button>
-        <button class="btn danger" :disabled="resetWord !== '重置' || resetting" @click="doReset">
-          <span class="spinner" v-if="resetting"></span> 确认重置
+        <button class="btn" @click="showReset = false">{{ t('common.cancel') }}</button>
+        <button class="btn danger" :disabled="resetWord !== t('wp.resetWord') || resetting" @click="doReset">
+          <span class="spinner" v-if="resetting"></span> {{ t('wp.resetConfirm') }}
         </button>
       </template>
     </Modal>
@@ -315,6 +313,7 @@ import { useRouter } from 'vue-router'
 import { api, v2 } from '../api/http'
 import { fmtDT } from '../utils'
 import { isAdmin } from '../auth'
+import { t } from '../i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -411,7 +410,7 @@ async function loadStatus() {
       dictTotal.value = (st.value.dictStats.builtin || 0) + (st.value.dictStats.custom || 0)
     }
   } catch (e) {
-    err.value = '状态获取失败: ' + e.message
+    err.value = t('wp.errStatus', { err: e.message })
   } finally {
     loading.value = false
   }
@@ -443,8 +442,8 @@ function setRunning(v) {
 async function start() {
   err.value = ''
   const targets = parsed.value
-  if (!targets.length) { err.value = '没有可用的目标行(格式: host:port[:service[:user]])'; return }
-  if (targets.length > 200) { err.value = '单次目标数上限 200, 当前 ' + targets.length; return }
+  if (!targets.length) { err.value = t('wp.errNoTarget'); return }
+  if (targets.length > 200) { err.value = t('wp.errTooMany', { n: targets.length }); return }
   const body = { targets }
   if (user.value) body.user = user.value
   if (builtinOnly.value) body.builtinOnly = true
@@ -454,7 +453,7 @@ async function start() {
     setRunning(true)
     await loadStatus()
   } catch (e) {
-    err.value = '启动失败: ' + e.message
+    err.value = t('wp.errStart', { err: e.message })
     // 后端返回的运行状态是权威的, 以它为准刷新本地 running
     await loadStatus()
   }
@@ -465,7 +464,7 @@ async function stop() {
   try {
     await api('/api/authcheck/stop', { method: 'POST' })
   } catch (e) {
-    err.value = '停止失败: ' + e.message
+    err.value = t('wp.errStop', { err: e.message })
   }
   await loadStatus()
 }
@@ -532,7 +531,7 @@ async function loadDict() {
     // 翻页/搜索后, 清理已不在本页的选择(避免删除已不存在的 id)
     dictSelected.value = dictSelected.value.filter(id => dictItems.value.some(it => it.id === id))
   } catch (e) {
-    dictErr.value = '字典加载失败: ' + e.message
+    dictErr.value = t('wp.errDict', { err: e.message })
   }
 }
 
@@ -552,19 +551,19 @@ function openAdd() {
 async function doAdd() {
   addErr.value = ''
   const passwords = addLines.value
-  if (!passwords.length) { addErr.value = '请输入至少一个口令'; return }
-  if (passwords.length > 500) { addErr.value = '单次最多 500 条'; return }
+  if (!passwords.length) { addErr.value = t('wp.errAddNone'); return }
+  if (passwords.length > 500) { addErr.value = t('wp.errAddMax'); return }
   adding.value = true
   try {
     const d = await v2('/weakpass/dict', { method: 'POST', body: { passwords } })
     showAdd.value = false
     // 有跳过项时提示(用户以为加成功实际没进去)
     if (d.skipped && d.skipped.length) {
-      addErr.value = `已添加 ${d.added} 条, 跳过重复 ${d.skipped.length} 条: ${d.skipped.join(', ')}`
+      addErr.value = t('wp.addSkip', { added: d.added, skipped: d.skipped.length, list: d.skipped.join(', ') })
     }
     await loadDict()
   } catch (e) {
-    addErr.value = '添加失败: ' + e.message
+    addErr.value = t('wp.errAdd', { err: e.message })
   } finally {
     adding.value = false
   }
@@ -572,13 +571,13 @@ async function doAdd() {
 
 // 单条删除
 async function removeOne(it) {
-  if (!confirm(`删除弱口令「${it.password}」?`)) return
+  if (!confirm(t('wp.delOne', { p: it.password }))) return
   try {
     await v2(`/weakpass/dict/${it.id}`, { method: 'DELETE' })
     dictSelected.value = dictSelected.value.filter(id => id !== it.id)
     await loadDict()
   } catch (e) {
-    dictErr.value = '删除失败: ' + e.message
+    dictErr.value = t('wp.errDel', { err: e.message })
   }
 }
 
@@ -586,14 +585,14 @@ async function removeOne(it) {
 async function batchDelete() {
   const ids = dictSelected.value
   if (!ids.length) return
-  if (!confirm(`删除选中的 ${ids.length} 条自定义弱口令?`)) return
+  if (!confirm(t('wp.delBatch', { n: ids.length }))) return
   try {
     const d = await v2('/weakpass/dict/batch-delete', { method: 'POST', body: { ids } })
     dictSelected.value = []
-    dictErr.value = d.skippedBuiltin ? `已删除 ${d.deleted} 条, 内置 ${d.skippedBuiltin} 条不可删已跳过` : ''
+    dictErr.value = d.skippedBuiltin ? t('wp.delBatchMsg', { deleted: d.deleted, skipped: d.skippedBuiltin }) : ''
     await loadDict()
   } catch (e) {
-    dictErr.value = '批量删除失败: ' + e.message
+    dictErr.value = t('wp.errBatch', { err: e.message })
   }
 }
 
@@ -618,7 +617,7 @@ function openReset() {
   showReset.value = true
 }
 async function doReset() {
-  if (resetWord.value !== '重置') { resetErr.value = '请输入"重置"'; return }
+  if (resetWord.value !== t('wp.resetWord')) { resetErr.value = t('wp.resetInputErr'); return }
   resetting.value = true
   try {
     await v2('/weakpass/dict/reset', { method: 'POST' })
@@ -628,7 +627,7 @@ async function doReset() {
     dictQ.value = ''
     await loadDict()
   } catch (e) {
-    resetErr.value = '重置失败: ' + e.message
+    resetErr.value = t('wp.errReset', { err: e.message })
   } finally {
     resetting.value = false
   }

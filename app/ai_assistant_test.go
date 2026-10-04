@@ -19,7 +19,7 @@ func TestAssistantPromptAssemblyOrder(t *testing.T) {
 	prompt := "SYSTEM-PROMPT-ANCHOR"
 	data := map[string]any{"total": 5, "list": []any{map[string]any{"title": "Redis 未授权访问"}}}
 
-	system, user := buildAssistantMessages(prompt, "vulns", "漏洞管理", data, "高危有几个?")
+	system, user := buildAssistantMessages(prompt, "vulns", "漏洞管理", data, "高危有几个?", "zh")
 
 	// 任务书顺序: 1.系统 PROMPT 2.页面上下文 3.提问
 	if !strings.HasPrefix(system, prompt) {
@@ -41,7 +41,7 @@ func TestAssistantPromptAssemblyOrder(t *testing.T) {
 }
 
 func TestAssistantPromptNoContext(t *testing.T) {
-	system, user := buildAssistantMessages("P-ANCHOR", "", "", nil, "你好")
+	system, user := buildAssistantMessages("P-ANCHOR", "", "", nil, "你好", "zh")
 	if system != "P-ANCHOR" {
 		t.Fatalf("无上下文时 system 应只有 PROMPT: %q", system)
 	}
@@ -56,7 +56,7 @@ func TestAssistantPromptDesensitizesData(t *testing.T) {
 		"hit": "password=secret123",
 		"auth": map[string]any{"x_api_key": "abc-123-token"},
 	}
-	system, _ := buildAssistantMessages("P", "weakpass", "弱口令", data, "命中了什么?")
+	system, _ := buildAssistantMessages("P", "weakpass", "弱口令", data, "命中了什么?", "zh")
 	if strings.Contains(system, "secret123") {
 		t.Fatalf("口令值必须脱敏, 实际注入: %q", system)
 	}
@@ -67,7 +67,7 @@ func TestAssistantPromptDesensitizesData(t *testing.T) {
 
 func TestAssistantPromptTruncatesOversizedData(t *testing.T) {
 	big := strings.Repeat("x", 20*1024) // 超过 assistantCtxMaxBytes(16KB)
-	system, _ := buildAssistantMessages("P", "assets", "资产", map[string]any{"blob": big}, "q")
+	system, _ := buildAssistantMessages("P", "assets", "资产", map[string]any{"blob": big}, "q", "zh")
 	if len(system) > len("P")+assistantCtxMaxBytes+1024 {
 		t.Fatalf("超长上下文未截断: system 长度 %d", len(system))
 	}
@@ -82,16 +82,20 @@ func TestAssistantDefaultPromptFallback(t *testing.T) {
 	if cfg.Assistant.Enabled {
 		t.Fatalf("小 Y 必须默认关闭(规则 5)")
 	}
-	if cfg.AssistantPrompt() == "" || !strings.Contains(cfg.AssistantPrompt(), "小Y") {
-		t.Fatalf("空 PROMPT 必须回退内置默认: %q", cfg.AssistantPrompt()[:min(len(cfg.AssistantPrompt()), 40)])
+	if cfg.AssistantPrompt("zh") == "" || !strings.Contains(cfg.AssistantPrompt("zh"), "小Y") {
+		t.Fatalf("空 PROMPT 必须回退内置默认: %q", cfg.AssistantPrompt("zh")[:min(len(cfg.AssistantPrompt("zh")), 40)])
 	}
-	// 自定义 PROMPT 必须被尊重
+	// 2026-10-04 i18n: 未自定义时英文 UI 回英文人设
+	if !strings.Contains(cfg.AssistantPrompt("en"), "XiaoY") || strings.Contains(cfg.AssistantPrompt("en"), "小Y") {
+		t.Fatalf("英文默认人设错误: %q", cfg.AssistantPrompt("en")[:min(len(cfg.AssistantPrompt("en")), 40)])
+	}
+	// 自定义 PROMPT 必须被尊重(不随语言自动翻译)
 	cfg2 := ai.LoadConfig([]byte(`{"assistant":{"enabled":true,"prompt":"CUSTOM-ANCHOR"}}`))
 	if !cfg2.Assistant.Enabled {
 		t.Fatalf("enabled=true 必须被尊重")
 	}
-	if cfg2.AssistantPrompt() != "CUSTOM-ANCHOR" {
-		t.Fatalf("自定义 PROMPT 必须生效: %q", cfg2.AssistantPrompt())
+	if cfg2.AssistantPrompt("zh") != "CUSTOM-ANCHOR" || cfg2.AssistantPrompt("en") != "CUSTOM-ANCHOR" {
+		t.Fatalf("自定义 PROMPT 必须生效且不被翻译: %q", cfg2.AssistantPrompt("zh"))
 	}
 }
 

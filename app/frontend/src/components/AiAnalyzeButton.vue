@@ -21,7 +21,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../api/http'
 import Modal from './Modal.vue'
-import { t } from '../i18n'
+import { t, locale } from '../i18n'
 
 const props = defineProps({
   module: { type: String, required: true },
@@ -78,6 +78,7 @@ async function analyze() {
       await props.before() // 前置动作失败(抛错)则不发起分析
     }
     const body = props.reportId ? { reportId: props.reportId } : { module: props.module }
+    body.lang = locale.value // 2026-10-04 i18n: 未自定义模板与 AI 输出语言跟随 UI 语言
     const d = await api('/api/ai/analyze', { method: 'POST', body: JSON.stringify(body) })
     d.elapsed = Date.now() - t0
     result.value = d

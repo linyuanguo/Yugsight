@@ -15,7 +15,7 @@ func TestRenderVars(t *testing.T) {
 		"scan_result":       "VULNS",
 		"metric_data":       "METRICS",
 		"structured_memory": "MEM",
-	})
+	}, "zh")
 	want := "T | 10.0.0.1 | RAW | VULNS | METRICS | MEM"
 	if got != want {
 		t.Fatalf("got=%q want=%q", got, want)
@@ -24,16 +24,21 @@ func TestRenderVars(t *testing.T) {
 
 // TestRenderMissingVar 缺变量 = 替换为"无"(LLM 能区分"空数据"与"被截断")。
 func TestRenderMissingVar(t *testing.T) {
-	got := Render("资产: {{asset_info}} 结束", map[string]string{})
+	got := Render("资产: {{asset_info}} 结束", map[string]string{}, "zh")
 	if got != "资产: 无 结束" {
 		t.Fatalf("got=%q", got)
+	}
+	// 2026-10-04 i18n: 英文模板的空值占位是 N/A
+	gotEn := Render("Asset: {{asset_info}} end", map[string]string{}, "en")
+	if gotEn != "Asset: N/A end" {
+		t.Fatalf("got=%q", gotEn)
 	}
 }
 
 // TestRenderUnknownVarPreserved 用户自创变量原样保留 —— 静默抹掉会让
 // 用户误以为变量生效了(实际是空的)。
 func TestRenderUnknownVarPreserved(t *testing.T) {
-	got := Render("自定义 {{my_var}} 保留", map[string]string{})
+	got := Render("自定义 {{my_var}} 保留", map[string]string{}, "zh")
 	if got != "自定义 {{my_var}} 保留" {
 		t.Fatalf("got=%q", got)
 	}
@@ -42,12 +47,12 @@ func TestRenderUnknownVarPreserved(t *testing.T) {
 // TestRenderNoPlaceholder 无变量内容原样通过(含花括号字面量)。
 func TestRenderNoPlaceholder(t *testing.T) {
 	in := "JSON 示例 {\"a\": 1} 与单花括号 {x}"
-	if got := Render(in, map[string]string{"time": "T"}); got != in {
+	if got := Render(in, map[string]string{"time": "T"}, "zh"); got != in {
 		t.Fatalf("got=%q want=%q", got, in)
 	}
 	// 不完整占位 {{abc (无 }}) 原样通过
 	in2 := "残缺 {{abc 保留"
-	if got := Render(in2, nil); got != in2 {
+	if got := Render(in2, nil, "zh"); got != in2 {
 		t.Fatalf("got=%q", got)
 	}
 }
@@ -56,17 +61,36 @@ func TestRenderNoPlaceholder(t *testing.T) {
 // (渲染契约: 业务页面把数据填进模板, 核心变量缺失 = 模板没用)。
 func TestDefaultPromptContainsCoreVars(t *testing.T) {
 	for _, k := range []string{TplCapture, TplScan, TplMonitor} {
-		p := DefaultPrompt(k)
+		p := DefaultPrompt(k, "zh")
 		if !strings.Contains(p, "{{time}}") || !strings.Contains(p, "{{raw_data}}") {
 			t.Fatalf("模板 %s 缺少核心变量: %s", k, p)
 		}
 	}
 	// 模块专属变量归属: 扫描模板用 scan_result, 监控模板用 metric_data
-	if !strings.Contains(DefaultPrompt(TplScan), "{{scan_result}}") {
+	if !strings.Contains(DefaultPrompt(TplScan, "zh"), "{{scan_result}}") {
 		t.Fatal("扫描模板应含 scan_result")
 	}
-	if !strings.Contains(DefaultPrompt(TplMonitor), "{{metric_data}}") {
+	if !strings.Contains(DefaultPrompt(TplMonitor, "zh"), "{{metric_data}}") {
 		t.Fatal("监控模板应含 metric_data")
+	}
+}
+
+// TestDefaultPromptLang 2026-10-04 i18n: 中英双版本契约 —— 三套模板都有
+// 英文版、含核心变量、与中文版不同(用户拍板: prompt 与输出都随 UI 语言)。
+func TestDefaultPromptLang(t *testing.T) {
+	for _, k := range []string{TplCapture, TplScan, TplMonitor} {
+		zh, en := DefaultPrompt(k, "zh"), DefaultPrompt(k, "en")
+		if zh == "" || en == "" {
+			t.Fatalf("模板 %s 缺中文/英文版本", k)
+		}
+		if zh == en {
+			t.Fatalf("模板 %s 中英文版本相同", k)
+		}
+		for _, v := range []string{"{{time}}", "{{raw_data}}"} {
+			if !strings.Contains(en, v) {
+				t.Fatalf("英文模板 %s 缺核心变量 %s", k, v)
+			}
+		}
 	}
 }
 

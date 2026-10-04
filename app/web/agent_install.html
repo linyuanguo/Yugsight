@@ -7,9 +7,8 @@
 <title>探针安装 · Yugsight</title>
 <!--
   ===== 这个页面为什么存在 =====
-  探针(agent)要装到**另一台机器**上, 而那台机器上的人往往不是安全运维:
+  探针(agent)要装到**另一台机器**上, 那台机器上的人往往不是安全运维:
   他不知道什么中心端地址、什么节点密钥, 也不该被要求去读 JSON 配置。
-
   所以这里提供一个"落地页": 在中心端 Web 点"部署指引"拿到的就是这个页面,
   拷到目标机器用浏览器打开(或直接在目标机器访问中心端地址), 页面会:
     1. 自动识别当前系统给出对应的下载按钮(windows/linux/macOS × x64/ARM);
@@ -25,6 +24,11 @@
 
   【为什么要 meta referrer=no-referrer】页面上有"复制命令"含密钥, 用户若从本页
   点任何外链, Referer 会把本页 URL(可能带参数)带出去; 直接禁掉更省心。
+
+  【双语(2026-10-04)】中英内容同页各一份(.sec[data-lang]), 语言状态与 Vue UI
+  共用 localStorage 键 yugsight_lang: 界面是英文, 打开本页(裸 URL 即可)自动
+  英文; 右上角"中文/English"按钮即时切换并写回同一键 —— 与登录页切换器同
+  款式同口径。?lang= 参数仅在无本地语言记忆时作为初始值兜底。
 -->
 <style>
   :root{
@@ -34,6 +38,14 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);
        font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  /* 语言切换按钮: 与登录页 .lang-toggle 同款式(固定右上角, 显示"目标语言") */
+  .lang-toggle{position:fixed;top:14px;right:18px;background:none;border:1px solid var(--line);
+               border-radius:6px;color:var(--dim);font-size:12px;padding:3px 10px;
+               cursor:pointer;z-index:10}
+  .lang-toggle:hover{color:var(--fg);border-color:var(--accent)}
+  /* 双语段: 只渲染当前语言的一份 */
+  .sec{display:none}
+  .sec.on{display:block}
   .wrap{max-width:860px;margin:0 auto;padding:28px 20px 64px}
   h1{font-size:22px;margin:0 0 4px}
   h1 span{color:var(--accent)}
@@ -51,7 +63,8 @@
   a.dl b{font-size:14px}
   a.dl em{font-style:normal;color:var(--dim);font-size:12px}
   a.dl.mine{border-color:var(--ok)}
-  a.dl.mine b::after{content:" 本机";color:var(--ok);font-size:11px;font-weight:400}
+  body[data-lang="zh"] a.dl.mine b::after{content:" 本机";color:var(--ok);font-size:11px;font-weight:400}
+  body[data-lang="en"] a.dl.mine b::after{content:" This machine";color:var(--ok);font-size:11px;font-weight:400}
   a.dl.off{opacity:.45;pointer-events:none}
   code,pre{font-family:Consolas,"SF Mono",Menlo,monospace}
   pre{background:#0b0f14;border:1px solid var(--line);border-radius:8px;
@@ -70,7 +83,11 @@
   .foot{color:var(--dim);font-size:12px;text-align:center;margin-top:26px}
 </style>
 </head>
-<body>
+<body data-lang="zh">
+<button id="langToggle" class="lang-toggle" type="button">English</button>
+
+<!-- ================= 中文 ================= -->
+<div class="sec" data-lang="zh">
 <div class="wrap">
   <h1><span>Yugsight</span> 探针安装</h1>
   <div class="sub">
@@ -156,6 +173,118 @@
 
   <div class="foot">Yugsight v{{VER}} · 本页面由中心端动态生成</div>
 </div>
+</div>
+
+<!-- ================= English ================= -->
+<div class="sec" data-lang="en">
+<div class="wrap">
+  <h1><span>Yugsight</span> Probe Install</h1>
+  <div class="sub">
+    The probe runs on the machine being scanned, makes a single outbound connection to the center,
+    <b>listens on no port</b> and requires no admin privileges.
+    Protocol v{{PROTO}}<span class="badge">~ {{SIZE}} MB</span>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">1</span>Download the probe</h2>
+    <div class="plat">{{PLATFORMS}}</div>
+    <div class="tip" style="margin-top:10px">
+      Not sure which one? On Windows, x64 is usually right; on Linux/macOS check the
+      architecture with <code>uname -m</code> (x86_64→x64, aarch64/arm64→ARM64).
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">2</span>Windows: double-click to install</h2>
+    <div class="tip">
+      Copy the downloaded <code>yugsight-agent.exe</code> to the target machine and
+      <strong>double-click it</strong> — it installs to <code>C:\YugsightAgent</code>,
+      registers auto-start, and you just follow the dialog to enter the center address.
+      If it cannot reach the center, the dialog reappears: be reminded again in
+      5 / 30 / custom minutes, or quit the probe.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">3</span>Linux / macOS: start from the command line</h2>
+
+    <div class="tip"><b>Manual</b>: first <b>download</b> the probe package for your platform in
+    step 1, then <b>copy (upload) it to the target machine</b> and run the command below
+    (already includes this center's address and node token):</div>
+    <div class="cmd">
+      <pre id="cmdUnixEn">./yugsight-agent -center {{ADDR}} -token {{TOKEN}}</pre>
+      <button class="copy" onclick="copyCmd('cmdUnixEn')">Copy</button>
+    </div>
+    <div class="tip" style="margin-top:8px">
+      The command above uses <b>the current center address <code>{{ADDR}}</code></b>.
+      <b>If the center IP changes (network switch/VPN)</b>, the old command stops working —
+      reopen this page to copy the command (the address updates automatically), then re-run it
+      on the probe host; on Windows a dialog also appears so you can change the address.
+    </div>
+
+    <div style="margin-top:16px" class="tip"><b>One-click install for Linux (no manual
+    download/upload)</b>: run the single line below on the target machine (root required).
+    The script downloads the probe from the center's Web port <code>{{UIPORT}}</code>,
+    installs it to <code>/usr/local/bin</code> and runs it under systemd
+    (<b>auto-start + auto-restart on crash</b>). The address and node token are already
+    injected by the center — nothing to type manually. The target machine needs
+    <code>curl</code> and <code>systemd</code> (standard on servers) and network access
+    to the center.</div>
+    <div class="cmd">
+      <pre id="cmdAutoEn">curl -fsSLk https://{{ADDRHOST}}:{{UIPORT}}/api/v2/probe/agent/install.sh | bash</pre>
+      <button class="copy" onclick="copyCmd('cmdAutoEn')">Copy</button>
+    </div>
+    <div class="tip" style="margin-top:8px">
+      When running as a non-root account, replace the trailing <code>bash</code> with
+      <code>sudo bash</code>; macOS has no systemd, use the manual method above.
+    </div>
+
+    <div class="tip" style="margin-top:10px">
+      <span class="k">Do not share this page publicly</span> (it contains the node token).
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">4</span>Verify it is online</h2>
+    <ul>
+      <li>Back on the center's <b>Probe Management</b> page, the node should appear in the
+          list within seconds (auto-refresh every 5s).</li>
+      <li>Open the admin console at <code>https://&lt;center IP&gt;:{{UIPORT}}/app/</code>
+          (from Windows, or the corresponding IP/port from Linux/macOS).</li>
+      <li>The probe log is <code>yugsight-agent.log</code> in the same directory —
+          check it first when something goes wrong.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">5</span>FAQ</h2>
+    <ul>
+      <li><b>"Center address not configured"</b>: on Windows the double-click flow prompts
+          you to fill it in; on Linux make sure the command carries <code>-center</code>,
+          or that the address in the config file is not empty.</li>
+      <li><b>"Wrong token"</b>: the <code>token</code> in the start parameters/config does not
+          match the center's <code>probe.json</code> <code>center.token</code> (the token can
+          be copied on the center's Probe Management page).</li>
+      <li><b>Cannot reach the center</b>: the target machine must be able to make an outbound
+          connection to <code>{{ADDR}}</code>; check that the firewall/security group allows
+          this outbound connection. On Windows a dialog appears so you can change the address
+          or be reminded later.</li>
+      <li><b>Center address changed (IP changed due to network switch/VPN)</b>: the probe
+          does not switch automatically — <b>just re-run the one-click install command</b>
+          (the address updates to the current IP automatically, the old service's address is
+          overwritten, auto-start is preserved, no file needs to be edited). For a manual
+          deployment (no systemd), re-run the start command with the new address.</li>
+      <li><b>Uninstall on Windows</b>: double-click <b>Uninstall probe.exe</b> in the install
+          directory <code>C:\YugsightAgent</code> (auto-stops the probe + removes auto-start
+          + removes the install directory); or manually: end the <code>yugsight-agent.exe</code>
+          process, delete that directory, and delete the registry key
+          <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run\YugsightAgent</code>.</li>
+    </ul>
+  </div>
+
+  <div class="foot">Yugsight v{{VER}} · Page generated dynamically by the center</div>
+</div>
+</div>
 
 <script>
 // 复制按钮: 优先用 clipboard API(HTTPS/localhost), 否则回落到 textarea + execCommand
@@ -166,7 +295,8 @@ function copyCmd(id){
   var txt = el.textContent;
   function done(btn){
     var old = btn.textContent;
-    btn.textContent = '已复制';
+    var cur = document.body.getAttribute('data-lang') === 'en';
+    btn.textContent = cur ? 'Copied' : '已复制';
     setTimeout(function(){ btn.textContent = old; }, 1500);
   }
   var btn = el.parentNode.querySelector('button.copy');
@@ -177,7 +307,8 @@ function copyCmd(id){
     var ta = document.createElement('textarea');
     ta.value = txt; ta.style.position='fixed'; ta.style.opacity='0';
     document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); done(btn); } catch(e) { alert('复制失败, 请手动选中命令复制'); }
+    var cur = document.body.getAttribute('data-lang') === 'en';
+    try { document.execCommand('copy'); done(btn); } catch(e) { alert(cur ? 'Copy failed, select the command manually to copy' : '复制失败, 请手动选中命令复制'); }
     document.body.removeChild(ta);
   }
 }
@@ -193,6 +324,46 @@ function copyCmd(id){
   document.querySelectorAll('a.dl').forEach(function(a){
     if (a.dataset.os === os && (!arch || a.dataset.arch === arch)) { a.classList.add('mine'); }
   });
+})();
+// ===== 语言切换(2026-10-04) =====
+// 语言状态与 Vue UI 共用 localStorage 键 yugsight_lang(前端 i18n 的持久化键):
+// 界面是英文时打开本页(裸 URL)自动英文; 本页切换按钮同样写回该键, 与 UI 联动。
+// ?lang= 仅作无本地记忆时的初始值兜底(不覆盖已保存的偏好)。
+var LANG_KEY = 'yugsight_lang';
+function applyLang(l){
+  document.body.setAttribute('data-lang', l);
+  document.documentElement.setAttribute('lang', l === 'en' ? 'en' : 'zh-CN');
+  document.title = l === 'en' ? 'Probe Install · Yugsight' : '探针安装 · Yugsight';
+  document.querySelectorAll('.sec').forEach(function(s){
+    s.classList.toggle('on', s.getAttribute('data-lang') === l);
+  });
+  // 未分发平台的置灰原因(title)按语言取服务端注入的双语属性
+  document.querySelectorAll('a.dl').forEach(function(a){
+    var t = a.getAttribute('data-title-' + l);
+    if (t) { a.setAttribute('title', t); } else { a.removeAttribute('title'); }
+  });
+  var btn = document.getElementById('langToggle');
+  if (btn) { btn.textContent = l === 'zh' ? 'English' : '中文'; }
+}
+(function(){
+  var l = 'zh';
+  try {
+    var s = localStorage.getItem(LANG_KEY);
+    if (s === 'zh' || s === 'en') { l = s; }
+  } catch(e) { /* 隐私模式等: 无记忆, 走兜底 */ }
+  if (l === 'zh') {
+    var m = /[?&]lang=(en|zh)/.exec(location.search);
+    if (m && m[1] === 'en') { l = 'en'; }
+  }
+  applyLang(l);
+  var btn = document.getElementById('langToggle');
+  if (btn) {
+    btn.onclick = function(){
+      var next = document.body.getAttribute('data-lang') === 'zh' ? 'en' : 'zh';
+      try { localStorage.setItem(LANG_KEY, next); } catch(e) { /* 存储不可用仅本页生效 */ }
+      applyLang(next);
+    };
+  }
 })();
 </script>
 </body>
